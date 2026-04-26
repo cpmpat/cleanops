@@ -1,0 +1,73 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cleanops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cleanops
+      POSTGRES_USER: cleanops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cleanops_dev_2024}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cleanops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cleanops-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cleanops-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://cleanops:${POSTGRES_PASSWORD:-cleanops_dev_2024}@postgres:5432/cleanops
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      MAGIC_LINK_SECRET: ${MAGIC_LINK_SECRET:-change-this-in-production}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      PORT: 3001
+      # Avantio PMS
+      AVANTIO_API_BASE_URL: ${AVANTIO_API_BASE_URL}
+      AVANTIO_API_KEY: ${AVANTIO_API_KEY}
+      # Email (Resend)
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@cleanops.app}
+      # S3 for photo uploads
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION:-eu-central-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      # Web Push (FCM)
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

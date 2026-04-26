@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+  * { -webkit-tap-highlight-color: transparent; }
+  body { -webkit-font-smoothing: antialiased; }
+  .safe-area-pb { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0.5rem); }
+}
+
+@layer utilities {
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .no-bounce { overscroll-behavior: none; }
+}

@@ -1,0 +1,479 @@
+// ─────────────────────────────────────────────
+// CleanOps — Prisma Schema
+// Multi-tenant cleaning management platform
+// ─────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANT ───────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  settings  Json     @default("{}")  // timezone, default language, sync interval, etc.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // PMS configuration per tenant
+  pmsProvider    String?
+  pmsApiBaseUrl  String?
+  pmsApiKey      String?
+  pmsLastSyncAt  DateTime?
+  pmsSyncEnabled Boolean   @default(true)
+
+  // Relations
+  users           User[]
+  properties      Property[]
+  cleaningEvents  CleaningEvent[]
+  tags            ManagerTag[]
+  notifications   Notification[]
+  auditEvents     AuditEvent[]
+  incidents       Incident[]          // ← ADDED
+
+  @@map("tenants")
+}
+
+// ─── USER ─────────────────────────────────────
+
+enum UserRole {
+  MANAGER
+  CLEANER
+}
+
+enum Language {
+  en
+  cs
+  ru
+  uk
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String
+  email     String
+  name      String
+  role      UserRole
+  language  Language  @default(en)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // ─── GCP cdm_user sync ───
+  cdmUserId       String?   @unique
+  position        String?
+  isSyncManaged   Boolean   @default(true)
+  lastSyncedAt    DateTime?
+  disabledAt      DateTime?
+
+  // ─── Auth ───
+  passwordHash     String?
+  emailVerifiedAt  DateTime?
+  magicLinkToken   String?   @unique
+  magicLinkExpiry  DateTime?
+  lastLoginAt      DateTime?
+
+  // ─── Preferences ───
+  preferences      Json      @default("{}")
+
+  // Push notification subscription (Web Push)
+  pushSubscription Json?
+
+  // Relations
+  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  assignedCleanings    CleaningAssignment[] @relation("AssignedCleaner")
+  createdAssignments   CleaningAssignment[] @relation("AssignedBy")
+  defaultProperties    Property[]           @relation("DefaultCleaner")
+  notifications        Notification[]
+  sessions             Session[]
+  auditEvents          AuditEvent[]
+  reportedIncidents    Incident[]           @relation("IncidentReporter")   // ← ADDED
+  assignedIncidents    Incident[]           @relation("IncidentAssignee")   // ← ADDED
+  resolvedIncidents    Incident[]           @relation("IncidentResolver")   // ← ADDED
+  uploadedAttachments  IncidentAttachment[] @relation("AttachmentUploader") // ← ADDED
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@index([tenantId, isActive])
+  @@index([cdmUserId])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  token        String   @unique
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+// ─── PROPERTY ─────────────────────────────────
+
+model Property {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  address         String?
+  locationLat     Float?
+  locationLng     Float?
+  defaultCleanerId String?
+  pmsPropertyId   String?
+
+  accommodationType String?
+  pmsStatus         String?
+  pmsClean          Boolean  @default(false)
+  pmsLastSyncedAt   DateTime?
+
+  notes           String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  defaultCleaner  User?           @relation("DefaultCleaner", fields: [defaultCleanerId], references: [id])
+  cleaningEvents  CleaningEvent[]
+  incidents       Incident[]       // ← ADDED
+
+  @@unique([tenantId, pmsPropertyId])
+  @@index([tenantId])
+  @@index([tenantId, pmsStatus])
+  @@map("properties")
+}
+
+// ─── CLEANING EVENT ───────────────────────────
+
+enum CleaningEventStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FLAGGED
+}
+
+enum CleaningType {
+  CHECKOUT
+  MIDSTAY
+  DEEP
+}
+
+enum BookingChannel {
+  AIRBNB
+  BOOKING_COM
+  VRBO
+  EXPEDIA
+  DIRECT
+  OTHER
+}
+
+model CleaningEvent {
+  id                String              @id @default(uuid())
+  tenantId          String
+  propertyId        String
+  maxCleaners       Int                 @default(1)
+
+  bookingRef        String
+  pmsBookingId      String?
+  checkInTime       DateTime
+  checkOutTime      DateTime?
+  accommodationName String
+  accommodationType String?
+  numAdults         Int                 @default(1)
+  numChildren       Int                 @default(0)
+  channel           BookingChannel      @default(OTHER)
+
+  cleaningType      CleaningType        @default(CHECKOUT)
+  status            CleaningEventStatus @default(PENDING)
+  timeSlot          DateTime
+
+  managerNote       String?
+  cleanerNote       String?
+  supplyNote        String?
+
+  startedAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+
+  pmsLastSyncedAt   DateTime?
+  pmsRawData        Json?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id])
+  property          Property            @relation(fields: [propertyId], references: [id])
+  assignments       CleaningAssignment[]
+  photos            CleaningPhoto[]
+  eventTags         CleaningEventTag[]
+  incidents         Incident[]           // ← ADDED
+
+  @@unique([tenantId, pmsBookingId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, checkInTime])
+  @@index([propertyId])
+  @@index([bookingRef])
+  @@map("cleaning_events")
+}
+
+// ─── CLEANING ASSIGNMENT ──────────────────────
+
+enum AssignmentStatus {
+  ASSIGNED
+  STARTED
+  COMPLETED
+  REJECTED
+  REASSIGNED
+}
+
+model CleaningAssignment {
+  id               String           @id @default(uuid())
+  cleaningEventId  String
+  userId           String
+  assignedById     String?
+  isPrimary        Boolean          @default(false)
+  status           AssignmentStatus @default(ASSIGNED)
+
+  rejectedReason   String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  assignedAt       DateTime         @default(now())
+
+  cleaningEvent    CleaningEvent    @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
+  user             User             @relation("AssignedCleaner", fields: [userId], references: [id])
+  assignedBy       User?            @relation("AssignedBy", fields: [assignedById], references: [id])
+  photos           CleaningPhoto[]
+
+  @@index([cleaningEventId])
+  @@index([userId])
+  @@index([userId, status])
+  @@map("cleaning_assignments")
+}
+
+// ─── PHOTOS ───────────────────────────────────
+
+model CleaningPhoto {
+  id                    String              @id @default(uuid())
+  cleaningEventId       String
+  cleaningAssignmentId  String?
+  url                   String
+  caption               String?
+  uploadedAt            DateTime            @default(now())
+
+  cleaningEvent         CleaningEvent       @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
+  cleaningAssignment    CleaningAssignment? @relation(fields: [cleaningAssignmentId], references: [id])
+
+  @@index([cleaningEventId])
+  @@map("cleaning_photos")
+}
+
+// ─── MANAGER TAGS ─────────────────────────────
+
+model ManagerTag {
+  id        String   @id @default(uuid())
+  tenantId  String
+  label     String
+  color     String   @default("#6b7280")
+  createdAt DateTime @default(now())
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  events    CleaningEventTag[]
+
+  @@unique([tenantId, label])
+  @@index([tenantId])
+  @@map("manager_tags")
+}
+
+model CleaningEventTag {
+  id              String        @id @default(uuid())
+  cleaningEventId String
+  tagId           String
+  createdAt       DateTime      @default(now())
+
+  cleaningEvent   CleaningEvent @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
+  tag             ManagerTag    @relation(fields: [tagId], references: [id])
+
+  @@unique([cleaningEventId, tagId])
+  @@map("cleaning_event_tags")
+}
+
+// ─── NOTIFICATIONS ────────────────────────────
+
+enum NotificationType {
+  NEW_ASSIGNMENT
+  REASSIGNMENT
+  CANCELLATION
+  BOOKING_MODIFIED
+  REMINDER
+  OVERDUE
+  INCIDENT_UPDATE
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  IN_APP
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  tenantId  String
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel
+  title     String
+  body      String
+  payload   Json?
+  sentAt    DateTime            @default(now())
+  readAt    DateTime?
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id])
+  user      User                @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+  @@index([tenantId])
+  @@map("notifications")
+}
+
+// ─── AUDIT EVENT ──────────────────────────────
+
+enum AuditCategory {
+  CLEANING_LIFECYCLE
+  INCIDENT_LIFECYCLE
+  USER_LIFECYCLE
+  SYNC
+  SYSTEM
+}
+
+model AuditEvent {
+  id         String        @id @default(uuid())
+  tenantId   String
+  category   AuditCategory
+  action     String
+
+  actorId    String?
+  actorEmail String?
+
+  targetType String
+  targetId   String?
+
+  metadata   Json          @default("{}")
+  createdAt  DateTime      @default(now())
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  actor      User?         @relation(fields: [actorId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, category, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_events")
+}
+
+// ─── INCIDENTS ────────────────────────────────
+
+enum IncidentType {
+  CLEANING
+  BOILER_INSPECTION
+  ACCIDENT
+  PHOTO_SHOOT
+  REPAIR
+  GENERAL
+}
+
+enum IncidentStatus {
+  OPEN
+  SCHEDULED
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Incident {
+  id              String           @id @default(uuid())
+  tenantId        String
+
+  type            IncidentType     @default(CLEANING)
+  status          IncidentStatus   @default(OPEN)
+  priority        IncidentPriority @default(MEDIUM)
+
+  // Context
+  propertyId      String?
+  isGeneral       Boolean          @default(false)
+  cleaningEventId String?
+
+  // Content
+  title           String
+  description     String?
+
+  // People
+  reportedById    String?
+  assignedToId    String?
+  resolvedById    String?
+
+  // Scheduling & resolution
+  scheduledFor    DateTime?
+  resolvedAt      DateTime?
+  resolutionNote  String?
+
+  // Future hooks (columns only, no logic yet)
+  pmsBlockId      String?
+  guestNotifiedAt DateTime?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id])
+  property        Property?            @relation(fields: [propertyId], references: [id])
+  cleaningEvent   CleaningEvent?       @relation(fields: [cleaningEventId], references: [id])
+  reportedBy      User?                @relation("IncidentReporter",  fields: [reportedById],  references: [id])
+  assignedTo      User?                @relation("IncidentAssignee",  fields: [assignedToId],  references: [id])
+  resolvedBy      User?                @relation("IncidentResolver",  fields: [resolvedById],  references: [id])
+  attachments     IncidentAttachment[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, type, createdAt])
+  @@index([propertyId])
+  @@index([cleaningEventId])
+  @@index([assignedToId])
+  @@index([reportedById])
+  @@map("incidents")
+}
+
+model IncidentAttachment {
+  id           String   @id @default(uuid())
+  incidentId   String
+  url          String
+  mimeType     String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  incident     Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  uploadedBy   User?    @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([incidentId])
+  @@map("incident_attachments")
+}
