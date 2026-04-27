@@ -43,3 +43,4 @@ EXPOSE 3001
 
 # On startup: apply any pending DB migrations, then start the app
 CMD ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm start:prod"]
+
