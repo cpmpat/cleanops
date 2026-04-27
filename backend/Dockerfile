@@ -10,7 +10,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
-# Install ALL deps (dev included — needed for nest build)
+# Install ALL deps (dev included — needed for nest build + prisma)
 RUN pnpm install --frozen-lockfile
 
 # Generate Prisma client
@@ -20,20 +20,22 @@ RUN pnpm exec prisma generate
 COPY . .
 RUN pnpm build
 
-# Strip dev dependencies from node_modules (smaller production image)
-RUN CI=true pnpm prune --prod --config.confirmModulesPurge=false
-
 # ─── Stage 2: Production ─────────────────────────────────
 FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install pnpm in production stage too (needed for `prisma migrate deploy` and `start:prod`)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm + openssl (Prisma needs it at runtime on Alpine)
+RUN apk add --no-cache openssl && corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy everything we need from builder: package.json, lockfile, pruned node_modules, built dist, prisma schema + generated client
+# Copy package files
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
+
+# Copy entire node_modules from builder (skip the prune — keeps prisma CLI available)
+# Trade ~70MB extra image size for reliability
 COPY --from=builder /app/node_modules ./node_modules
+
+# Copy built artifacts and Prisma schema
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 
@@ -43,4 +45,3 @@ EXPOSE 3001
 
 # On startup: apply any pending DB migrations, then start the app
 CMD ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm start:prod"]
-
