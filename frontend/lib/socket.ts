@@ -21,9 +21,8 @@ export function useSocket(
 
     // Create socket connection once per session
     if (!socket || !socket.connected) {
-      socket = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001', {
+      socket = io((process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001') + '/ws', {
         path: '/socket.io',
-        namespace: '/ws',
         auth: { token },
         transports: ['websocket'],
         reconnection: true,

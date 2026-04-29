@@ -9,7 +9,6 @@ const STATUS_STYLES: Record<EventStatus, string> = {
   COMPLETED:  'bg-emerald-50 text-emerald-800 border-emerald-200',
   CANCELLED:  'bg-stone-100 text-stone-500 border-stone-200',
   FLAGGED:    'bg-red-50 text-red-800 border-red-200',
-  REJECTED:   'bg-red-50 text-red-700 border-red-200',
 };
 
 const STATUS_DOT: Record<EventStatus, string> = {
@@ -19,7 +18,6 @@ const STATUS_DOT: Record<EventStatus, string> = {
   COMPLETED:  'bg-emerald-500',
   CANCELLED:  'bg-stone-400',
   FLAGGED:    'bg-red-500',
-  REJECTED:   'bg-red-400',
 };
 
 interface StatusBadgeProps {

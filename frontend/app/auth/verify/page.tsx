@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth as authApi, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -10,6 +10,22 @@ import { ArrowRight, Lock, AlertCircle } from 'lucide-react';
 type Stage = 'verifying' | 'invalid' | 'set-password';
 
 export default function VerifyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-4">
+            <img src="/airstay-logo.svg" alt="Airstay" className="w-14 h-14" />
+          </div>
+        </div>
+      }
+    >
+      <VerifyPageInner />
+    </Suspense>
+  );
+}
+
+function VerifyPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setAuth } = useAuth();

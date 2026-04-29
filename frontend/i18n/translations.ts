@@ -1,6 +1,6 @@
 export type Locale = 'en' | 'cs' | 'ru' | 'uk';
 
-export const translations = {
+const _translationsBase = {
   en: {
     appName: 'CleanOps',
     login: {
@@ -968,8 +968,13 @@ export const translations = {
   },
 } as const;
 
-export type Translations = typeof translations.en;
+export type Translations = {
+  -readonly [K in keyof (typeof _translationsBase)['en']]: (typeof _translationsBase)['en'][K];
+};
+
+export const translations: Record<Locale, Translations> =
+  _translationsBase as unknown as Record<Locale, Translations>;
 
 export function useTranslations(locale: Locale): Translations {
-  return translations[locale] as unknown as Translations;
+  return translations[locale];
 }

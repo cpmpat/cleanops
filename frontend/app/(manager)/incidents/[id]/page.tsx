@@ -315,7 +315,7 @@ function IncidentDetailShell() {
             </h3>
             <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {incident.attachments.map((att) => (
-                
+                <a
                   key={att.id}
                   href={att.url}
                   target="_blank"
