@@ -26,6 +26,7 @@ import {
   IncidentPriorityBadge,
   IncidentTypeBadge,
 } from '@/components/IncidentBadges';
+import { SignedImage } from '@/components/SignedImage';
 
 export default function IncidentDetailPage() {
   return (
@@ -321,9 +322,32 @@ function IncidentDetailShell() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block aspect-square bg-surface-sunken rounded-xl overflow-hidden hover:ring-2 hover:ring-accent"
+                  onClick={async (e) => {
+                    // For private GCS URLs, open the signed URL instead so the
+                    // new tab actually loads. Falls back to default href if the
+                    // link doesn't look like a GCS URL.
+                    if (att.url.includes('storage.googleapis.com')) {
+                      e.preventDefault();
+                      try {
+                        const { uploads } = await import('@/lib/api');
+                        const key = att.url.match(
+                          /storage\.googleapis\.com\/[^/]+\/(.+)$/,
+                        )?.[1];
+                        if (key) {
+                          const { url } = await uploads.getReadUrl(
+                            decodeURIComponent(key),
+                            60,
+                          );
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                        }
+                      } catch {
+                        /* swallow — link click already prevented */
+                      }
+                    }
+                  }}
                 >
                   {!att.mimeType || att.mimeType.startsWith('image/') ? (
-                    <img
+                    <SignedImage
                       src={att.url}
                       alt=""
                       className="w-full h-full object-cover"
