@@ -5,6 +5,7 @@ import {
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { BookingChannel, CleaningEventStatus, AssignmentStatus } from '@prisma/client';
+import { GcsService } from '../storage/gcs.service';
 
 export interface SyncResult {
   accommodations: { synced: number; created: number; updated: number };
@@ -26,6 +27,7 @@ export class BookingSyncService {
   constructor(
     private prisma: PrismaService,
     private avantioAdapter: AvantioAdapter,
+    private gcs: GcsService,
   ) {}
 
   /**
@@ -267,6 +269,17 @@ export class BookingSyncService {
             });
             updated++;
           }
+
+          // Ensure the bucket folder placeholder exists (idempotent — no-op
+          // if already present). Catches gaps where a property was created
+          // before the GCS feature was deployed.
+          this.gcs
+            .createPropertyFolderPlaceholder(accom.pmsId)
+            .catch((err) =>
+              this.logger.warn(
+                `GCS placeholder failed for ${accom.pmsId}: ${err?.message}`,
+              ),
+            );
         } else {
           // Create new property
           await this.prisma.property.create({
@@ -282,6 +295,16 @@ export class BookingSyncService {
             },
           });
           created++;
+
+          // Pre-create the GCS folder so it's visible in the bucket browser
+          // immediately. Non-blocking — sync continues even if GCS fails.
+          this.gcs
+            .createPropertyFolderPlaceholder(accom.pmsId)
+            .catch((err) =>
+              this.logger.warn(
+                `GCS placeholder failed for ${accom.pmsId}: ${err?.message}`,
+              ),
+            );
         }
       } catch (err) {
         this.logger.warn(`Failed to sync accommodation ${accom.pmsId}: ${err.message}`);

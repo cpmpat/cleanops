@@ -500,7 +500,82 @@ export const tenant = {
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
 
+export type MediaEventType =
+  | 'cleaning'
+  | 'incident'
+  | 'manual'
+  | 'repair'
+  | 'inspection';
+
+export interface SignedUploadResponse {
+  key: string;
+  uploadUrl: string;
+  publicUrl: string;
+  expiresAt: string;
+}
+
 export const uploads = {
+  /**
+   * Step 1 of the upload flow: ask the backend for a signed URL to PUT the file
+   * directly to GCS. Returns the URL + the canonical publicUrl to store in the DB.
+   */
+  getSignedUrl: (params: {
+    propertyId?: string;
+    pmsPropertyId?: string;
+    eventType: MediaEventType;
+    contentType: string;
+    sizeBytes?: number;
+  }) => post<SignedUploadResponse>('/uploads/signed-url', params),
+
+  /**
+   * Step 2: PUT the file directly to GCS. Bypasses the backend, so the upload
+   * isn't capped by Railway proxy timeouts. The Authorization header MUST NOT
+   * be set on this request (GCS rejects it).
+   */
+  putToGcs: async (uploadUrl: string, file: File): Promise<void> => {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, `GCS upload failed: ${res.statusText}`);
+    }
+  },
+
+  /**
+   * Convenience helper: do steps 1 + 2 in one call. Returns the publicUrl
+   * (= the canonical object URL stored in the DB after the photo is referenced
+   * by an incident or cleaning event).
+   */
+  uploadToGcs: async (params: {
+    file: File;
+    eventType: MediaEventType;
+    propertyId?: string;
+    pmsPropertyId?: string;
+  }): Promise<{ publicUrl: string; key: string }> => {
+    const signed = await uploads.getSignedUrl({
+      propertyId: params.propertyId,
+      pmsPropertyId: params.pmsPropertyId,
+      eventType: params.eventType,
+      contentType: params.file.type,
+      sizeBytes: params.file.size,
+    });
+    await uploads.putToGcs(signed.uploadUrl, params.file);
+    return { publicUrl: signed.publicUrl, key: signed.key };
+  },
+
+  /**
+   * For displaying private bucket photos: ask backend for a short-lived
+   * signed READ URL (default 1 hour TTL).
+   */
+  getReadUrl: (key: string, ttlMinutes?: number) =>
+    post<{ url: string }>('/uploads/read-url', { key, ttlMinutes }),
+
+  /**
+   * Legacy multipart upload. Kept for back-compat with code that hasn't
+   * been migrated to the signed-URL flow yet.
+   */
   photo: async (eventId: string, file: File) => {
     const token = getToken();
     const form = new FormData();

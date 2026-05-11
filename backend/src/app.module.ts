@@ -17,6 +17,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { JobsModule } from './jobs/jobs.module';
 import { StaffSyncModule } from './staff-sync/staff-sync.module';
 import { IncidentsModule } from './incidents/incidents.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { IncidentsModule } from './incidents/incidents.module';
     JobsModule,
     StaffSyncModule,
     IncidentsModule,
+    StorageModule,
   ],
 })
 export class AppModule implements NestModule {
