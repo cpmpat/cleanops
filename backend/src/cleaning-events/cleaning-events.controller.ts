@@ -6,6 +6,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { CleaningEventsService } from './cleaning-events.service';
+import { IncidentPriority } from '@prisma/client';
 
 @ApiTags('Cleaning Events')
 @ApiBearerAuth()
@@ -167,7 +168,12 @@ export class CleaningEventsController {
   markDone(
     @Req() req: TenantRequest,
     @Param('id') id: string,
-    @Body() dto: { allGood: boolean; note?: string; photoUrls?: string[] },
+    @Body() dto: {
+      allGood: boolean;
+      note?: string;
+      photoUrls?: string[];
+      priority?: IncidentPriority;
+    },
   ) {
     return this.service.markDone(req.tenantId!, req.userId!, id, dto);
   }

@@ -16,6 +16,7 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { JobsModule } from './jobs/jobs.module';
 import { StaffSyncModule } from './staff-sync/staff-sync.module';
+import { IncidentsModule } from './incidents/incidents.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StaffSyncModule } from './staff-sync/staff-sync.module';
     IntegrationsModule,
     JobsModule,
     StaffSyncModule,
+    IncidentsModule,
   ],
 })
 export class AppModule implements NestModule {

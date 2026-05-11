@@ -11,9 +11,11 @@ import {
   BookingChannel,
   AssignmentStatus,
   AuditCategory,
+  IncidentPriority,
   Prisma,
 } from '@prisma/client';
 import { CleanOpsGateway } from '../websocket/websocket.module';
+import { IncidentsService } from '../incidents/incidents.service';
 
 interface CreateEventDto {
   propertyId: string;
@@ -44,6 +46,7 @@ interface MarkDoneDto {
   allGood: boolean;
   note?: string;
   photoUrls?: string[];
+  priority?: IncidentPriority;
 }
 
 /** Assignment statuses that count as "actively holding a slot on the event". */
@@ -83,6 +86,7 @@ export class CleaningEventsService {
   constructor(
     private prisma: PrismaService,
     private gateway: CleanOpsGateway,
+    private incidents: IncidentsService,
   ) {}
 
   // ─── QUERIES ───────────────────────────────────────────────
@@ -549,8 +553,8 @@ export class CleaningEventsService {
   /**
    * Cleaner marks their work on an event as done.
    * - allGood: true → just completes the assignment
-   * - allGood: false → attaches note + photos, flags needsIncident for
-   *   the next feature (Incidents) to pick up
+   * - allGood: false → requires priority, attaches note + photos,
+   *   auto-creates an Incident (type=CLEANING, status=OPEN, priority from DTO)
    *
    * When every active assignment on the event is completed, the event
    * itself flips to COMPLETED.
@@ -561,6 +565,19 @@ export class CleaningEventsService {
     eventId: string,
     dto: MarkDoneDto,
   ) {
+    // Validate priority up front
+    if (!dto.allGood && !dto.priority) {
+      throw new BadRequestException(
+        'priority is required when reporting an issue',
+      );
+    }
+
+    // Fetch actor email for incident audit trail
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, role: true },
+    });
+
     const { freshEvent, needsIncident } = await this.prisma.$transaction(
       async (tx) => {
         const event = await tx.cleaningEvent.findFirst({
@@ -630,6 +647,7 @@ export class CleaningEventsService {
             category: AuditCategory.CLEANING_LIFECYCLE,
             action: dto.allGood ? 'cleaning.done' : 'cleaning.done_with_issue',
             actorId: userId,
+            actorEmail: actorUser?.email ?? null,
             targetType: 'CleaningEvent',
             targetId: eventId,
             metadata: {
@@ -639,6 +657,7 @@ export class CleaningEventsService {
               hasNote: !!dto.note,
               photoCount: dto.photoUrls?.length ?? 0,
               eventCompleted: stillActive.length === 0,
+              priority: dto.priority ?? null,
             } as any,
           },
         });
@@ -656,9 +675,31 @@ export class CleaningEventsService {
       this.gateway.notifyEventUpdated(tenantId, freshEvent);
     }
 
+    // Auto-create the incident OUTSIDE the main transaction
+    // (the incident service runs its own transaction + emits its own socket event)
+    let incidentId: string | null = null;
+    if (!dto.allGood && dto.priority) {
+      const incident = await this.incidents.createFromCleaningDone(
+        tenantId,
+        {
+          userId,
+          userRole: actorUser?.role ?? 'CLEANER',
+          userEmail: actorUser?.email,
+        },
+        {
+          cleaningEventId: eventId,
+          priority: dto.priority,
+          note: dto.note,
+          photoUrls: dto.photoUrls,
+        },
+      );
+      incidentId = incident.id;
+    }
+
     return {
       done: true,
       needsIncident,
+      incidentId,
       cleaning: freshEvent,
     };
   }
