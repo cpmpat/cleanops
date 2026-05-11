@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Check, AlertTriangle, Image, Loader2 } from 'lucide-react';
 import { events as eventsApi, uploads, ApiError } from '@/lib/api';
@@ -22,10 +22,29 @@ export function MarkDoneSheet({ event, t, onClose, onSuccess }: MarkDoneSheetPro
   const [stage, setStage] = useState<Stage>('choose');
   const [note, setNote] = useState('');
   const [priority, setPriority] = useState<IncidentPriority | null>(null);
-  const [uploadedPhotos, setUploadedPhotos] = useState<{ id: string; url: string }[]>([]);
+  // Each entry has a local previewUrl (blob: URL from the chosen file) for
+  // instant thumbnail display, plus the canonical GCS publicUrl returned by
+  // the signed-upload flow which is what we send to the backend.
+  const [uploadedPhotos, setUploadedPhotos] = useState<
+    { previewUrl: string; publicUrl: string }[]
+  >([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Free blob URLs when the sheet unmounts to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      uploadedPhotos.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {
+          /* noop */
+        }
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleAllGood() {
     setStage('submitting');
@@ -44,10 +63,17 @@ export function MarkDoneSheet({ event, t, onClose, onSuccess }: MarkDoneSheetPro
     if (!file) return;
     setUploading(true);
     setError('');
+    // Create local blob URL immediately for the thumbnail
+    const previewUrl = URL.createObjectURL(file);
     try {
-      const res = await uploads.photo(event.id, file);
-      setUploadedPhotos((p) => [...p, res]);
+      const { publicUrl } = await uploads.uploadToGcs({
+        file,
+        eventType: 'cleaning',
+        propertyId: event.propertyId,
+      });
+      setUploadedPhotos((p) => [...p, { previewUrl, publicUrl }]);
     } catch {
+      URL.revokeObjectURL(previewUrl);
       setError(t.doneFlow.error);
     } finally {
       setUploading(false);
@@ -67,7 +93,7 @@ export function MarkDoneSheet({ event, t, onClose, onSuccess }: MarkDoneSheetPro
         allGood: false,
         priority,
         note: note.trim() || undefined,
-        photoUrls: uploadedPhotos.map((p) => p.url),
+        photoUrls: uploadedPhotos.map((p) => p.publicUrl),
       });
       onSuccess(res.cleaning);
       // Auto-navigate cleaner to the newly created incident
@@ -204,9 +230,9 @@ export function MarkDoneSheet({ event, t, onClose, onSuccess }: MarkDoneSheetPro
                 {t.doneFlow.photos}
               </label>
               <div className="flex flex-wrap gap-2">
-                {uploadedPhotos.map((p) => (
-                  <div key={p.id} className="w-16 h-16 rounded-lg bg-surface-sunken overflow-hidden">
-                    <img src={p.url} alt="" className="w-full h-full object-cover" />
+                {uploadedPhotos.map((p, idx) => (
+                  <div key={idx} className="w-16 h-16 rounded-lg bg-surface-sunken overflow-hidden">
+                    <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
                 <button
