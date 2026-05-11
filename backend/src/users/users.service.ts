@@ -71,6 +71,37 @@ export class UsersService {
     });
   }
 
+  /**
+   * Self-service preference update. Accepts only the `preferences` JSON column;
+   * cannot escalate role, change email, etc.
+   */
+  async updatePreferences(
+    tenantId: string,
+    userId: string,
+    preferences: Record<string, any>,
+  ) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { preferences: preferences as any },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        language: true,
+        isActive: true,
+        preferences: true,
+        tenantId: true,
+      },
+    });
+  }
+
   async deactivate(tenantId: string, userId: string) {
     return this.update(tenantId, userId, { isActive: false });
   }

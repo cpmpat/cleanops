@@ -114,14 +114,14 @@ export default function CleaningsPoolPage() {
     if (!user) return;
     setSavedState('saving');
     try {
-      const updated = await usersApi.update(user.id, {
-        preferences: {
-          ...(user.preferences ?? {}),
-          cleaningsPoolFilter: { propertyIds: Array.from(selectedPropIds) },
-        },
+      const updated = await usersApi.updateMyPreferences({
+        ...(user.preferences ?? {}),
+        cleaningsPoolFilter: { propertyIds: Array.from(selectedPropIds) },
       });
       if (token) setAuth(token, { ...user, preferences: updated.preferences });
       setSavedState('saved');
+      // Re-fetch pool with the new filter applied server-side
+      load();
       setTimeout(() => setSavedState('idle'), 2000);
     } catch {
       setSavedState('idle');

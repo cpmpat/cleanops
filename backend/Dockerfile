@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
 # Copy dependency files first (better Docker layer caching)
 COPY package.json pnpm-lock.yaml ./
@@ -26,7 +26,7 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm + openssl (Prisma needs it at runtime on Alpine)
-RUN apk add --no-cache openssl && corepack enable && corepack prepare pnpm@latest --activate
+RUN apk add --no-cache openssl && corepack enable && corepack prepare pnpm@10.15.0 --activate
 
 # Copy package files
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./

@@ -84,11 +84,9 @@ export default function CleanerSettingsPage() {
     setSaving(true);
     setError('');
     try {
-      const updated = await usersApi.update(user.id, {
-        preferences: {
-          ...(user.preferences ?? {}),
-          cleaningsPoolFilter: { propertyIds: Array.from(selected) },
-        },
+      const updated = await usersApi.updateMyPreferences({
+        ...(user.preferences ?? {}),
+        cleaningsPoolFilter: { propertyIds: Array.from(selected) },
       });
       // Update local auth store so subsequent /pool requests use the new prefs
       if (token) {

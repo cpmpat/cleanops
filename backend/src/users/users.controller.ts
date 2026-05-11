@@ -39,6 +39,24 @@ export class UsersController {
     );
   }
 
+  @Patch('me/preferences')
+  @ApiOperation({
+    summary: 'Update the current user\u2019s own preferences (any role)',
+    description:
+      'Self-service endpoint so cleaners can save their pool property filter ' +
+      'without requiring manager permissions.',
+  })
+  updateMyPreferences(
+    @Req() req: TenantRequest,
+    @Body() dto: { preferences: Record<string, any> },
+  ) {
+    return this.usersService.updatePreferences(
+      req.tenantId!,
+      req.userId!,
+      dto.preferences ?? {},
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
   findOne(@Req() req: TenantRequest, @Param('id') id: string) {

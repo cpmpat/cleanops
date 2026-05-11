@@ -396,6 +396,12 @@ export const users = {
     post<User>('/users', data),
   update: (id: string, data: Partial<User> & { preferences?: UserPreferences }) =>
     patch<User>(`/users/${id}`, data),
+  /**
+   * Self-service preference update — works for any logged-in user (cleaner or
+   * manager) and only updates the `preferences` JSON column.
+   */
+  updateMyPreferences: (preferences: UserPreferences) =>
+    patch<User>('/users/me/preferences', { preferences }),
   deactivate: (id: string) =>
     del(`/users/${id}`),
 };
