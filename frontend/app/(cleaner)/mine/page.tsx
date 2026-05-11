@@ -3,14 +3,16 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
   events as eventsApi,
+  properties as propertiesApi,
   ApiError,
   type CleaningEvent,
+  type Property,
 } from '@/lib/api';
 import { CleaningCard } from '@/components/CleaningCard';
 import { MarkDoneSheet } from '@/components/MarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
-import { LogOut, Calendar, X } from 'lucide-react';
+import { LogOut, Calendar, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type RangeKey = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
@@ -109,12 +111,24 @@ export default function MinePage() {
   );
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
 
+  // Property filter — only applied when range is "custom"
+  const [allProperties, setAllProperties] = useState<Property[]>([]);
+  const [propertyFilter, setPropertyFilter] = useState<string[]>([]);
+
   const [items, setItems] = useState<CleaningEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [droppingId, setDroppingId] = useState<string | null>(null);
   const [dropConfirm, setDropConfirm] = useState<CleaningEvent | null>(null);
   const [doneTarget, setDoneTarget] = useState<CleaningEvent | null>(null);
+
+  // Load properties once for the custom filter picker
+  useEffect(() => {
+    propertiesApi
+      .list()
+      .then(setAllProperties)
+      .catch(() => {});
+  }, []);
 
   const activeRange: DateRange = useMemo(() => {
     if (rangeKey === 'custom') return customRange;
@@ -125,9 +139,14 @@ export default function MinePage() {
     setLoading(true);
     setError('');
     try {
+      const ids =
+        rangeKey === 'custom' && propertyFilter.length > 0
+          ? propertyFilter
+          : undefined;
       const res = await eventsApi.mine(
         activeRange.from.toISOString(),
         activeRange.to.toISOString(),
+        ids,
       );
       setItems(res);
     } catch (err) {
@@ -135,7 +154,7 @@ export default function MinePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeRange, t.general.error]);
+  }, [activeRange, propertyFilter, rangeKey, t.general.error]);
 
   useEffect(() => {
     load();
@@ -208,11 +227,12 @@ export default function MinePage() {
     setCustomPickerOpen(true);
   }
 
-  function applyCustomRange(from: string, to: string) {
+  function applyCustomRange(from: string, to: string, propertyIds: string[]) {
     const fromDate = new Date(from + 'T00:00:00');
     const toDate = new Date(to + 'T00:00:00');
     toDate.setDate(toDate.getDate() + 1); // inclusive end day
     setCustomRange({ from: fromDate, to: toDate });
+    setPropertyFilter(propertyIds);
     setRangeKey('custom');
     setCustomPickerOpen(false);
   }
@@ -368,6 +388,8 @@ export default function MinePage() {
       {customPickerOpen && (
         <CustomRangePicker
           initial={activeRange}
+          initialPropertyIds={propertyFilter}
+          allProperties={allProperties}
           onClose={() => setCustomPickerOpen(false)}
           onApply={applyCustomRange}
           t={t}
@@ -422,24 +444,19 @@ export default function MinePage() {
 
 // ─── Custom range picker bottom sheet ─────────────────────────
 
-interface CustomRangePickerProps {
-  initial: DateRange;
-  onClose: () => void;
-  onApply: (from: string, to: string) => void;
-  t: ReturnType<typeof translations.en extends infer U ? () => U : never> extends never
-    ? typeof translations.en
-    : typeof translations.en;
-}
-
 function CustomRangePicker({
   initial,
+  initialPropertyIds,
+  allProperties,
   onClose,
   onApply,
   t,
 }: {
   initial: DateRange;
+  initialPropertyIds: string[];
+  allProperties: Property[];
   onClose: () => void;
-  onApply: (from: string, to: string) => void;
+  onApply: (from: string, to: string, propertyIds: string[]) => void;
   t: typeof translations.en;
 }) {
   // For the <input type="date"> value, we need YYYY-MM-DD.
@@ -449,8 +466,26 @@ function CustomRangePicker({
 
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(initialPropertyIds),
+  );
 
   const valid = from && to && from <= to;
+
+  function toggleProperty(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
+
+  function pickAll() {
+    setSelected(new Set(allProperties.map((p) => p.id)));
+  }
+
+  function pickNone() {
+    setSelected(new Set());
+  }
 
   return (
     <div
@@ -459,7 +494,7 @@ function CustomRangePicker({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-white rounded-t-3xl shadow-xl p-5 pb-safe animate-[slideUp_.2s_ease-out]"
+        className="w-full max-w-md bg-white rounded-t-3xl shadow-xl p-5 pb-safe animate-[slideUp_.2s_ease-out] max-h-[90vh] overflow-y-auto"
       >
         <div className="w-12 h-1 rounded-full bg-surface-border mx-auto mb-4" />
 
@@ -499,6 +534,64 @@ function CustomRangePicker({
             />
           </div>
 
+          {/* Property filter (optional — empty selection means "all") */}
+          {allProperties.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
+                  {t.mine.customProperties}
+                </label>
+                <div className="flex gap-3 text-xs">
+                  <button
+                    onClick={pickAll}
+                    className="text-accent font-medium hover:underline"
+                  >
+                    {t.mine.customPropertiesAll}
+                  </button>
+                  <button
+                    onClick={pickNone}
+                    className="text-ink-muted font-medium hover:underline"
+                  >
+                    {t.mine.customPropertiesNone}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-ink-muted mb-2">
+                {t.mine.customPropertiesHelp}
+              </p>
+              <ul className="space-y-1 max-h-48 overflow-y-auto -mr-1 pr-1">
+                {allProperties.map((p) => {
+                  const checked = selected.has(p.id);
+                  return (
+                    <li key={p.id}>
+                      <button
+                        onClick={() => toggleProperty(p.id)}
+                        className={cn(
+                          'w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-lg border transition text-sm',
+                          checked
+                            ? 'bg-accent/5 border-accent/30'
+                            : 'bg-white border-surface-border hover:bg-surface-sunken',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                            checked
+                              ? 'bg-accent border-accent text-white'
+                              : 'border-surface-border bg-white',
+                          )}
+                        >
+                          {checked && <Check size={10} strokeWidth={3} />}
+                        </span>
+                        <span className="truncate text-ink">{p.name}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           <div className="flex gap-2 pt-2">
             <button
               onClick={onClose}
@@ -507,7 +600,7 @@ function CustomRangePicker({
               {t.general.cancel}
             </button>
             <button
-              onClick={() => onApply(from, to)}
+              onClick={() => onApply(from, to, Array.from(selected))}
               disabled={!valid}
               className="flex-1 px-4 py-3 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50 disabled:cursor-not-allowed"
             >

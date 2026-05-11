@@ -340,10 +340,13 @@ export const events = {
   // ─── Pool lifecycle ───
   pool: () =>
     get<CleaningEvent[]>('/cleaning-events/pool'),
-  mine: (from?: string, to?: string) => {
+  mine: (from?: string, to?: string, propertyIds?: string[]) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+    if (propertyIds && propertyIds.length > 0) {
+      params.set('propertyIds', propertyIds.join(','));
+    }
     const q = params.toString();
     return get<CleaningEvent[]>(`/cleaning-events/mine${q ? `?${q}` : ''}`);
   },

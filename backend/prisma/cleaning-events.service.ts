@@ -136,48 +136,28 @@ export class CleaningEventsService {
   /**
    * POOL — events in PENDING status that a cleaner can claim.
    * Only shows future events (timeSlot >= now).
-   *
-   * If userId is given (cleaner role), filters to the user's selected properties.
-   * If user has no selections yet, returns an empty array (forces them to pick first).
    */
-  async getPool(tenantId: string, userId?: string) {
+  async getPool(tenantId: string) {
     const now = new Date();
-    const where: any = {
-      tenantId,
-      status: CleaningEventStatus.PENDING,
-      timeSlot: { gte: now },
-    };
-
-    if (userId) {
-      const user = await this.prisma.user.findFirst({
-        where: { id: userId, tenantId },
-        select: { preferences: true },
-      });
-      const prefs = (user?.preferences as any) ?? {};
-      const propertyIds: string[] = prefs?.cleaningsPoolFilter?.propertyIds ?? [];
-
-      // No selection yet → empty list (cleaner must pick in Settings first)
-      if (!propertyIds.length) return [];
-      where.propertyId = { in: propertyIds };
-    }
-
     return this.prisma.cleaningEvent.findMany({
-      where,
+      where: {
+        tenantId,
+        status: CleaningEventStatus.PENDING,
+        timeSlot: { gte: now },
+      },
       include: EVENT_INCLUDE,
-      orderBy: [{ timeSlot: 'asc' }, { accommodationName: 'asc' }],
+      orderBy: { timeSlot: 'asc' },
     });
   }
 
   /**
    * MINE — events where the given user has an active or completed assignment.
    * Supports date-range filter for This Week / Next Month views.
-   * Optionally filters by a subset of property IDs (custom range view picker).
-   * Default sort: timeSlot asc → accommodationName asc.
    */
   async getMine(
     tenantId: string,
     userId: string,
-    opts: { from?: string; to?: string; propertyIds?: string[] } = {},
+    opts: { from?: string; to?: string } = {},
   ) {
     const where: any = {
       tenantId,
@@ -195,14 +175,10 @@ export class CleaningEventsService {
       if (opts.to) where.timeSlot.lte = new Date(opts.to);
     }
 
-    if (opts.propertyIds?.length) {
-      where.propertyId = { in: opts.propertyIds };
-    }
-
     return this.prisma.cleaningEvent.findMany({
       where,
       include: EVENT_INCLUDE,
-      orderBy: [{ timeSlot: 'asc' }, { accommodationName: 'asc' }],
+      orderBy: { timeSlot: 'asc' },
     });
   }
 

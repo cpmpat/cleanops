@@ -35,6 +35,22 @@ function statusAccent(status: string): string {
   return map[status] ?? 'bg-stone-200';
 }
 
+/**
+ * Mine-view colour: distinguish the 4 logical states a cleaner cares about.
+ *   - COMPLETED     → emerald (done)
+ *   - IN_PROGRESS   → blue (currently doing it)
+ *   - future ASSIGNED → amber (upcoming, on track)
+ *   - past, not completed → red (overdue, unfinished)
+ */
+function mineAccent(event: CleaningEvent): string {
+  if (event.status === 'COMPLETED') return 'bg-emerald-500';
+  if (event.status === 'IN_PROGRESS') return 'bg-blue-500';
+
+  const isPast = new Date(event.timeSlot) < new Date();
+  if (isPast) return 'bg-red-500';        // past check-in, not done = overdue
+  return 'bg-amber-400';                  // future, on track
+}
+
 export function CleaningCard({
   event,
   t,
@@ -70,7 +86,7 @@ export function CleaningCard({
         isPast || isCompleted ? 'opacity-70' : ''
       }`}
     >
-      <div className={`h-1 rounded-t-2xl ${statusAccent(event.status)}`} />
+      <div className={`h-1 rounded-t-2xl ${mode === 'mine' ? mineAccent(event) : statusAccent(event.status)}`} />
 
       <div className="p-4">
         {/* Header row */}

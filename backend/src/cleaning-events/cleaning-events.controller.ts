@@ -38,7 +38,8 @@ export class CleaningEventsController {
   @Get('pool')
   @ApiOperation({ summary: 'Get cleanings available to claim (pool)' })
   getPool(@Req() req: TenantRequest) {
-    return this.service.getPool(req.tenantId!);
+    const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
+    return this.service.getPool(req.tenantId!, userId);
   }
 
   @Get('mine')
@@ -49,8 +50,16 @@ export class CleaningEventsController {
     @Req() req: TenantRequest,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('propertyIds') propertyIds?: string,
   ) {
-    return this.service.getMine(req.tenantId!, req.userId!, { from, to });
+    const ids = propertyIds
+      ? propertyIds.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    return this.service.getMine(req.tenantId!, req.userId!, {
+      from,
+      to,
+      propertyIds: ids,
+    });
   }
 
   @Get('stats')
