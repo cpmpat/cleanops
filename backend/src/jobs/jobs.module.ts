@@ -81,7 +81,7 @@ export class OverdueCheckJob {
     // Find events where check-in is within 60 minutes and status is not COMPLETED
     const threshold = new Date(Date.now() + 60 * 60 * 1000);
 
-    const overdueEvents = await this.prisma.cleaningEvent.findMany({
+    const overdueEvents = await this.prisma.cleaning.findMany({
       where: {
         status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
         checkInTime: { lte: threshold },
@@ -157,12 +157,12 @@ export class MorningSummaryJob {
         assignedCleanings: {
           where: {
             status: { in: ['ASSIGNED'] },
-            cleaningEvent: {
+            cleaning: {
               timeSlot: { gte: startOfDay, lte: endOfDay },
               status: { not: 'CANCELLED' },
             },
           },
-          include: { cleaningEvent: { include: { property: true } } },
+          include: { cleaning: { include: { property: true } } },
         },
       },
     });
@@ -171,7 +171,7 @@ export class MorningSummaryJob {
       if (cleaner.assignedCleanings.length === 0) continue;
 
       const eventList = cleaner.assignedCleanings
-        .map(a => `• ${a.cleaningEvent.accommodationName} at ${a.cleaningEvent.timeSlot.toISOString().slice(11, 16)}`)
+        .map(a => `• ${a.cleaning.accommodationName} at ${a.cleaning.timeSlot.toISOString().slice(11, 16)}`)
         .join('\n');
 
       // Create email notification

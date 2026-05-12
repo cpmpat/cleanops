@@ -24,7 +24,7 @@ interface CreateIncidentDto {
   description?: string;
   propertyId?: string | null;
   isGeneral?: boolean;
-  cleaningEventId?: string;
+  cleaningId?: string; bookingId?: string;
   assignedToId?: string;
   scheduledFor?: string;
 }
@@ -46,7 +46,7 @@ interface ListIncidentsDto {
   priority?: IncidentPriority;
   propertyId?: string;
   assignedToId?: string;
-  cleaningEventId?: string;
+  cleaningId?: string; bookingId?: string;
   isGeneral?: string | boolean;
   from?: string;
   to?: string;
@@ -72,7 +72,7 @@ const DETAIL_INCLUDE = {
   reportedBy: { select: { id: true, name: true, email: true } },
   assignedTo: { select: { id: true, name: true, email: true } },
   resolvedBy: { select: { id: true, name: true, email: true } },
-  cleaningEvent: {
+  cleaning: {
     select: {
       id: true,
       accommodationName: true,
@@ -116,12 +116,12 @@ export class IncidentsService {
       if (!prop) throw new NotFoundException('Property not found');
     }
 
-    if (dto.cleaningEventId) {
-      const evt = await this.prisma.cleaningEvent.findFirst({
-        where: { id: dto.cleaningEventId, tenantId },
+    if (dto.cleaningId) {
+      const evt = await this.prisma.cleaning.findFirst({
+        where: { id: dto.cleaningId, tenantId },
         select: { id: true },
       });
-      if (!evt) throw new NotFoundException('Cleaning event not found');
+      if (!evt) throw new NotFoundException('Cleaning not found');
     }
 
     if (dto.assignedToId) {
@@ -142,7 +142,8 @@ export class IncidentsService {
         description: dto.description,
         propertyId: dto.propertyId ?? null,
         isGeneral: dto.isGeneral ?? !dto.propertyId,
-        cleaningEventId: dto.cleaningEventId ?? null,
+        cleaningId: dto.cleaningId ?? null,
+        bookingId: dto.bookingId ?? null,
         reportedById: actor.userId,
         assignedToId: dto.assignedToId ?? null,
         scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : null,
@@ -166,17 +167,17 @@ export class IncidentsService {
     tenantId: string,
     actor: ActorContext,
     params: {
-      cleaningEventId: string;
+      cleaningId: string;
       priority: IncidentPriority;
       note?: string;
       photoUrls?: string[];
     },
   ) {
-    const event = await this.prisma.cleaningEvent.findFirst({
-      where: { id: params.cleaningEventId, tenantId },
+    const event = await this.prisma.cleaning.findFirst({
+      where: { id: params.cleaningId, tenantId },
       include: { property: { select: { id: true, name: true } } },
     });
-    if (!event) throw new NotFoundException('Cleaning event not found');
+    if (!event) throw new NotFoundException('Cleaning not found');
 
     const note = params.note?.trim();
     const title = note
@@ -196,7 +197,8 @@ export class IncidentsService {
           description: note || null,
           propertyId: event.propertyId,
           isGeneral: false,
-          cleaningEventId: event.id,
+          cleaningId: event.id,
+          bookingId: event.bookingId,
           reportedById: actor.userId,
         },
       });
@@ -225,7 +227,7 @@ export class IncidentsService {
       'incident.created_from_cleaning',
       created.id,
       {
-        cleaningEventId: params.cleaningEventId,
+        cleaningId: params.cleaningId,
         accommodationName: event.accommodationName,
         priority: params.priority,
         photoCount: params.photoUrls?.length ?? 0,
@@ -254,7 +256,7 @@ export class IncidentsService {
     if (filters.priority) where.priority = filters.priority;
     if (filters.propertyId) where.propertyId = filters.propertyId;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
-    if (filters.cleaningEventId) where.cleaningEventId = filters.cleaningEventId;
+    if (filters.cleaningId) where.cleaningId = filters.cleaningId;
     if (filters.isGeneral !== undefined) {
       where.isGeneral =
         filters.isGeneral === true || filters.isGeneral === 'true';

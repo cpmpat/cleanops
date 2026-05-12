@@ -29,9 +29,9 @@ export class AssignmentsController {
   @ApiOperation({ summary: 'Assign a cleaner to an event (manager only)' })
   assign(
     @Req() req: TenantRequest,
-    @Body() dto: { eventId: string; userId: string },
+    @Body() dto: { cleaningId: string; userId: string },
   ) {
-    return this.service.assign(req.tenantId!, dto.eventId, dto.userId, req.userId!);
+    return this.service.assign(req.tenantId!, dto.cleaningId, dto.userId, req.userId!);
   }
 
   @Post('reassign')
@@ -40,10 +40,10 @@ export class AssignmentsController {
   @ApiOperation({ summary: 'Reassign event from one cleaner to another (manager only)' })
   reassign(
     @Req() req: TenantRequest,
-    @Body() dto: { eventId: string; oldUserId: string; newUserId: string },
+    @Body() dto: { cleaningId: string; oldUserId: string; newUserId: string },
   ) {
     return this.service.reassign(
-      req.tenantId!, dto.eventId, dto.oldUserId, dto.newUserId, req.userId!,
+      req.tenantId!, dto.cleaningId, dto.oldUserId, dto.newUserId, req.userId!,
     );
   }
 

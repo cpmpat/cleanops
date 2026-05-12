@@ -54,8 +54,8 @@ export class UsersService {
       include: {
         assignedCleanings: {
           where: { status: { in: ['ASSIGNED', 'STARTED'] } },
-          include: { cleaningEvent: true },
-          orderBy: { cleaningEvent: { timeSlot: 'asc' } },
+          include: { cleaning: true },
+          orderBy: { cleaning: { timeSlot: 'asc' } },
         },
       },
     });
@@ -117,13 +117,13 @@ export class UsersService {
       include: {
         assignedCleanings: {
           where: {
-            cleaningEvent: {
+            cleaning: {
               timeSlot: { gte: startOfDay, lte: endOfDay },
               status: { not: 'CANCELLED' },
             },
           },
           include: {
-            cleaningEvent: {
+            cleaning: {
               select: { id: true, status: true, property: true, timeSlot: true, accommodationName: true },
             },
           },

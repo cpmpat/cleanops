@@ -7,7 +7,8 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { PropertiesModule } from './properties/properties.module';
-import { CleaningEventsModule } from './cleaning-events/cleaning-events.module';
+import { BookingsModule } from './bookings/bookings.module';
+import { CleaningsModule } from './cleanings/cleanings.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TagsModule } from './tags/tags.module';
@@ -18,6 +19,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { StaffSyncModule } from './staff-sync/staff-sync.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { StorageModule } from './storage/storage.module';
+import { StreamsModule } from './streams/streams.module';
 
 @Module({
   imports: [
@@ -28,7 +30,8 @@ import { StorageModule } from './storage/storage.module';
     UsersModule,
     TenantsModule,
     PropertiesModule,
-    CleaningEventsModule,
+    BookingsModule,
+    CleaningsModule,
     AssignmentsModule,
     NotificationsModule,
     TagsModule,
@@ -39,6 +42,7 @@ import { StorageModule } from './storage/storage.module';
     StaffSyncModule,
     IncidentsModule,
     StorageModule,
+    StreamsModule,
   ],
 })
 export class AppModule implements NestModule {

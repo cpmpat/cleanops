@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────
-// CleanOps — Prisma Schema
-// Multi-tenant cleaning management platform
-// ─────────────────────────────────────────────
+// CleanOps schema — Booking/Cleaning split version.
+// This replaces the legacy joint CleaningEvent model.
 
 generator client {
   provider      = "prisma-client-js"
@@ -19,26 +17,26 @@ model Tenant {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
-  settings  Json     @default("{}")  // timezone, default language, sync interval, etc.
+  settings  Json     @default("{}")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // PMS configuration per tenant
   pmsProvider    String?
   pmsApiBaseUrl  String?
   pmsApiKey      String?
   pmsLastSyncAt  DateTime?
   pmsSyncEnabled Boolean   @default(true)
 
-  // Relations
-  users           User[]
-  properties      Property[]
-  cleaningEvents  CleaningEvent[]
-  tags            ManagerTag[]
-  notifications   Notification[]
-  auditEvents     AuditEvent[]
-  incidents       Incident[]          // ← ADDED
+  users               User[]
+  properties          Property[]
+  bookings            Booking[]
+  cleanings           Cleaning[]
+  tags                ManagerTag[]
+  notifications       Notification[]
+  auditEvents         AuditEvent[]
+  incidents           Incident[]
+  manualStreamEvents  ManualStreamEvent[]
 
   @@map("tenants")
 }
@@ -68,38 +66,33 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  // ─── GCP cdm_user sync ───
   cdmUserId       String?   @unique
   position        String?
   isSyncManaged   Boolean   @default(true)
   lastSyncedAt    DateTime?
   disabledAt      DateTime?
 
-  // ─── Auth ───
   passwordHash     String?
   emailVerifiedAt  DateTime?
   magicLinkToken   String?   @unique
   magicLinkExpiry  DateTime?
   lastLoginAt      DateTime?
 
-  // ─── Preferences ───
   preferences      Json      @default("{}")
-
-  // Push notification subscription (Web Push)
   pushSubscription Json?
 
-  // Relations
-  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  tenant               Tenant               @relation(fields: [tenantId], references: [id])
   assignedCleanings    CleaningAssignment[] @relation("AssignedCleaner")
   createdAssignments   CleaningAssignment[] @relation("AssignedBy")
   defaultProperties    Property[]           @relation("DefaultCleaner")
   notifications        Notification[]
   sessions             Session[]
   auditEvents          AuditEvent[]
-  reportedIncidents    Incident[]           @relation("IncidentReporter")   // ← ADDED
-  assignedIncidents    Incident[]           @relation("IncidentAssignee")   // ← ADDED
-  resolvedIncidents    Incident[]           @relation("IncidentResolver")   // ← ADDED
-  uploadedAttachments  IncidentAttachment[] @relation("AttachmentUploader") // ← ADDED
+  reportedIncidents    Incident[]           @relation("IncidentReporter")
+  assignedIncidents    Incident[]           @relation("IncidentAssignee")
+  resolvedIncidents    Incident[]           @relation("IncidentResolver")
+  uploadedAttachments  IncidentAttachment[] @relation("AttachmentUploader")
+  manualStreamEvents   ManualStreamEvent[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -148,10 +141,12 @@ model Property {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  defaultCleaner  User?           @relation("DefaultCleaner", fields: [defaultCleanerId], references: [id])
-  cleaningEvents  CleaningEvent[]
-  incidents       Incident[]       // ← ADDED
+  tenant              Tenant              @relation(fields: [tenantId], references: [id])
+  defaultCleaner      User?               @relation("DefaultCleaner", fields: [defaultCleanerId], references: [id])
+  bookings            Booking[]
+  cleanings           Cleaning[]
+  incidents           Incident[]
+  manualStreamEvents  ManualStreamEvent[]
 
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
@@ -159,9 +154,9 @@ model Property {
   @@map("properties")
 }
 
-// ─── CLEANING EVENT ───────────────────────────
+// ─── ENUMS for Booking + Cleaning ─────────────
 
-enum CleaningEventStatus {
+enum CleaningStatus {
   PENDING
   ASSIGNED
   IN_PROGRESS
@@ -185,25 +180,68 @@ enum BookingChannel {
   OTHER
 }
 
-model CleaningEvent {
-  id                String              @id @default(uuid())
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+// ─── BOOKING ──────────────────────────────────
+
+model Booking {
+  id                String         @id @default(uuid())
   tenantId          String
   propertyId        String
-  maxCleaners       Int                 @default(1)
 
+  // PMS identity & ref
   bookingRef        String
   pmsBookingId      String?
+  status            BookingStatus  @default(CONFIRMED)
+  cancelledAt       DateTime?
+
+  // Reservation details
   checkInTime       DateTime
   checkOutTime      DateTime?
   accommodationName String
   accommodationType String?
-  numAdults         Int                 @default(1)
-  numChildren       Int                 @default(0)
-  channel           BookingChannel      @default(OTHER)
+  numAdults         Int            @default(1)
+  numChildren       Int            @default(0)
+  channel           BookingChannel @default(OTHER)
 
-  cleaningType      CleaningType        @default(CHECKOUT)
-  status            CleaningEventStatus @default(PENDING)
+  // PMS sync
+  pmsLastSyncedAt   DateTime?
+  pmsRawData        Json?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  property          Property       @relation(fields: [propertyId], references: [id])
+  cleaning          Cleaning?      // 1:1 (a booking has at most one cleaning)
+  incidents         Incident[]
+
+  @@unique([tenantId, pmsBookingId])
+  @@index([tenantId])
+  @@index([tenantId, checkInTime])
+  @@index([propertyId])
+  @@index([bookingRef])
+  @@map("bookings")
+}
+
+// ─── CLEANING ─────────────────────────────────
+
+model Cleaning {
+  id                String         @id @default(uuid())
+  tenantId          String
+  propertyId        String
+
+  // 1:1 with Booking (cleaning is derived from booking)
+  bookingId         String         @unique
+
+  // Core cleaning fields
+  cleaningType      CleaningType   @default(CHECKOUT)
+  status            CleaningStatus @default(PENDING)
   timeSlot          DateTime
+  maxCleaners       Int            @default(1)
 
   managerNote       String?
   cleanerNote       String?
@@ -213,26 +251,38 @@ model CleaningEvent {
   completedAt       DateTime?
   cancelledAt       DateTime?
 
+  // ─── Denormalized booking fields (kept in sync by booking-sync.service) ───
+  // These mirror Booking columns so cleaning queries don't need a join for the
+  // most common views (mine, pool, planning, schedule).
+  bookingRef        String
+  checkInTime       DateTime
+  checkOutTime      DateTime?
+  accommodationName String
+  numAdults         Int            @default(1)
+  numChildren       Int            @default(0)
+  channel           BookingChannel @default(OTHER)
   pmsLastSyncedAt   DateTime?
-  pmsRawData        Json?
 
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  // Cleaning continues even if booking is cancelled — but UI shows the flag.
+  bookingCancelledAt DateTime?
 
-  tenant            Tenant              @relation(fields: [tenantId], references: [id])
-  property          Property            @relation(fields: [propertyId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id])
+  property          Property             @relation(fields: [propertyId], references: [id])
+  booking           Booking              @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   assignments       CleaningAssignment[]
   photos            CleaningPhoto[]
-  eventTags         CleaningEventTag[]
-  incidents         Incident[]           // ← ADDED
+  tags              CleaningTag[]
+  incidents         Incident[]
 
-  @@unique([tenantId, pmsBookingId])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, timeSlot])
   @@index([tenantId, checkInTime])
   @@index([propertyId])
-  @@index([bookingRef])
-  @@map("cleaning_events")
+  @@map("cleanings")
 }
 
 // ─── CLEANING ASSIGNMENT ──────────────────────
@@ -247,7 +297,7 @@ enum AssignmentStatus {
 
 model CleaningAssignment {
   id               String           @id @default(uuid())
-  cleaningEventId  String
+  cleaningId       String
   userId           String
   assignedById     String?
   isPrimary        Boolean          @default(false)
@@ -258,31 +308,31 @@ model CleaningAssignment {
   completedAt      DateTime?
   assignedAt       DateTime         @default(now())
 
-  cleaningEvent    CleaningEvent    @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
+  cleaning         Cleaning         @relation(fields: [cleaningId], references: [id], onDelete: Cascade)
   user             User             @relation("AssignedCleaner", fields: [userId], references: [id])
   assignedBy       User?            @relation("AssignedBy", fields: [assignedById], references: [id])
   photos           CleaningPhoto[]
 
-  @@index([cleaningEventId])
+  @@index([cleaningId])
   @@index([userId])
   @@index([userId, status])
   @@map("cleaning_assignments")
 }
 
-// ─── PHOTOS ───────────────────────────────────
+// ─── CLEANING PHOTOS ──────────────────────────
 
 model CleaningPhoto {
   id                    String              @id @default(uuid())
-  cleaningEventId       String
+  cleaningId            String
   cleaningAssignmentId  String?
   url                   String
   caption               String?
   uploadedAt            DateTime            @default(now())
 
-  cleaningEvent         CleaningEvent       @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
+  cleaning              Cleaning            @relation(fields: [cleaningId], references: [id], onDelete: Cascade)
   cleaningAssignment    CleaningAssignment? @relation(fields: [cleaningAssignmentId], references: [id])
 
-  @@index([cleaningEventId])
+  @@index([cleaningId])
   @@map("cleaning_photos")
 }
 
@@ -295,25 +345,25 @@ model ManagerTag {
   color     String   @default("#6b7280")
   createdAt DateTime @default(now())
 
-  tenant    Tenant            @relation(fields: [tenantId], references: [id])
-  events    CleaningEventTag[]
+  tenant    Tenant         @relation(fields: [tenantId], references: [id])
+  cleanings CleaningTag[]
 
   @@unique([tenantId, label])
   @@index([tenantId])
   @@map("manager_tags")
 }
 
-model CleaningEventTag {
-  id              String        @id @default(uuid())
-  cleaningEventId String
-  tagId           String
-  createdAt       DateTime      @default(now())
+model CleaningTag {
+  id          String     @id @default(uuid())
+  cleaningId  String
+  tagId       String
+  createdAt   DateTime   @default(now())
 
-  cleaningEvent   CleaningEvent @relation(fields: [cleaningEventId], references: [id], onDelete: Cascade)
-  tag             ManagerTag    @relation(fields: [tagId], references: [id])
+  cleaning    Cleaning   @relation(fields: [cleaningId], references: [id], onDelete: Cascade)
+  tag         ManagerTag @relation(fields: [tagId], references: [id])
 
-  @@unique([cleaningEventId, tagId])
-  @@map("cleaning_event_tags")
+  @@unique([cleaningId, tagId])
+  @@map("cleaning_tags")
 }
 
 // ─── NOTIFICATIONS ────────────────────────────
@@ -342,53 +392,51 @@ model Notification {
   channel   NotificationChannel
   title     String
   body      String
-  payload   Json?
-  sentAt    DateTime            @default(now())
+  payload   Json                @default("{}")
   readAt    DateTime?
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
 
-  tenant    Tenant              @relation(fields: [tenantId], references: [id])
-  user      User                @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   @@index([userId, readAt])
-  @@index([tenantId])
+  @@index([tenantId, createdAt])
   @@map("notifications")
 }
 
-// ─── AUDIT EVENT ──────────────────────────────
+// ─── AUDIT ────────────────────────────────────
 
 enum AuditCategory {
   CLEANING_LIFECYCLE
+  ASSIGNMENT_LIFECYCLE
+  AUTH
+  PMS_SYNC
   INCIDENT_LIFECYCLE
-  USER_LIFECYCLE
-  SYNC
   SYSTEM
 }
 
 model AuditEvent {
-  id         String        @id @default(uuid())
-  tenantId   String
-  category   AuditCategory
-  action     String
+  id          String        @id @default(uuid())
+  tenantId    String
+  category    AuditCategory
+  action      String
+  actorId     String?
+  actorEmail  String?
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
 
-  actorId    String?
-  actorEmail String?
-
-  targetType String
-  targetId   String?
-
-  metadata   Json          @default("{}")
-  createdAt  DateTime      @default(now())
-
-  tenant     Tenant        @relation(fields: [tenantId], references: [id])
-  actor      User?         @relation(fields: [actorId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  actor  User?  @relation(fields: [actorId], references: [id])
 
   @@index([tenantId, createdAt])
   @@index([tenantId, category, createdAt])
-  @@index([targetType, targetId])
   @@map("audit_events")
 }
 
-// ─── INCIDENTS ────────────────────────────────
+// ─── INCIDENT ─────────────────────────────────
 
 enum IncidentType {
   CLEANING
@@ -420,45 +468,46 @@ model Incident {
   status          IncidentStatus   @default(OPEN)
   priority        IncidentPriority @default(MEDIUM)
 
-  // Context
+  // Context — incident can link to a booking, a cleaning, neither, or both.
+  // "isGeneral=true" overrides; otherwise propertyId/bookingId/cleaningId give
+  // increasingly specific context.
   propertyId      String?
   isGeneral       Boolean          @default(false)
-  cleaningEventId String?
+  bookingId       String?
+  cleaningId      String?
 
-  // Content
   title           String
   description     String?
 
-  // People
   reportedById    String?
   assignedToId    String?
   resolvedById    String?
 
-  // Scheduling & resolution
   scheduledFor    DateTime?
   resolvedAt      DateTime?
   resolutionNote  String?
 
-  // Future hooks (columns only, no logic yet)
   pmsBlockId      String?
   guestNotifiedAt DateTime?
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  tenant          Tenant               @relation(fields: [tenantId], references: [id])
-  property        Property?            @relation(fields: [propertyId], references: [id])
-  cleaningEvent   CleaningEvent?       @relation(fields: [cleaningEventId], references: [id])
-  reportedBy      User?                @relation("IncidentReporter",  fields: [reportedById],  references: [id])
-  assignedTo      User?                @relation("IncidentAssignee",  fields: [assignedToId],  references: [id])
-  resolvedBy      User?                @relation("IncidentResolver",  fields: [resolvedById],  references: [id])
-  attachments     IncidentAttachment[]
+  tenant       Tenant                @relation(fields: [tenantId], references: [id])
+  property     Property?             @relation(fields: [propertyId], references: [id])
+  booking      Booking?              @relation(fields: [bookingId],  references: [id])
+  cleaning     Cleaning?             @relation(fields: [cleaningId], references: [id])
+  reportedBy   User?                 @relation("IncidentReporter", fields: [reportedById], references: [id])
+  assignedTo   User?                 @relation("IncidentAssignee", fields: [assignedToId], references: [id])
+  resolvedBy   User?                 @relation("IncidentResolver", fields: [resolvedById], references: [id])
+  attachments  IncidentAttachment[]
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, type, createdAt])
   @@index([propertyId])
-  @@index([cleaningEventId])
+  @@index([bookingId])
+  @@index([cleaningId])
   @@index([assignedToId])
   @@index([reportedById])
   @@map("incidents")
@@ -472,9 +521,44 @@ model IncidentAttachment {
   uploadedById String?
   createdAt    DateTime @default(now())
 
-  incident     Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
-  uploadedBy   User?    @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("AttachmentUploader", fields: [uploadedById], references: [id])
 
   @@index([incidentId])
   @@map("incident_attachments")
+}
+
+// ─── MANUAL STREAM EVENTS (Phase D-1) ─────────
+
+enum StreamEventCategory {
+  MANUAL
+  NOTE
+  REPAIR
+  INSPECTION
+}
+
+model ManualStreamEvent {
+  id           String              @id @default(uuid())
+  tenantId     String
+  propertyId   String?
+  authorId     String
+
+  category     StreamEventCategory @default(MANUAL)
+  title        String
+  description  String?
+
+  photoUrls    String[]            @default([])
+  occurredAt   DateTime            @default(now())
+
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  property     Property?           @relation(fields: [propertyId], references: [id])
+  author       User                @relation(fields: [authorId], references: [id])
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, propertyId, occurredAt])
+  @@index([tenantId, category, occurredAt])
+  @@map("manual_stream_events")
 }

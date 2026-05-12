@@ -4,7 +4,7 @@ import {
   PmsBooking, PmsAccommodation, PmsTenantConfig,
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
-import { BookingChannel, CleaningEventStatus, AssignmentStatus } from '@prisma/client';
+import { BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
 
 export interface SyncResult {
@@ -17,7 +17,7 @@ export interface PlanningFilters {
   arrivalTo?: string;        // filters by checkInTime <=
   creationDateFrom?: string; // filters by event createdAt >=
   creationDateTo?: string;   // filters by event createdAt <=
-  status?: string;           // CleaningEventStatus value
+  status?: string;           // CleaningStatus value
 }
 
 @Injectable()
@@ -100,35 +100,42 @@ export class BookingSyncService {
 
     if (filters.status) where.status = filters.status;
 
-    const events = await this.prisma.cleaningEvent.findMany({
+    const bookings = await this.prisma.booking.findMany({
       where,
       include: {
         property: { select: { id: true, name: true, pmsPropertyId: true } },
-        assignments: {
-          where: { status: { not: AssignmentStatus.REASSIGNED } },
-          include: { user: { select: { id: true, name: true } } },
-          orderBy: { isPrimary: 'desc' },
+        cleaning: {
+          include: {
+            assignments: {
+              where: { status: { not: AssignmentStatus.REASSIGNED } },
+              include: { user: { select: { id: true, name: true } } },
+              orderBy: { isPrimary: 'desc' },
+            },
+          },
         },
       },
       orderBy: { checkInTime: 'asc' },
     });
 
-    return events.map(e => ({
-      id: e.id,
-      pmsBookingId: e.pmsBookingId,
-      bookingRef: e.bookingRef,
-      accommodationName: e.accommodationName,
-      accommodationType: e.accommodationType,
-      propertyId: e.propertyId,
-      pmsPropertyId: (e.property as any)?.pmsPropertyId,
-      checkInTime: e.checkInTime,
-      checkOutTime: e.checkOutTime,
-      timeSlot: e.timeSlot,
-      numAdults: e.numAdults,
-      numChildren: e.numChildren,
-      channel: e.channel,
-      status: e.status,
-      assignments: e.assignments.map((a: any) => ({
+    return bookings.map(b => ({
+      id: b.id,
+      cleaningId: b.cleaning?.id,
+      pmsBookingId: b.pmsBookingId,
+      bookingRef: b.bookingRef,
+      accommodationName: b.accommodationName,
+      accommodationType: b.accommodationType,
+      propertyId: b.propertyId,
+      pmsPropertyId: (b.property as any)?.pmsPropertyId,
+      checkInTime: b.checkInTime,
+      checkOutTime: b.checkOutTime,
+      timeSlot: b.cleaning?.timeSlot,
+      numAdults: b.numAdults,
+      numChildren: b.numChildren,
+      channel: b.channel,
+      status: b.cleaning?.status,
+      bookingStatus: b.status,
+      bookingCancelledAt: b.cancelledAt,
+      assignments: (b.cleaning?.assignments ?? []).map((a: any) => ({
         id: a.id,
         userId: a.userId,
         userName: a.user.name,
@@ -161,7 +168,7 @@ export class BookingSyncService {
     tenantId: string,
     pmsBookingId: string,
     data: { checkInTime?: string; checkOutTime?: string },
-  ): Promise<{ success: boolean; eventId?: string }> {
+  ): Promise<{ success: boolean; bookingId?: string; cleaningId?: string }> {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) {
       throw new Error('PMS not configured for this tenant');
@@ -174,41 +181,57 @@ export class BookingSyncService {
     await adapter.updateBookingTimes(pmsBookingId, data, config);
     this.logger.log(`Planning: pushed updated times for booking ${pmsBookingId} to Avantio`);
 
-    // Step 2: update local cleaning event
-    const event = await this.prisma.cleaningEvent.findFirst({
+    // Step 2: update local Booking + propagate to Cleaning
+    const b = await this.prisma.booking.findFirst({
       where: { tenantId, pmsBookingId },
-      include: { assignments: true },
-    });
-
-    if (!event) {
-      // No local event yet — next sync will create it with the correct times
-      return { success: true };
-    }
-
-    await this.prisma.cleaningEvent.update({
-      where: { id: event.id },
-      data: {
-        ...(data.checkInTime && { checkInTime: new Date(data.checkInTime) }),
-        ...(data.checkOutTime && { checkOutTime: new Date(data.checkOutTime) }),
-        pmsLastSyncedAt: new Date(),
+      include: {
+        cleaning: { include: { assignments: true } },
       },
     });
 
+    if (!b) {
+      // No local booking yet — next sync will create it with the correct times
+      return { success: true };
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: b.id },
+        data: {
+          ...(data.checkInTime && { checkInTime: new Date(data.checkInTime) }),
+          ...(data.checkOutTime && { checkOutTime: new Date(data.checkOutTime) }),
+          pmsLastSyncedAt: now,
+        },
+      });
+
+      if (b.cleaning) {
+        await tx.cleaning.update({
+          where: { id: b.cleaning.id },
+          data: {
+            ...(data.checkInTime && { checkInTime: new Date(data.checkInTime) }),
+            ...(data.checkOutTime && { checkOutTime: new Date(data.checkOutTime) }),
+            pmsLastSyncedAt: now,
+          },
+        });
+      }
+    });
+
     // Step 3: notify assigned cleaners
-    for (const assignment of event.assignments) {
-      if (['ASSIGNED', 'STARTED'].includes(assignment.status)) {
-        await this.createNotification(
-          tenantId,
-          assignment.userId,
-          'BOOKING_MODIFIED',
-          'Check-in Time Updated',
-          `The check-in time for ${event.accommodationName} has been updated. Please review your schedule.`,
-          event.id,
-        );
+    if (b.cleaning?.assignments) {
+      for (const a of b.cleaning.assignments) {
+        if (['ASSIGNED', 'STARTED'].includes(a.status)) {
+          await this.createNotification(
+            tenantId, a.userId, 'BOOKING_MODIFIED',
+            'Check-in Time Updated',
+            `The check-in time for ${b.accommodationName} has been updated. Please review your schedule.`,
+            b.cleaning.id,
+          );
+        }
       }
     }
 
-    return { success: true, eventId: event.id };
+    return { success: true, bookingId: b.id, cleaningId: b.cleaning?.id };
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -365,17 +388,19 @@ export class BookingSyncService {
       return this.handleCancellation(tenantId, booking);
     }
 
-    // ── Resolve property from local DB (synced from accommodations) ──
+    // ── Resolve property from local DB ──
     const property = await this.resolveProperty(tenantId, booking, adapter, config);
 
-    // Check if event already exists
-    const existing = await this.prisma.cleaningEvent.findFirst({
+    // ── Check if Booking already exists ──
+    const existing = await this.prisma.booking.findFirst({
       where: { tenantId, pmsBookingId: booking.pmsBookingId },
-      include: { assignments: true },
+      include: {
+        cleaning: { include: { assignments: true } },
+      },
     });
 
     if (existing) {
-      // Update PMS-owned fields only
+      // Update PMS-owned fields on Booking + propagate denormalized to Cleaning
       const hasChanges =
         existing.checkInTime.toISOString() !== new Date(booking.checkInTime).toISOString() ||
         (booking.checkOutTime && existing.checkOutTime?.toISOString() !== new Date(booking.checkOutTime).toISOString()) ||
@@ -384,27 +409,52 @@ export class BookingSyncService {
         existing.accommodationName !== property.name;
 
       if (hasChanges) {
-        await this.prisma.cleaningEvent.update({
-          where: { id: existing.id },
-          data: {
-            checkInTime: new Date(booking.checkInTime),
-            checkOutTime: booking.checkOutTime ? new Date(booking.checkOutTime) : undefined,
-            accommodationName: property.name,
-            accommodationType: property.accommodationType,
-            numAdults: booking.numAdults,
-            numChildren: booking.numChildren,
-            channel: this.mapChannel(booking.channel),
-            pmsLastSyncedAt: new Date(),
-            pmsRawData: booking.rawData,
-          },
+        const now = new Date();
+        const checkIn = new Date(booking.checkInTime);
+        const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
+
+        await this.prisma.$transaction(async (tx) => {
+          await tx.booking.update({
+            where: { id: existing.id },
+            data: {
+              checkInTime: checkIn,
+              checkOutTime: checkOut,
+              accommodationName: property.name,
+              accommodationType: property.accommodationType,
+              numAdults: booking.numAdults,
+              numChildren: booking.numChildren,
+              channel: this.mapChannel(booking.channel),
+              pmsLastSyncedAt: now,
+              pmsRawData: booking.rawData,
+            },
+          });
+
+          if (existing.cleaning) {
+            await tx.cleaning.update({
+              where: { id: existing.cleaning.id },
+              data: {
+                bookingRef: booking.bookingRef,
+                checkInTime: checkIn,
+                checkOutTime: checkOut,
+                accommodationName: property.name,
+                numAdults: booking.numAdults,
+                numChildren: booking.numChildren,
+                channel: this.mapChannel(booking.channel),
+                pmsLastSyncedAt: now,
+              },
+            });
+          }
         });
 
-        // Notify assigned cleaners of changes
-        if (existing.assignments.length > 0) {
-          for (const assignment of existing.assignments) {
-            if (['ASSIGNED', 'STARTED'].includes(assignment.status)) {
-              await this.createNotification(tenantId, assignment.userId, 'BOOKING_MODIFIED',
-                'Booking Updated', `Details changed for ${property.name}.`, existing.id);
+        // Notify assigned cleaners
+        if (existing.cleaning?.assignments?.length) {
+          for (const a of existing.cleaning.assignments) {
+            if (['ASSIGNED', 'STARTED'].includes(a.status)) {
+              await this.createNotification(
+                tenantId, a.userId, 'BOOKING_MODIFIED',
+                'Booking Updated', `Details changed for ${property.name}.`,
+                existing.cleaning.id,
+              );
             }
           }
         }
@@ -415,49 +465,83 @@ export class BookingSyncService {
       return 'skipped';
     }
 
-    // ── Create new cleaning event ──
-    const event = await this.prisma.cleaningEvent.create({
-      data: {
-        tenantId,
-        propertyId: property.id,
-        bookingRef: booking.bookingRef,
-        pmsBookingId: booking.pmsBookingId,
-        checkInTime: new Date(booking.checkInTime),
-        checkOutTime: booking.checkOutTime ? new Date(booking.checkOutTime) : null,
-        accommodationName: property.name,
-        accommodationType: property.accommodationType,
-        numAdults: booking.numAdults,
-        numChildren: booking.numChildren,
-        channel: this.mapChannel(booking.channel),
-        cleaningType: 'CHECKOUT',
-        status: 'PENDING',
-        // Default time slot: checkout time or 3h before check-in
-        timeSlot: booking.checkOutTime
-          ? new Date(booking.checkOutTime)
-          : new Date(new Date(booking.checkInTime).getTime() - 3 * 60 * 60 * 1000),
-        pmsLastSyncedAt: new Date(),
-        pmsRawData: booking.rawData,
-      },
-    });
+    // ── Create new Booking + linked Cleaning in a single transaction ──
+    const checkIn = new Date(booking.checkInTime);
+    const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
+    const syncedAt = new Date();
 
-    // Auto-assign if property has a default cleaner
-    if (property.defaultCleanerId) {
-      await this.prisma.cleaningAssignment.create({
+    const created = await this.prisma.$transaction(async (tx) => {
+      const newBooking = await tx.booking.create({
         data: {
-          cleaningEventId: event.id,
-          userId: property.defaultCleanerId,
-          isPrimary: true,
-          status: 'ASSIGNED',
+          tenantId,
+          propertyId: property.id,
+          bookingRef: booking.bookingRef,
+          pmsBookingId: booking.pmsBookingId,
+          status: BookingStatus.CONFIRMED,
+          checkInTime: checkIn,
+          checkOutTime: checkOut,
+          accommodationName: property.name,
+          accommodationType: property.accommodationType,
+          numAdults: booking.numAdults,
+          numChildren: booking.numChildren,
+          channel: this.mapChannel(booking.channel),
+          pmsLastSyncedAt: syncedAt,
+          pmsRawData: booking.rawData,
         },
       });
 
-      await this.prisma.cleaningEvent.update({
-        where: { id: event.id },
-        data: { status: 'ASSIGNED' },
+      // Default timeSlot: check-out time (when guests leave) or 3h before check-in
+      const defaultTimeSlot = checkOut
+        ? checkOut
+        : new Date(checkIn.getTime() - 3 * 60 * 60 * 1000);
+
+      const newCleaning = await tx.cleaning.create({
+        data: {
+          tenantId,
+          propertyId: property.id,
+          bookingId: newBooking.id,
+          cleaningType: 'CHECKOUT',
+          status: CleaningStatus.PENDING,
+          timeSlot: defaultTimeSlot,
+          maxCleaners: 1,
+          // Denormalized booking fields
+          bookingRef: booking.bookingRef,
+          checkInTime: checkIn,
+          checkOutTime: checkOut,
+          accommodationName: property.name,
+          numAdults: booking.numAdults,
+          numChildren: booking.numChildren,
+          channel: this.mapChannel(booking.channel),
+          pmsLastSyncedAt: syncedAt,
+        },
       });
 
-      await this.createNotification(tenantId, property.defaultCleanerId, 'NEW_ASSIGNMENT',
-        'New Cleaning', `New cleaning assigned: ${property.name}`, event.id);
+      // Auto-assign if property has a default cleaner
+      if (property.defaultCleanerId) {
+        await tx.cleaningAssignment.create({
+          data: {
+            cleaningId: newCleaning.id,
+            userId: property.defaultCleanerId,
+            isPrimary: true,
+            status: AssignmentStatus.ASSIGNED,
+          },
+        });
+        await tx.cleaning.update({
+          where: { id: newCleaning.id },
+          data: { status: CleaningStatus.ASSIGNED },
+        });
+      }
+
+      return { booking: newBooking, cleaning: newCleaning };
+    });
+
+    // Out-of-transaction notification
+    if (property.defaultCleanerId) {
+      await this.createNotification(
+        tenantId, property.defaultCleanerId, 'NEW_ASSIGNMENT',
+        'New Cleaning', `New cleaning assigned: ${property.name}`,
+        created.cleaning.id,
+      );
     }
 
     return 'created';
@@ -554,32 +638,71 @@ export class BookingSyncService {
 
   /**
    * Handle a cancelled booking.
+   * Booking → status=CANCELLED.
+   * Cleaning → bookingCancelledAt set, but cleaning itself NOT cancelled
+   * (the unit may still need cleaning after a no-show/cancellation).
+   * Assigned cleaners are notified informally so they know the context changed.
    */
   private async handleCancellation(
     tenantId: string,
     booking: PmsBooking,
   ): Promise<'cancelled' | 'skipped'> {
-    const existing = await this.prisma.cleaningEvent.findFirst({
+    const existing = await this.prisma.booking.findFirst({
       where: { tenantId, pmsBookingId: booking.pmsBookingId },
-      include: { assignments: true },
+      include: {
+        cleaning: { include: { assignments: true } },
+      },
     });
 
-    if (!existing || existing.status === CleaningEventStatus.CANCELLED) return 'skipped';
+    if (!existing || existing.status === BookingStatus.CANCELLED) return 'skipped';
 
-    await this.prisma.cleaningEvent.update({
-      where: { id: existing.id },
-      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: existing.id },
+        data: { status: BookingStatus.CANCELLED, cancelledAt: now },
+      });
+
+      if (existing.cleaning) {
+        await tx.cleaning.update({
+          where: { id: existing.cleaning.id },
+          data: { bookingCancelledAt: now },
+        });
+      }
+
+      // Audit trail: record the status flip from PMS sync
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: 'PMS_SYNC' as any,
+          action: 'booking.cancelled_via_sync',
+          actorId: null,
+          actorEmail: 'avantio-sync@cleanops',
+          targetType: 'Booking',
+          targetId: existing.id,
+          metadata: {
+            pmsBookingId: booking.pmsBookingId,
+            bookingRef: existing.bookingRef,
+            accommodationName: existing.accommodationName,
+            cleaningId: existing.cleaning?.id ?? null,
+            cleaningStatus: existing.cleaning?.status ?? null,
+            previousStatus: 'CONFIRMED',
+          } as any,
+        },
+      });
     });
 
-    await this.prisma.cleaningAssignment.updateMany({
-      where: { cleaningEventId: existing.id, status: { in: ['ASSIGNED', 'STARTED'] } },
-      data: { status: 'REASSIGNED' },
-    });
-
-    for (const assignment of existing.assignments) {
-      if (['ASSIGNED', 'STARTED'].includes(assignment.status)) {
-        await this.createNotification(tenantId, assignment.userId, 'CANCELLATION',
-          'Cleaning Cancelled', `Cleaning for ${existing.accommodationName} was cancelled.`, existing.id);
+    if (existing.cleaning?.assignments?.length) {
+      for (const a of existing.cleaning.assignments) {
+        if (['ASSIGNED', 'STARTED'].includes(a.status)) {
+          await this.createNotification(
+            tenantId, a.userId, 'CANCELLATION',
+            'Booking Cancelled',
+            `The booking for ${existing.accommodationName} was cancelled. ` +
+            `The cleaning is still scheduled \u2014 check with the manager.`,
+            existing.cleaning.id,
+          );
+        }
       }
     }
 
@@ -589,11 +712,11 @@ export class BookingSyncService {
   /**
    * Push updated check-in/check-out times to Avantio.
    */
-  async pushTimesToPms(tenantId: string, eventId: string) {
-    const event = await this.prisma.cleaningEvent.findFirst({
-      where: { id: eventId, tenantId },
+  async pushTimesToPms(tenantId: string, bookingId: string) {
+    const b = await this.prisma.booking.findFirst({
+      where: { id: bookingId, tenantId },
     });
-    if (!event?.pmsBookingId) return;
+    if (!b?.pmsBookingId) return;
 
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) return;
@@ -604,9 +727,9 @@ export class BookingSyncService {
     };
 
     const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
-    await adapter.updateBookingTimes(event.pmsBookingId, {
-      checkInTime: event.checkInTime.toISOString(),
-      checkOutTime: event.checkOutTime?.toISOString(),
+    await adapter.updateBookingTimes(b.pmsBookingId, {
+      checkInTime: b.checkInTime.toISOString(),
+      checkOutTime: b.checkOutTime?.toISOString(),
     }, config);
   }
 

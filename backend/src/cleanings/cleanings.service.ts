@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import {
-  CleaningEventStatus,
+  CleaningStatus,
   CleaningType,
   BookingChannel,
   AssignmentStatus,
@@ -17,24 +17,7 @@ import {
 import { CleanOpsGateway } from '../websocket/websocket.module';
 import { IncidentsService } from '../incidents/incidents.service';
 
-interface CreateEventDto {
-  propertyId: string;
-  bookingRef: string;
-  pmsBookingId?: string;
-  checkInTime: string;
-  checkOutTime?: string;
-  accommodationName: string;
-  numAdults?: number;
-  numChildren?: number;
-  channel?: BookingChannel;
-  cleaningType?: CleaningType;
-  timeSlot: string;
-  managerNote?: string;
-  maxCleaners?: number;
-}
-
-interface UpdateEventDto {
-  checkInTime?: string;
+interface UpdateCleaningDto {
   timeSlot?: string;
   cleaningType?: CleaningType;
   managerNote?: string;
@@ -58,7 +41,7 @@ const ACTIVE_STATUSES: AssignmentStatus[] = [
 /** Minimum hours before timeSlot during which drop is allowed. */
 const DROP_CUTOFF_HOURS = 12;
 
-// Full include for event detail queries
+// Full include for cleaning detail queries
 const EVENT_INCLUDE = {
   property: {
     select: {
@@ -69,6 +52,15 @@ const EVENT_INCLUDE = {
       locationLng: true,
     },
   },
+  booking: {
+    select: {
+      id: true,
+      bookingRef: true,
+      pmsBookingId: true,
+      status: true,
+      cancelledAt: true,
+    },
+  },
   assignments: {
     include: {
       user: { select: { id: true, name: true, email: true } },
@@ -77,12 +69,12 @@ const EVENT_INCLUDE = {
     },
     orderBy: { assignedAt: 'asc' as const },
   },
-  eventTags: { include: { tag: true } },
+  tags: { include: { tag: true } },
   photos: true,
 };
 
 @Injectable()
-export class CleaningEventsService {
+export class CleaningsService {
   constructor(
     private prisma: PrismaService,
     private gateway: CleanOpsGateway,
@@ -98,7 +90,7 @@ export class CleaningEventsService {
     const where: any = {
       tenantId,
       timeSlot: { gte: startOfDay, lte: endOfDay },
-      status: { not: CleaningEventStatus.CANCELLED },
+      status: { not: CleaningStatus.CANCELLED },
     };
 
     if (userId) {
@@ -110,7 +102,7 @@ export class CleaningEventsService {
       };
     }
 
-    return this.prisma.cleaningEvent.findMany({
+    return this.prisma.cleaning.findMany({
       where,
       include: EVENT_INCLUDE,
       orderBy: { timeSlot: 'asc' },
@@ -118,7 +110,7 @@ export class CleaningEventsService {
   }
 
   async findByDateRange(tenantId: string, from: string, to: string) {
-    return this.prisma.cleaningEvent.findMany({
+    return this.prisma.cleaning.findMany({
       where: {
         tenantId,
         timeSlot: { gte: new Date(from), lte: new Date(to) },
@@ -128,12 +120,12 @@ export class CleaningEventsService {
     });
   }
 
-  async findById(tenantId: string, eventId: string) {
-    const event = await this.prisma.cleaningEvent.findFirst({
-      where: { id: eventId, tenantId },
+  async findById(tenantId: string, cleaningId: string) {
+    const event = await this.prisma.cleaning.findFirst({
+      where: { id: cleaningId, tenantId },
       include: EVENT_INCLUDE,
     });
-    if (!event) throw new NotFoundException('Cleaning event not found');
+    if (!event) throw new NotFoundException('Cleaning not found');
     return event;
   }
 
@@ -148,7 +140,7 @@ export class CleaningEventsService {
     const now = new Date();
     const where: any = {
       tenantId,
-      status: CleaningEventStatus.PENDING,
+      status: CleaningStatus.PENDING,
       timeSlot: { gte: now },
     };
 
@@ -165,7 +157,7 @@ export class CleaningEventsService {
       where.propertyId = { in: propertyIds };
     }
 
-    return this.prisma.cleaningEvent.findMany({
+    return this.prisma.cleaning.findMany({
       where,
       include: EVENT_INCLUDE,
       orderBy: [{ timeSlot: 'asc' }, { accommodationName: 'asc' }],
@@ -203,7 +195,7 @@ export class CleaningEventsService {
       where.propertyId = { in: opts.propertyIds };
     }
 
-    return this.prisma.cleaningEvent.findMany({
+    return this.prisma.cleaning.findMany({
       where,
       include: EVENT_INCLUDE,
       orderBy: [{ timeSlot: 'asc' }, { accommodationName: 'asc' }],
@@ -215,35 +207,35 @@ export class CleaningEventsService {
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
 
     const [total, completed, pending, inProgress, overdue] = await Promise.all([
-      this.prisma.cleaningEvent.count({
+      this.prisma.cleaning.count({
         where: {
           tenantId,
           timeSlot: { gte: startOfDay, lte: endOfDay },
           status: { not: 'CANCELLED' },
         },
       }),
-      this.prisma.cleaningEvent.count({
+      this.prisma.cleaning.count({
         where: {
           tenantId,
           timeSlot: { gte: startOfDay, lte: endOfDay },
           status: 'COMPLETED',
         },
       }),
-      this.prisma.cleaningEvent.count({
+      this.prisma.cleaning.count({
         where: {
           tenantId,
           timeSlot: { gte: startOfDay, lte: endOfDay },
           status: 'PENDING',
         },
       }),
-      this.prisma.cleaningEvent.count({
+      this.prisma.cleaning.count({
         where: {
           tenantId,
           timeSlot: { gte: startOfDay, lte: endOfDay },
           status: 'IN_PROGRESS',
         },
       }),
-      this.prisma.cleaningEvent.count({
+      this.prisma.cleaning.count({
         where: {
           tenantId,
           timeSlot: { gte: startOfDay, lte: endOfDay },
@@ -258,31 +250,12 @@ export class CleaningEventsService {
 
   // ─── MUTATIONS ─────────────────────────────────────────────
 
-  async create(tenantId: string, dto: CreateEventDto) {
-    return this.prisma.cleaningEvent.create({
-      data: {
-        tenantId,
-        propertyId: dto.propertyId,
-        bookingRef: dto.bookingRef,
-        pmsBookingId: dto.pmsBookingId,
-        checkInTime: new Date(dto.checkInTime),
-        checkOutTime: dto.checkOutTime ? new Date(dto.checkOutTime) : null,
-        accommodationName: dto.accommodationName,
-        numAdults: dto.numAdults || 1,
-        numChildren: dto.numChildren || 0,
-        channel: dto.channel || BookingChannel.OTHER,
-        cleaningType: dto.cleaningType || CleaningType.CHECKOUT,
-        timeSlot: new Date(dto.timeSlot),
-        managerNote: dto.managerNote,
-        maxCleaners: dto.maxCleaners ?? 1,
-        status: CleaningEventStatus.PENDING,
-      },
-      include: EVENT_INCLUDE,
-    });
-  }
+  // create() removed — Cleanings are only created by the Avantio sync as
+  // 1:1 derivations of Bookings. Manager cannot manually create a Cleaning
+  // without a Booking. See bookings.service for booking edits that propagate.
 
-  async update(tenantId: string, eventId: string, dto: UpdateEventDto) {
-    const existing = await this.findById(tenantId, eventId);
+  async update(tenantId: string, cleaningId: string, dto: UpdateCleaningDto) {
+    const existing = await this.findById(tenantId, cleaningId);
 
     // If maxCleaners is being reduced, make sure it's not below current active count
     if (dto.maxCleaners !== undefined) {
@@ -299,10 +272,9 @@ export class CleaningEventsService {
       }
     }
 
-    const updated = await this.prisma.cleaningEvent.update({
-      where: { id: eventId },
+    const updated = await this.prisma.cleaning.update({
+      where: { id: cleaningId },
       data: {
-        ...(dto.checkInTime && { checkInTime: new Date(dto.checkInTime) }),
         ...(dto.timeSlot && { timeSlot: new Date(dto.timeSlot) }),
         ...(dto.cleaningType && { cleaningType: dto.cleaningType }),
         ...(dto.managerNote !== undefined && { managerNote: dto.managerNote }),
@@ -312,14 +284,11 @@ export class CleaningEventsService {
       include: EVENT_INCLUDE,
     });
 
-    const checkInChanged =
-      dto.checkInTime &&
-      new Date(dto.checkInTime).toISOString() !== existing.checkInTime.toISOString();
     const timeSlotChanged =
       dto.timeSlot &&
       new Date(dto.timeSlot).toISOString() !== existing.timeSlot.toISOString();
 
-    if (checkInChanged || timeSlotChanged) {
+    if (timeSlotChanged) {
       const activeAssignments = existing.assignments.filter((a) =>
         ['ASSIGNED', 'STARTED'].includes(a.status as string),
       );
@@ -332,7 +301,7 @@ export class CleaningEventsService {
             channel: 'IN_APP',
             title: 'Schedule Updated',
             body: `Time updated for ${existing.accommodationName}. Please check your new schedule.`,
-            payload: { eventId },
+            payload: { cleaningId },
           },
         });
       }
@@ -342,17 +311,17 @@ export class CleaningEventsService {
     return updated;
   }
 
-  async cancel(tenantId: string, eventId: string) {
-    const event = await this.findById(tenantId, eventId);
-    if (event.status === CleaningEventStatus.COMPLETED) {
+  async cancel(tenantId: string, cleaningId: string) {
+    const event = await this.findById(tenantId, cleaningId);
+    if (event.status === CleaningStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel a completed event');
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const ev = await tx.cleaningEvent.update({
-        where: { id: eventId },
+      const ev = await tx.cleaning.update({
+        where: { id: cleaningId },
         data: {
-          status: CleaningEventStatus.CANCELLED,
+          status: CleaningStatus.CANCELLED,
           cancelledAt: new Date(),
         },
         include: EVENT_INCLUDE,
@@ -360,7 +329,7 @@ export class CleaningEventsService {
 
       await tx.cleaningAssignment.updateMany({
         where: {
-          cleaningEventId: eventId,
+          cleaningId: cleaningId,
           status: { in: ACTIVE_STATUSES },
         },
         data: { status: AssignmentStatus.REASSIGNED },
@@ -379,13 +348,13 @@ export class CleaningEventsService {
    * Cleaner claims an event from the pool.
    * Atomic via Serializable isolation — concurrent claimers can't both win.
    */
-  async claim(tenantId: string, userId: string, eventId: string) {
+  async claim(tenantId: string, userId: string, cleaningId: string) {
     let result;
     try {
       result = await this.prisma.$transaction(
         async (tx) => {
-          const event = await tx.cleaningEvent.findFirst({
-            where: { id: eventId, tenantId },
+          const event = await tx.cleaning.findFirst({
+            where: { id: cleaningId, tenantId },
             include: {
               assignments: {
                 where: { status: { in: ACTIVE_STATUSES } },
@@ -394,9 +363,9 @@ export class CleaningEventsService {
           });
 
           if (!event) {
-            throw new NotFoundException('Cleaning event not found');
+            throw new NotFoundException('Cleaning not found');
           }
-          if (event.status !== CleaningEventStatus.PENDING) {
+          if (event.status !== CleaningStatus.PENDING) {
             throw new BadRequestException('Event is not in the pool');
           }
 
@@ -415,7 +384,7 @@ export class CleaningEventsService {
 
           const assignment = await tx.cleaningAssignment.create({
             data: {
-              cleaningEventId: eventId,
+              cleaningId: cleaningId,
               userId,
               isPrimary,
               status: AssignmentStatus.ASSIGNED,
@@ -424,9 +393,9 @@ export class CleaningEventsService {
 
           // If this claim fills the event, flip status out of PENDING
           if (newCount >= event.maxCleaners) {
-            await tx.cleaningEvent.update({
-              where: { id: eventId },
-              data: { status: CleaningEventStatus.ASSIGNED },
+            await tx.cleaning.update({
+              where: { id: cleaningId },
+              data: { status: CleaningStatus.ASSIGNED },
             });
           }
 
@@ -436,8 +405,8 @@ export class CleaningEventsService {
               category: AuditCategory.CLEANING_LIFECYCLE,
               action: 'cleaning.claimed',
               actorId: userId,
-              targetType: 'CleaningEvent',
-              targetId: eventId,
+              targetType: 'Cleaning',
+              targetId: cleaningId,
               metadata: {
                 accommodationName: event.accommodationName,
                 bookingRef: event.bookingRef,
@@ -462,7 +431,7 @@ export class CleaningEventsService {
     }
 
     // Load the updated event and broadcast
-    const freshEvent = await this.findById(tenantId, eventId);
+    const freshEvent = await this.findById(tenantId, cleaningId);
     this.gateway.notifyEventUpdated(tenantId, freshEvent);
 
     return { cleaning: freshEvent, assignment: result.assignment };
@@ -472,10 +441,10 @@ export class CleaningEventsService {
    * Cleaner drops an event they previously claimed.
    * Blocked within DROP_CUTOFF_HOURS of timeSlot.
    */
-  async drop(tenantId: string, userId: string, eventId: string) {
+  async drop(tenantId: string, userId: string, cleaningId: string) {
     const freshEvent = await this.prisma.$transaction(async (tx) => {
-      const event = await tx.cleaningEvent.findFirst({
-        where: { id: eventId, tenantId },
+      const event = await tx.cleaning.findFirst({
+        where: { id: cleaningId, tenantId },
         include: {
           assignments: {
             where: { status: { in: ACTIVE_STATUSES } },
@@ -483,7 +452,7 @@ export class CleaningEventsService {
         },
       });
 
-      if (!event) throw new NotFoundException('Cleaning event not found');
+      if (!event) throw new NotFoundException('Cleaning not found');
 
       const hoursUntil =
         (event.timeSlot.getTime() - Date.now()) / (1000 * 60 * 60);
@@ -516,9 +485,9 @@ export class CleaningEventsService {
 
       // Event always goes back to PENDING when someone drops —
       // there's now a free slot regardless of how many remain
-      await tx.cleaningEvent.update({
-        where: { id: eventId },
-        data: { status: CleaningEventStatus.PENDING },
+      await tx.cleaning.update({
+        where: { id: cleaningId },
+        data: { status: CleaningStatus.PENDING },
       });
 
       await tx.auditEvent.create({
@@ -527,8 +496,8 @@ export class CleaningEventsService {
           category: AuditCategory.CLEANING_LIFECYCLE,
           action: 'cleaning.dropped',
           actorId: userId,
-          targetType: 'CleaningEvent',
-          targetId: eventId,
+          targetType: 'Cleaning',
+          targetId: cleaningId,
           metadata: {
             accommodationName: event.accommodationName,
             bookingRef: event.bookingRef,
@@ -538,8 +507,8 @@ export class CleaningEventsService {
         },
       });
 
-      return tx.cleaningEvent.findFirst({
-        where: { id: eventId },
+      return tx.cleaning.findFirst({
+        where: { id: cleaningId },
         include: EVENT_INCLUDE,
       });
     });
@@ -562,7 +531,7 @@ export class CleaningEventsService {
   async markDone(
     tenantId: string,
     userId: string,
-    eventId: string,
+    cleaningId: string,
     dto: MarkDoneDto,
   ) {
     // Validate priority up front
@@ -580,14 +549,14 @@ export class CleaningEventsService {
 
     const { freshEvent, needsIncident } = await this.prisma.$transaction(
       async (tx) => {
-        const event = await tx.cleaningEvent.findFirst({
-          where: { id: eventId, tenantId },
+        const event = await tx.cleaning.findFirst({
+          where: { id: cleaningId, tenantId },
           include: {
             assignments: true,
           },
         });
 
-        if (!event) throw new NotFoundException('Cleaning event not found');
+        if (!event) throw new NotFoundException('Cleaning not found');
 
         const mine = event.assignments.find(
           (a) => a.userId === userId && ACTIVE_STATUSES.includes(a.status),
@@ -608,8 +577,8 @@ export class CleaningEventsService {
 
         if (!dto.allGood) {
           if (dto.note) {
-            await tx.cleaningEvent.update({
-              where: { id: eventId },
+            await tx.cleaning.update({
+              where: { id: cleaningId },
               data: { cleanerNote: dto.note },
             });
           }
@@ -617,7 +586,7 @@ export class CleaningEventsService {
             for (const url of dto.photoUrls) {
               await tx.cleaningPhoto.create({
                 data: {
-                  cleaningEventId: eventId,
+                  cleaningId: cleaningId,
                   cleaningAssignmentId: mine.id,
                   url,
                 },
@@ -632,10 +601,10 @@ export class CleaningEventsService {
         );
 
         if (stillActive.length === 0) {
-          await tx.cleaningEvent.update({
-            where: { id: eventId },
+          await tx.cleaning.update({
+            where: { id: cleaningId },
             data: {
-              status: CleaningEventStatus.COMPLETED,
+              status: CleaningStatus.COMPLETED,
               completedAt: now,
             },
           });
@@ -648,8 +617,8 @@ export class CleaningEventsService {
             action: dto.allGood ? 'cleaning.done' : 'cleaning.done_with_issue',
             actorId: userId,
             actorEmail: actorUser?.email ?? null,
-            targetType: 'CleaningEvent',
-            targetId: eventId,
+            targetType: 'Cleaning',
+            targetId: cleaningId,
             metadata: {
               accommodationName: event.accommodationName,
               bookingRef: event.bookingRef,
@@ -662,8 +631,8 @@ export class CleaningEventsService {
           },
         });
 
-        const fresh = await tx.cleaningEvent.findFirst({
-          where: { id: eventId },
+        const fresh = await tx.cleaning.findFirst({
+          where: { id: cleaningId },
           include: EVENT_INCLUDE,
         });
 
@@ -687,7 +656,7 @@ export class CleaningEventsService {
           userEmail: actorUser?.email,
         },
         {
-          cleaningEventId: eventId,
+          cleaningId: cleaningId,
           priority: dto.priority,
           note: dto.note,
           photoUrls: dto.photoUrls,
@@ -709,11 +678,11 @@ export class CleaningEventsService {
    * All current assignments are dropped, event status → PENDING,
    * each affected cleaner is notified.
    */
-  async releaseToPool(tenantId: string, managerId: string, eventId: string) {
+  async releaseToPool(tenantId: string, managerId: string, cleaningId: string) {
     const { freshEvent, affected } = await this.prisma.$transaction(
       async (tx) => {
-        const event = await tx.cleaningEvent.findFirst({
-          where: { id: eventId, tenantId },
+        const event = await tx.cleaning.findFirst({
+          where: { id: cleaningId, tenantId },
           include: {
             assignments: {
               where: { status: { in: ACTIVE_STATUSES } },
@@ -721,11 +690,11 @@ export class CleaningEventsService {
           },
         });
 
-        if (!event) throw new NotFoundException('Cleaning event not found');
-        if (event.status === CleaningEventStatus.COMPLETED) {
+        if (!event) throw new NotFoundException('Cleaning not found');
+        if (event.status === CleaningStatus.COMPLETED) {
           throw new BadRequestException('Cannot release a completed event');
         }
-        if (event.status === CleaningEventStatus.CANCELLED) {
+        if (event.status === CleaningStatus.CANCELLED) {
           throw new BadRequestException('Cannot release a cancelled event');
         }
 
@@ -733,15 +702,15 @@ export class CleaningEventsService {
 
         await tx.cleaningAssignment.updateMany({
           where: {
-            cleaningEventId: eventId,
+            cleaningId: cleaningId,
             status: { in: ACTIVE_STATUSES },
           },
           data: { status: AssignmentStatus.REASSIGNED },
         });
 
-        await tx.cleaningEvent.update({
-          where: { id: eventId },
-          data: { status: CleaningEventStatus.PENDING },
+        await tx.cleaning.update({
+          where: { id: cleaningId },
+          data: { status: CleaningStatus.PENDING },
         });
 
         // Notification rows for each affected cleaner
@@ -754,7 +723,7 @@ export class CleaningEventsService {
               channel: 'IN_APP',
               title: 'Cleaning returned to pool',
               body: `A manager returned ${event.accommodationName} to the pool.`,
-              payload: { eventId },
+              payload: { cleaningId },
             },
           });
         }
@@ -765,8 +734,8 @@ export class CleaningEventsService {
             category: AuditCategory.CLEANING_LIFECYCLE,
             action: 'cleaning.released_to_pool',
             actorId: managerId,
-            targetType: 'CleaningEvent',
-            targetId: eventId,
+            targetType: 'Cleaning',
+            targetId: cleaningId,
             metadata: {
               accommodationName: event.accommodationName,
               bookingRef: event.bookingRef,
@@ -775,8 +744,8 @@ export class CleaningEventsService {
           },
         });
 
-        const fresh = await tx.cleaningEvent.findFirst({
-          where: { id: eventId },
+        const fresh = await tx.cleaning.findFirst({
+          where: { id: cleaningId },
           include: EVENT_INCLUDE,
         });
 
@@ -788,61 +757,21 @@ export class CleaningEventsService {
     if (freshEvent) {
       this.gateway.notifyEventUpdated(tenantId, freshEvent);
       for (const uid of affected) {
-        this.gateway.emitToUser(uid, 'assignment:released', { eventId });
+        this.gateway.emitToUser(uid, 'assignment:released', { cleaningId });
       }
     }
 
     return { released: true, affectedUserIds: affected, cleaning: freshEvent };
   }
 
-  // ─── PMS SYNC ──────────────────────────────────────────────
-
-  async upsertFromPms(
-    tenantId: string,
-    pmsBookingId: string,
-    data: Partial<CreateEventDto> & { pmsRawData?: any },
-  ) {
-    const existing = await this.prisma.cleaningEvent.findFirst({
-      where: { tenantId, pmsBookingId },
-    });
-
-    if (existing) {
-      return this.prisma.cleaningEvent.update({
-        where: { id: existing.id },
-        data: {
-          checkInTime: data.checkInTime ? new Date(data.checkInTime) : undefined,
-          checkOutTime: data.checkOutTime ? new Date(data.checkOutTime) : undefined,
-          accommodationName: data.accommodationName,
-          numAdults: data.numAdults,
-          numChildren: data.numChildren,
-          channel: data.channel,
-          pmsLastSyncedAt: new Date(),
-          pmsRawData: data.pmsRawData || undefined,
-        },
-        include: EVENT_INCLUDE,
-      });
-    } else {
-      return this.create(tenantId, {
-        propertyId: data.propertyId!,
-        bookingRef: data.bookingRef!,
-        pmsBookingId,
-        checkInTime: data.checkInTime!,
-        checkOutTime: data.checkOutTime,
-        accommodationName: data.accommodationName!,
-        numAdults: data.numAdults,
-        numChildren: data.numChildren,
-        channel: data.channel,
-        cleaningType: data.cleaningType,
-        timeSlot: data.timeSlot || data.checkInTime!,
-      });
-    }
-  }
+  // upsertFromPms() removed — booking-sync.service now creates Booking first,
+  // then Cleaning that references it. Sync no longer goes through this service.
 
   // ─── OVERDUE / CALENDAR ────────────────────────────────────
 
-  async getOverdueEvents(tenantId: string, thresholdMinutes: number = 60) {
+  async getOverdueCleanings(tenantId: string, thresholdMinutes: number = 60) {
     const threshold = new Date(Date.now() + thresholdMinutes * 60 * 1000);
-    return this.prisma.cleaningEvent.findMany({
+    return this.prisma.cleaning.findMany({
       where: {
         tenantId,
         status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
@@ -857,7 +786,7 @@ export class CleaningEventsService {
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
-    const events = await this.prisma.cleaningEvent.groupBy({
+    const events = await this.prisma.cleaning.groupBy({
       by: ['status'],
       where: {
         tenantId,

@@ -66,7 +66,7 @@ export class StaffSyncService {
       await this.prisma.auditEvent.create({
         data: {
           tenantId,
-          category: AuditCategory.SYNC,
+          category: AuditCategory.SYSTEM,
           action: 'staff_sync.completed',
           targetType: 'System',
           actorEmail: 'system',
@@ -81,7 +81,7 @@ export class StaffSyncService {
       await this.prisma.auditEvent.create({
         data: {
           tenantId,
-          category: AuditCategory.SYNC,
+          category: AuditCategory.SYSTEM,
           action: 'staff_sync.failed',
           targetType: 'System',
           actorEmail: 'system',
@@ -216,7 +216,7 @@ export class StaffSyncService {
       await this.prisma.auditEvent.create({
         data: {
           tenantId,
-          category: AuditCategory.USER_LIFECYCLE,
+          category: AuditCategory.SYSTEM,
           action: 'user.disabled_by_sync',
           targetType: 'User',
           targetId: u.id,

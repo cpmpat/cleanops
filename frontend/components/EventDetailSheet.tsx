@@ -325,9 +325,9 @@ export function EventDetailSheet({
           )}
 
           {/* Tags */}
-          {event.eventTags.length > 0 && (
+          {(event.tags?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {event.eventTags.map(({ tag }) => (
+              {event.tags?.map(({ tag }) => (
                 <span
                   key={tag.id}
                   className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface-sunken text-ink-soft border border-surface-border"

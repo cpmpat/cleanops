@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { AssignmentStatus, CleaningEventStatus } from '@prisma/client';
+import { AssignmentStatus, CleaningStatus } from '@prisma/client';
 
 @Injectable()
 export class AssignmentsService {
@@ -10,10 +10,10 @@ export class AssignmentsService {
    * Manager assigns a cleaner to an event.
    * Max 3 cleaners per event (1 primary + 2 secondary).
    */
-  async assign(tenantId: string, eventId: string, userId: string, assignedById: string) {
+  async assign(tenantId: string, cleaningId: string, userId: string, assignedById: string) {
     // Verify event belongs to tenant
-    const event = await this.prisma.cleaningEvent.findFirst({
-      where: { id: eventId, tenantId },
+    const event = await this.prisma.cleaning.findFirst({
+      where: { id: cleaningId, tenantId },
       include: { assignments: true },
     });
     if (!event) throw new NotFoundException('Event not found');
@@ -35,7 +35,7 @@ export class AssignmentsService {
 
     const assignment = await this.prisma.cleaningAssignment.create({
       data: {
-        cleaningEventId: eventId,
+        cleaningId: cleaningId,
         userId,
         assignedById,
         isPrimary,
@@ -48,10 +48,10 @@ export class AssignmentsService {
     });
 
     // Update event status to ASSIGNED if it was PENDING
-    if (event.status === CleaningEventStatus.PENDING) {
-      await this.prisma.cleaningEvent.update({
-        where: { id: eventId },
-        data: { status: CleaningEventStatus.ASSIGNED },
+    if (event.status === CleaningStatus.PENDING) {
+      await this.prisma.cleaning.update({
+        where: { id: cleaningId },
+        data: { status: CleaningStatus.ASSIGNED },
       });
     }
 
@@ -64,7 +64,7 @@ export class AssignmentsService {
   async start(assignmentId: string, userId: string) {
     const assignment = await this.prisma.cleaningAssignment.findFirst({
       where: { id: assignmentId, userId },
-      include: { cleaningEvent: true },
+      include: { cleaning: true },
     });
     if (!assignment) throw new NotFoundException('Assignment not found');
     if (assignment.status !== AssignmentStatus.ASSIGNED) {
@@ -77,11 +77,11 @@ export class AssignmentsService {
     });
 
     // Update event status to IN_PROGRESS
-    await this.prisma.cleaningEvent.update({
-      where: { id: assignment.cleaningEventId },
+    await this.prisma.cleaning.update({
+      where: { id: assignment.cleaningId },
       data: {
-        status: CleaningEventStatus.IN_PROGRESS,
-        startedAt: assignment.cleaningEvent.startedAt || new Date(),
+        status: CleaningStatus.IN_PROGRESS,
+        startedAt: assignment.cleaning.startedAt || new Date(),
       },
     });
 
@@ -95,7 +95,7 @@ export class AssignmentsService {
     const assignment = await this.prisma.cleaningAssignment.findFirst({
       where: { id: assignmentId, userId },
       include: {
-        cleaningEvent: { include: { assignments: true } },
+        cleaning: { include: { assignments: true } },
       },
     });
     if (!assignment) throw new NotFoundException('Assignment not found');
@@ -109,16 +109,16 @@ export class AssignmentsService {
     });
 
     // Check if ALL active assignments are completed
-    const allAssignments = assignment.cleaningEvent.assignments.filter(
+    const allAssignments = assignment.cleaning.assignments.filter(
       a => a.status !== AssignmentStatus.REASSIGNED && a.id !== assignmentId,
     );
     const allCompleted = allAssignments.every(a => a.status === AssignmentStatus.COMPLETED);
 
     if (allCompleted) {
-      await this.prisma.cleaningEvent.update({
-        where: { id: assignment.cleaningEventId },
+      await this.prisma.cleaning.update({
+        where: { id: assignment.cleaningId },
         data: {
-          status: CleaningEventStatus.COMPLETED,
+          status: CleaningStatus.COMPLETED,
           completedAt: new Date(),
           ...(cleanerNote && { cleanerNote }),
         },
@@ -134,7 +134,7 @@ export class AssignmentsService {
   async reject(assignmentId: string, userId: string, reason?: string) {
     const assignment = await this.prisma.cleaningAssignment.findFirst({
       where: { id: assignmentId, userId },
-      include: { cleaningEvent: { include: { assignments: true } } },
+      include: { cleaning: { include: { assignments: true } } },
     });
     if (!assignment) throw new NotFoundException('Assignment not found');
     if (assignment.status !== AssignmentStatus.ASSIGNED) {
@@ -150,13 +150,13 @@ export class AssignmentsService {
     });
 
     // If all assignments are rejected/reassigned, set event to FLAGGED
-    const activeAssignments = assignment.cleaningEvent.assignments.filter(
+    const activeAssignments = assignment.cleaning.assignments.filter(
       a => a.id !== assignmentId && !['REJECTED', 'REASSIGNED'].includes(a.status),
     );
     if (activeAssignments.length === 0) {
-      await this.prisma.cleaningEvent.update({
-        where: { id: assignment.cleaningEventId },
-        data: { status: CleaningEventStatus.FLAGGED },
+      await this.prisma.cleaning.update({
+        where: { id: assignment.cleaningId },
+        data: { status: CleaningStatus.FLAGGED },
       });
     }
 
@@ -169,21 +169,21 @@ export class AssignmentsService {
    */
   async reassign(
     tenantId: string,
-    eventId: string,
+    cleaningId: string,
     oldUserId: string,
     newUserId: string,
     managerId: string,
   ) {
     // Fetch event for the accommodation name used in notifications
-    const event = await this.prisma.cleaningEvent.findFirst({
-      where: { id: eventId, tenantId },
+    const event = await this.prisma.cleaning.findFirst({
+      where: { id: cleaningId, tenantId },
     });
     if (!event) throw new NotFoundException('Event not found');
 
     // Mark old assignment as REASSIGNED
     const oldAssignment = await this.prisma.cleaningAssignment.findFirst({
       where: {
-        cleaningEventId: eventId,
+        cleaningId: cleaningId,
         userId: oldUserId,
         status: { in: ['ASSIGNED', 'STARTED'] },
       },
@@ -204,12 +204,12 @@ export class AssignmentsService {
         channel: 'IN_APP',
         title: 'Assignment Removed',
         body: `You have been unassigned from the cleaning at ${event.accommodationName}.`,
-        payload: { eventId },
+        payload: { cleaningId },
       },
     });
 
     // Create new assignment (assigns + updates event status)
-    const newAssignment = await this.assign(tenantId, eventId, newUserId, managerId);
+    const newAssignment = await this.assign(tenantId, cleaningId, newUserId, managerId);
 
     // Notify new cleaner they have been assigned
     await this.prisma.notification.create({
@@ -220,7 +220,7 @@ export class AssignmentsService {
         channel: 'IN_APP',
         title: 'New Cleaning Assigned',
         body: `You have been assigned to clean ${event.accommodationName}.`,
-        payload: { eventId },
+        payload: { cleaningId },
       },
     });
 
@@ -238,21 +238,21 @@ export class AssignmentsService {
       where: {
         userId,
         status: { not: AssignmentStatus.REASSIGNED },
-        cleaningEvent: {
+        cleaning: {
           timeSlot: { gte: startOfDay, lte: endOfDay },
-          status: { not: CleaningEventStatus.CANCELLED },
+          status: { not: CleaningStatus.CANCELLED },
         },
       },
       include: {
-        cleaningEvent: {
+        cleaning: {
           include: {
             property: { select: { id: true, name: true, address: true, locationLat: true, locationLng: true } },
-            eventTags: { include: { tag: true } },
+            tags: { include: { tag: true } },
             photos: true,
           },
         },
       },
-      orderBy: { cleaningEvent: { timeSlot: 'asc' } },
+      orderBy: { cleaning: { timeSlot: 'asc' } },
     });
   }
 }

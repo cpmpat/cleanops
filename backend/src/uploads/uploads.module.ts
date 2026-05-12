@@ -72,14 +72,14 @@ export class UploadsService {
    * preferred path is signed-URL → direct-to-GCS.
    */
   async legacyUploadPhoto(
-    cleaningEventId: string,
+    cleaningId: string,
     assignmentId: string | null,
     file: Express.Multer.File,
   ) {
     const url = `/uploads/${randomUUID()}-${file.originalname}`;
     return this.prisma.cleaningPhoto.create({
       data: {
-        cleaningEventId,
+        cleaningId,
         cleaningAssignmentId: assignmentId,
         url,
       },

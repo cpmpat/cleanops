@@ -239,7 +239,7 @@ export default function PlanningPage() {
           <div className="divide-y divide-surface-border">
             {filtered.map(b => (
               <div key={b.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-surface-sunken transition group">
-                <StatusBadge status={b.status} t={t} size="sm" />
+                {b.status && <StatusBadge status={b.status} t={t} size="sm" />}
 
                 {/* Unit + ref */}
                 <div className="flex-1 min-w-0">

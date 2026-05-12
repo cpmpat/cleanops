@@ -5,20 +5,20 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
-import { CleaningEventsService } from './cleaning-events.service';
+import { CleaningsService } from './cleanings.service';
 import { IncidentPriority } from '@prisma/client';
 
-@ApiTags('Cleaning Events')
+@ApiTags('Cleanings')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
-@Controller('cleaning-events')
-export class CleaningEventsController {
-  constructor(private service: CleaningEventsService) {}
+@Controller('cleanings')
+export class CleaningsController {
+  constructor(private service: CleaningsService) {}
 
   // ─── Queries ──────────────────────────────────────────
 
   @Get()
-  @ApiOperation({ summary: 'Get events for a date (or date range)' })
+  @ApiOperation({ summary: 'Get cleanings for a date (or date range)' })
   findByDate(
     @Req() req: TenantRequest,
     @Query('date') date: string,
@@ -44,9 +44,7 @@ export class CleaningEventsController {
   }
 
   @Get('mine')
-  @ApiOperation({
-    summary: 'Get cleanings assigned to the current user (date-range filterable)',
-  })
+  @ApiOperation({ summary: 'Get cleanings assigned to the current user' })
   getMine(
     @Req() req: TenantRequest,
     @Query('from') from?: string,
@@ -56,11 +54,7 @@ export class CleaningEventsController {
     const ids = propertyIds
       ? propertyIds.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
-    return this.service.getMine(req.tenantId!, req.userId!, {
-      from,
-      to,
-      propertyIds: ids,
-    });
+    return this.service.getMine(req.tenantId!, req.userId!, { from, to, propertyIds: ids });
   }
 
   @Get('stats')
@@ -77,12 +71,9 @@ export class CleaningEventsController {
   @Get('overdue')
   @Roles('MANAGER')
   @UseGuards(RolesGuard)
-  @ApiOperation({ summary: 'Get overdue events (manager only)' })
-  getOverdue(
-    @Req() req: TenantRequest,
-    @Query('threshold') threshold?: number,
-  ) {
-    return this.service.getOverdueEvents(req.tenantId!, threshold);
+  @ApiOperation({ summary: 'Get overdue cleanings (manager only)' })
+  getOverdue(@Req() req: TenantRequest, @Query('threshold') threshold?: number) {
+    return this.service.getOverdueCleanings(req.tenantId!, threshold);
   }
 
   @Get('calendar/:year/:month')
@@ -96,37 +87,25 @@ export class CleaningEventsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get event by ID' })
+  @ApiOperation({ summary: 'Get cleaning by ID' })
   findById(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.findById(req.tenantId!, id);
   }
 
   // ─── Manager mutations ────────────────────────────────
 
-  @Post()
-  @Roles('MANAGER')
-  @UseGuards(RolesGuard)
-  @ApiOperation({ summary: 'Create a cleaning event (manager only)' })
-  create(@Req() req: TenantRequest, @Body() dto: any) {
-    return this.service.create(req.tenantId!, dto);
-  }
-
   @Patch(':id')
   @Roles('MANAGER')
   @UseGuards(RolesGuard)
-  @ApiOperation({ summary: 'Update event (manager only)' })
-  update(
-    @Req() req: TenantRequest,
-    @Param('id') id: string,
-    @Body() dto: any,
-  ) {
+  @ApiOperation({ summary: 'Update cleaning (manager only)' })
+  update(@Req() req: TenantRequest, @Param('id') id: string, @Body() dto: any) {
     return this.service.update(req.tenantId!, id, dto);
   }
 
   @Delete(':id')
   @Roles('MANAGER')
   @UseGuards(RolesGuard)
-  @ApiOperation({ summary: 'Cancel event (manager only)' })
+  @ApiOperation({ summary: 'Cancel cleaning (manager only)' })
   cancel(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.cancel(req.tenantId!, id);
   }
@@ -134,9 +113,7 @@ export class CleaningEventsController {
   @Post(':id/release-to-pool')
   @Roles('MANAGER')
   @UseGuards(RolesGuard)
-  @ApiOperation({
-    summary: 'Return an assigned event to the pool (manager only)',
-  })
+  @ApiOperation({ summary: 'Return an assigned cleaning to the pool (manager only)' })
   releaseToPool(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.releaseToPool(req.tenantId!, req.userId!, id);
   }
@@ -162,9 +139,7 @@ export class CleaningEventsController {
   @Patch(':id/done')
   @Roles('CLEANER')
   @UseGuards(RolesGuard)
-  @ApiOperation({
-    summary: 'Mark a claimed cleaning as done (with optional issue report)',
-  })
+  @ApiOperation({ summary: 'Mark a claimed cleaning as done' })
   markDone(
     @Req() req: TenantRequest,
     @Param('id') id: string,

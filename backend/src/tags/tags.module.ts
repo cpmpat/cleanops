@@ -23,19 +23,19 @@ export class TagsService {
   async delete(tenantId: string, id: string) {
     const tag = await this.prisma.managerTag.findFirst({ where: { id, tenantId } });
     if (!tag) throw new NotFoundException('Tag not found');
-    await this.prisma.cleaningEventTag.deleteMany({ where: { tagId: id } });
+    await this.prisma.cleaningTag.deleteMany({ where: { tagId: id } });
     return this.prisma.managerTag.delete({ where: { id } });
   }
 
   async addTagToEvent(tenantId: string, eventId: string, tagId: string) {
-    return this.prisma.cleaningEventTag.create({
-      data: { cleaningEventId: eventId, tagId },
+    return this.prisma.cleaningTag.create({
+      data: { cleaningId: eventId, tagId },
     });
   }
 
   async removeTagFromEvent(eventId: string, tagId: string) {
-    return this.prisma.cleaningEventTag.deleteMany({
-      where: { cleaningEventId: eventId, tagId },
+    return this.prisma.cleaningTag.deleteMany({
+      where: { cleaningId: eventId, tagId },
     });
   }
 }

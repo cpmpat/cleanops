@@ -1,7 +1,10 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Role = 'MANAGER' | 'CLEANER';
-export type EventStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
+export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
+/** @deprecated use CleaningStatus */
+export type EventStatus = CleaningStatus;
+export type BookingStatus = 'CONFIRMED' | 'CANCELLED';
 export type CleaningType = 'CHECKOUT' | 'MIDSTAY' | 'DEEP';
 export type BookingChannel = 'AIRBNB' | 'BOOKING_COM' | 'VRBO' | 'EXPEDIA' | 'DIRECT' | 'OTHER';
 export type AssignmentStatus = 'ASSIGNED' | 'STARTED' | 'COMPLETED' | 'REJECTED' | 'REASSIGNED';
@@ -68,12 +71,14 @@ export interface Tag {
   color?: string;
 }
 
-export interface CleaningEvent {
+export interface Booking {
   id: string;
   tenantId: string;
   propertyId: string;
   bookingRef: string;
   pmsBookingId?: string;
+  status: BookingStatus;
+  cancelledAt?: string | null;
   checkInTime: string;
   checkOutTime?: string;
   accommodationName: string;
@@ -81,18 +86,53 @@ export interface CleaningEvent {
   numAdults: number;
   numChildren: number;
   channel: BookingChannel;
+  pmsLastSyncedAt?: string;
+  property?: Property;
+  cleaning?: Cleaning | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Cleaning {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  bookingId: string;
+
   cleaningType: CleaningType;
-  status: EventStatus;
+  status: CleaningStatus;
   timeSlot: string;
   maxCleaners: number;
+
   managerNote?: string;
   supplyNote?: string;
   cleanerNote?: string;
-  property: Property;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+
+  // Denormalized booking fields (read-only \u2014 sync owns them)
+  bookingRef: string;
+  checkInTime: string;
+  checkOutTime?: string;
+  accommodationName: string;
+  numAdults: number;
+  numChildren: number;
+  channel: BookingChannel;
+  pmsLastSyncedAt?: string;
+
+  // When the underlying booking was cancelled. Cleaning may still be active.
+  bookingCancelledAt?: string | null;
+
+  property?: Property;
+  booking?: { id: string; bookingRef: string; pmsBookingId?: string; status: BookingStatus; cancelledAt?: string | null };
   assignments: Assignment[];
-  eventTags: { tag: Tag }[];
+  tags?: { tag: Tag }[];
   photos: Photo[];
 }
+
+/** @deprecated use Cleaning */
+export type CleaningEvent = Cleaning;
 
 export interface Notification {
   id: string;
@@ -106,17 +146,22 @@ export interface Notification {
 
 export interface PlanningBooking {
   id: string;
+  cleaningId?: string;
   pmsBookingId?: string;
   bookingRef: string;
   accommodationName: string;
   accommodationType?: string;
+  propertyId?: string;
+  pmsPropertyId?: string;
   checkInTime: string;
   checkOutTime?: string;
-  timeSlot: string;
+  timeSlot?: string;
   numAdults: number;
   numChildren: number;
   channel: BookingChannel;
-  status: EventStatus;
+  status?: CleaningStatus;
+  bookingStatus: BookingStatus;
+  bookingCancelledAt?: string | null;
   assignments: {
     id: string;
     userId: string;
@@ -157,7 +202,10 @@ export interface IncidentListItem {
   title: string;
   propertyId: string | null;
   isGeneral: boolean;
-  cleaningEventId: string | null;
+  bookingId: string | null;
+  cleaningId: string | null;
+  /** @deprecated use cleaningId */
+  cleaningEventId?: string | null;
   createdAt: string;
   updatedAt: string;
   property: { id: string; name: string } | null;
@@ -173,13 +221,21 @@ export interface Incident extends IncidentListItem {
   resolutionNote: string | null;
   property: { id: string; name: string; address?: string | null } | null;
   resolvedBy: IncidentUserRef | null;
-  cleaningEvent: {
+  cleaning: {
     id: string;
     accommodationName: string;
-    bookingRef: string;
     timeSlot: string;
     checkInTime: string;
+    booking?: { id: string; bookingRef: string } | null;
   } | null;
+  booking: {
+    id: string;
+    bookingRef: string;
+    accommodationName: string;
+    checkInTime: string;
+  } | null;
+  /** @deprecated use cleaning */
+  cleaningEvent?: any;
   attachments: IncidentAttachment[];
 }
 
@@ -210,7 +266,8 @@ export interface CreateIncidentPayload {
   description?: string;
   propertyId?: string;
   isGeneral?: boolean;
-  cleaningEventId?: string;
+  bookingId?: string;
+  cleaningId?: string;
   assignedToId?: string;
   scheduledFor?: string;
 }
@@ -301,45 +358,44 @@ export const auth = {
   logout: () => post('/auth/logout'),
 };
 
-// ─── Cleaning Events ──────────────────────────────────────────────────────────
+// ─── Cleanings ────────────────────────────────────────────────────────────────
 
 export interface MarkDoneResponse {
   done: true;
   needsIncident: boolean;
   incidentId: string | null;
-  cleaning: CleaningEvent;
+  cleaning: Cleaning;
 }
 
 export interface ClaimResponse {
-  cleaning: CleaningEvent;
+  cleaning: Cleaning;
   assignment: Assignment;
 }
 
 export const events = {
   byDate: (date: string) =>
-    get<CleaningEvent[]>(`/cleaning-events?date=${date}`),
+    get<Cleaning[]>(`/cleanings?date=${date}`),
   byDateRange: (from: string, to: string) =>
-    get<CleaningEvent[]>(`/cleaning-events?from=${from}&to=${to}`),
+    get<Cleaning[]>(`/cleanings?from=${from}&to=${to}`),
   stats: (date: string) =>
-    get<DayStats>(`/cleaning-events/stats?date=${date}`),
+    get<DayStats>(`/cleanings/stats?date=${date}`),
   overdue: () =>
-    get<CleaningEvent[]>('/cleaning-events/overdue'),
+    get<Cleaning[]>('/cleanings/overdue'),
   calendar: (year: number, month: number) =>
     get<{ statusCounts: Record<string, number>; dailyCounts: { day: string; count: number }[] }>(
-      `/cleaning-events/calendar/${year}/${month}`
+      `/cleanings/calendar/${year}/${month}`
     ),
   byId: (id: string) =>
-    get<CleaningEvent>(`/cleaning-events/${id}`),
-  create: (data: Partial<CleaningEvent>) =>
-    post<CleaningEvent>('/cleaning-events', data),
-  update: (id: string, data: { checkInTime?: string; timeSlot?: string; cleaningType?: CleaningType; managerNote?: string; supplyNote?: string; maxCleaners?: number }) =>
-    patch<CleaningEvent>(`/cleaning-events/${id}`, data),
+    get<Cleaning>(`/cleanings/${id}`),
+  // create() removed \u2014 cleanings now only come from the Avantio sync
+  update: (id: string, data: { timeSlot?: string; cleaningType?: CleaningType; managerNote?: string; supplyNote?: string; maxCleaners?: number }) =>
+    patch<Cleaning>(`/cleanings/${id}`, data),
   cancel: (id: string) =>
-    del<CleaningEvent>(`/cleaning-events/${id}`),
+    del<Cleaning>(`/cleanings/${id}`),
 
   // ─── Pool lifecycle ───
   pool: () =>
-    get<CleaningEvent[]>('/cleaning-events/pool'),
+    get<Cleaning[]>('/cleanings/pool'),
   mine: (from?: string, to?: string, propertyIds?: string[]) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
@@ -348,42 +404,79 @@ export const events = {
       params.set('propertyIds', propertyIds.join(','));
     }
     const q = params.toString();
-    return get<CleaningEvent[]>(`/cleaning-events/mine${q ? `?${q}` : ''}`);
+    return get<Cleaning[]>(`/cleanings/mine${q ? `?${q}` : ''}`);
   },
-  claim: (eventId: string) =>
-    post<ClaimResponse>(`/cleaning-events/${eventId}/claim`),
-  drop: (eventId: string) =>
-    post<{ dropped: true; cleaning: CleaningEvent }>(`/cleaning-events/${eventId}/drop`),
+  claim: (cleaningId: string) =>
+    post<ClaimResponse>(`/cleanings/${cleaningId}/claim`),
+  drop: (cleaningId: string) =>
+    post<{ dropped: true; cleaning: Cleaning }>(`/cleanings/${cleaningId}/drop`),
   markDone: (
-    eventId: string,
+    cleaningId: string,
     body: {
       allGood: boolean;
       note?: string;
       photoUrls?: string[];
       priority?: IncidentPriority;
     },
-  ) => patch<MarkDoneResponse>(`/cleaning-events/${eventId}/done`, body),
-  releaseToPool: (eventId: string) =>
-    post<{ released: true; affectedUserIds: string[]; cleaning: CleaningEvent }>(
-      `/cleaning-events/${eventId}/release-to-pool`
+  ) => patch<MarkDoneResponse>(`/cleanings/${cleaningId}/done`, body),
+  releaseToPool: (cleaningId: string) =>
+    post<{ released: true; affectedUserIds: string[]; cleaning: Cleaning }>(
+      `/cleanings/${cleaningId}/release-to-pool`
     ),
 };
+
+/** Alias for clarity \u2014 same as `events` namespace */
+export const cleanings = events;
 
 // ─── Assignments ──────────────────────────────────────────────────────────────
 
 export const assignments = {
   mine: (date: string) =>
     get<Assignment[]>(`/assignments/my?date=${date}`),
-  assign: (eventId: string, userId: string) =>
-    post('/assignments/assign', { eventId, userId }),
-  reassign: (eventId: string, oldUserId: string, newUserId: string) =>
-    post('/assignments/reassign', { eventId, oldUserId, newUserId }),
+  assign: (cleaningId: string, userId: string) =>
+    post('/assignments/assign', { cleaningId, userId }),
+  reassign: (cleaningId: string, oldUserId: string, newUserId: string) =>
+    post('/assignments/reassign', { cleaningId, oldUserId, newUserId }),
   start: (id: string) =>
     patch(`/assignments/${id}/start`),
   complete: (id: string, cleanerNote?: string) =>
     patch(`/assignments/${id}/complete`, { cleanerNote }),
   reject: (id: string, reason?: string) =>
     patch(`/assignments/${id}/reject`, { reason }),
+};
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+export interface BookingDetail extends Booking {
+  cleaning?: Cleaning | null;
+}
+
+export const bookings = {
+  list: (query?: {
+    arrivalFrom?: string;
+    arrivalTo?: string;
+    status?: BookingStatus;
+    propertyId?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (query?.arrivalFrom) params.set('arrivalFrom', query.arrivalFrom);
+    if (query?.arrivalTo) params.set('arrivalTo', query.arrivalTo);
+    if (query?.status) params.set('status', query.status);
+    if (query?.propertyId) params.set('propertyId', query.propertyId);
+    if (query?.limit) params.set('limit', String(query.limit));
+    if (query?.offset) params.set('offset', String(query.offset));
+    const q = params.toString();
+    return get<{ rows: Booking[]; total: number; limit: number; offset: number }>(
+      `/bookings${q ? `?${q}` : ''}`,
+    );
+  },
+  byId: (id: string) => get<BookingDetail>(`/bookings/${id}`),
+  update: (id: string, data: { checkInTime?: string; checkOutTime?: string; accommodationName?: string; numAdults?: number; numChildren?: number }) =>
+    patch<Booking>(`/bookings/${id}`, data),
+  cancel: (id: string) =>
+    post<Booking>(`/bookings/${id}/cancel`),
 };
 
 // ─── Users ────────────────────────────────────────────────────────────────────

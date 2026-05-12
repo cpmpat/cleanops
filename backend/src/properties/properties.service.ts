@@ -10,7 +10,7 @@ export class PropertiesService {
       where: { tenantId, isActive: true },
       include: {
         defaultCleaner: { select: { id: true, name: true, email: true } },
-        _count: { select: { cleaningEvents: true } },
+        _count: { select: { cleanings: true } },
       },
       orderBy: { name: 'asc' },
     });
