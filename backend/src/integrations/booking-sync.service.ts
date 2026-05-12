@@ -470,7 +470,9 @@ export class BookingSyncService {
     const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
     const syncedAt = new Date();
 
-    const created = await this.prisma.$transaction(async (tx) => {
+    let created;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
       const newBooking = await tx.booking.create({
         data: {
           tenantId,
@@ -534,6 +536,18 @@ export class BookingSyncService {
 
       return { booking: newBooking, cleaning: newCleaning };
     });
+    } catch (e: any) {
+      // Race condition: another sync run created this booking between our
+      // findFirst() and create(). Fall back to the update path.
+      if (e?.code === 'P2002') {
+        this.logger.warn(
+          `Booking ${booking.pmsBookingId} was created concurrently — retrying as update`,
+        );
+        // Recursive retry: findFirst will now succeed and take the update branch
+        return this.processBooking(tenantId, booking, adapter, config);
+      }
+      throw e;
+    }
 
     // Out-of-transaction notification
     if (property.defaultCleanerId) {
