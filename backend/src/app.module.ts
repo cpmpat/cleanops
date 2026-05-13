@@ -20,6 +20,7 @@ import { StaffSyncModule } from './staff-sync/staff-sync.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { StorageModule } from './storage/storage.module';
 import { StreamsModule } from './streams/streams.module';
+import { RepairsModule } from './repairs/repairs.module';
 
 @Module({
   imports: [

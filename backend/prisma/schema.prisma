@@ -37,6 +37,8 @@ model Tenant {
   auditEvents         AuditEvent[]
   incidents           Incident[]
   manualStreamEvents  ManualStreamEvent[]
+  repairs             Repair[]
+  repairMaterials     RepairMaterial[]
 
   @@map("tenants")
 }
@@ -46,6 +48,7 @@ model Tenant {
 enum UserRole {
   MANAGER
   CLEANER
+  REPAIRMAN
 }
 
 enum Language {
@@ -93,6 +96,12 @@ model User {
   resolvedIncidents    Incident[]           @relation("IncidentResolver")
   uploadedAttachments  IncidentAttachment[] @relation("AttachmentUploader")
   manualStreamEvents   ManualStreamEvent[]
+
+  assignedRepairs          RepairAssignment[] @relation("AssignedRepairman")
+  createdRepairAssignments RepairAssignment[] @relation("RepairAssignedBy")
+  uploadedRepairPhotos     RepairPhoto[]      @relation("RepairPhotoUploader")
+  repairComments           RepairComment[]    @relation("RepairCommentAuthor")
+  repairReports            RepairReport[]     @relation("RepairReportAuthor")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -147,6 +156,7 @@ model Property {
   cleanings           Cleaning[]
   incidents           Incident[]
   manualStreamEvents  ManualStreamEvent[]
+  repairs             Repair[]
 
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
@@ -501,6 +511,7 @@ model Incident {
   assignedTo   User?                 @relation("IncidentAssignee", fields: [assignedToId], references: [id])
   resolvedBy   User?                 @relation("IncidentResolver", fields: [resolvedById], references: [id])
   attachments  IncidentAttachment[]
+  repair       Repair?               @relation("RepairFromIncident")
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, createdAt])
@@ -561,4 +572,178 @@ model ManualStreamEvent {
   @@index([tenantId, propertyId, occurredAt])
   @@index([tenantId, category, occurredAt])
   @@map("manual_stream_events")
+}
+
+// ─── REPAIRS (Phase R-1) ──────────────────────
+
+enum RepairStatus {
+  PLANNED         // created, not yet assigned
+  ASSIGNED        // repairman assigned, not yet started
+  IN_PROGRESS     // repairman tapped Start
+  IN_REVIEW       // repairman submitted Done; awaiting manager approval
+  DONE            // manager confirmed completion
+  REPORTED_BACK   // repairman reported a problem; assigned back to manager
+  CANCELLED
+}
+
+enum RepairAssignmentStatus {
+  ASSIGNED
+  STARTED
+  COMPLETED
+  REJECTED
+  REASSIGNED
+}
+
+enum RepairAuthorRole {
+  MANAGER
+  REPAIRMAN
+  SYSTEM
+}
+
+enum RepairReportUrgency {
+  LOW
+  AVERAGE
+  HIGH
+}
+
+model Repair {
+  id           String        @id @default(uuid())
+  tenantId     String
+  propertyId   String
+
+  // Optional link back to the incident this repair originated from
+  incidentId   String?       @unique
+
+  status       RepairStatus  @default(PLANNED)
+  title        String
+  description  String?       // up to 300 chars (controller-level validation)
+  dueDate      DateTime      // REQUIRED — manager sets
+
+  // Lifecycle timestamps
+  startedAt    DateTime?
+  completedAt  DateTime?     // when repairman submitted Done (status → IN_REVIEW)
+  reviewedAt   DateTime?     // when manager confirmed DONE
+  reportedAt   DateTime?     // when repairman tapped Report a problem
+  cancelledAt  DateTime?
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  property     Property      @relation(fields: [propertyId], references: [id])
+  incident     Incident?     @relation("RepairFromIncident", fields: [incidentId], references: [id])
+  assignments  RepairAssignment[]
+  materials    RepairMaterialUsage[]
+  photos       RepairPhoto[]
+  comments     RepairComment[]
+  reports      RepairReport[]
+
+  @@index([tenantId, status, dueDate])
+  @@index([tenantId, dueDate])
+  @@index([propertyId])
+  @@map("repairs")
+}
+
+model RepairAssignment {
+  id               String                  @id @default(uuid())
+  repairId         String
+  userId           String
+  assignedById     String?
+  isPrimary        Boolean                 @default(false)
+  status           RepairAssignmentStatus  @default(ASSIGNED)
+  rejectedReason   String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  assignedAt       DateTime                @default(now())
+
+  repair           Repair                  @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  user             User                    @relation("AssignedRepairman", fields: [userId], references: [id])
+  assignedBy       User?                   @relation("RepairAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([repairId])
+  @@index([userId])
+  @@index([userId, status])
+  @@map("repair_assignments")
+}
+
+// Manager-configured material catalog (predefined picklist)
+model RepairMaterial {
+  id        String                @id @default(uuid())
+  tenantId  String
+  name      String                // e.g. "Baterie", "Kabely"
+  unit      String?               // optional unit (e.g. "ks", "m", "kg")
+  isActive  Boolean               @default(true)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  usages    RepairMaterialUsage[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("repair_materials")
+}
+
+// Per-repair material usage row (created when repairman submits Done)
+model RepairMaterialUsage {
+  id          String          @id @default(uuid())
+  repairId    String
+  materialId  String
+  amount      Float           // quantity used
+  note        String?         // optional inline note
+  createdAt   DateTime        @default(now())
+
+  repair      Repair          @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  material    RepairMaterial  @relation(fields: [materialId], references: [id])
+
+  @@index([repairId])
+  @@map("repair_material_usages")
+}
+
+model RepairPhoto {
+  id            String    @id @default(uuid())
+  repairId      String
+  url           String    // GCS publicUrl
+  caption       String?
+  uploadedById  String?
+  uploadedAt    DateTime  @default(now())
+
+  repair        Repair    @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  uploadedBy    User?     @relation("RepairPhotoUploader", fields: [uploadedById], references: [id])
+
+  @@index([repairId])
+  @@map("repair_photos")
+}
+
+model RepairComment {
+  id          String              @id @default(uuid())
+  repairId    String
+  authorId    String
+  authorRole  RepairAuthorRole    @default(MANAGER)
+  body        String
+  createdAt   DateTime            @default(now())
+
+  repair      Repair              @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  author      User                @relation("RepairCommentAuthor", fields: [authorId], references: [id])
+
+  @@index([repairId, createdAt])
+  @@map("repair_comments")
+}
+
+// "Report a problem" — created when repairman taps Report instead of Done
+model RepairReport {
+  id          String                @id @default(uuid())
+  repairId    String
+  authorId    String                // repairman who reported
+  urgency     RepairReportUrgency
+  description String                // required, max ~500 chars
+  photoUrls   String[]              @default([])
+  resolvedAt  DateTime?             // when manager addressed it
+  createdAt   DateTime              @default(now())
+
+  repair      Repair                @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  author      User                  @relation("RepairReportAuthor", fields: [authorId], references: [id])
+
+  @@index([repairId, createdAt])
+  @@map("repair_reports")
 }
