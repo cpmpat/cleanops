@@ -66,7 +66,7 @@ export class RepairsController {
   getById(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.getById(req.tenantId!, id, {
       userId: req.userId!,
-      userRole: req.userRole!,
+      userRole: req.userRole! as any,
     });
   }
 
@@ -76,7 +76,7 @@ export class RepairsController {
   create(@Req() req: TenantRequest, @Body() dto: CreateRepairDto) {
     return this.service.createManual(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       dto,
     );
   }
@@ -92,7 +92,7 @@ export class RepairsController {
   ) {
     return this.service.createFromIncident(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       incidentId,
       dto,
     );
@@ -108,7 +108,7 @@ export class RepairsController {
   ) {
     return this.service.update(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       id,
       dto,
     );
@@ -121,7 +121,7 @@ export class RepairsController {
   cancel(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.cancel(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       id,
     );
   }
@@ -138,7 +138,7 @@ export class RepairsController {
   ) {
     return this.service.assign(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       id,
       dto,
     );
@@ -152,8 +152,7 @@ export class RepairsController {
     return this.service.start(
       {
         userId: req.userId!,
-        userRole: req.userRole!,
-        email: req.user!.email,
+        userRole: req.userRole! as any,
         tenantId: req.tenantId!,
       },
       id,
@@ -170,8 +169,7 @@ export class RepairsController {
     return this.service.submitDone(
       {
         userId: req.userId!,
-        userRole: req.userRole!,
-        email: req.user!.email,
+        userRole: req.userRole! as any,
         tenantId: req.tenantId!,
       },
       id,
@@ -189,8 +187,7 @@ export class RepairsController {
     return this.service.reportProblem(
       {
         userId: req.userId!,
-        userRole: req.userRole!,
-        email: req.user!.email,
+        userRole: req.userRole! as any,
         tenantId: req.tenantId!,
       },
       id,
@@ -207,7 +204,7 @@ export class RepairsController {
   approve(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.approve(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       id,
     );
   }
@@ -223,7 +220,7 @@ export class RepairsController {
   ) {
     return this.service.rejectReview(
       req.tenantId!,
-      { userId: req.userId!, userRole: req.userRole!, email: req.user!.email },
+      { userId: req.userId!, userRole: req.userRole! as any },
       id,
       body.note,
     );
@@ -245,8 +242,7 @@ export class RepairsController {
     return this.service.addComment(
       {
         userId: req.userId!,
-        userRole: req.userRole!,
-        email: req.user!.email,
+        userRole: req.userRole! as any,
         tenantId: req.tenantId!,
       },
       id,

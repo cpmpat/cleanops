@@ -97,7 +97,7 @@ export class RepairsService {
 
   async createManual(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     dto: CreateRepairDto,
   ) {
     this.requireManager(actor.userRole);
@@ -140,7 +140,7 @@ export class RepairsService {
 
   async createFromIncident(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     incidentId: string,
     dto: CreateRepairFromIncidentDto,
   ) {
@@ -290,7 +290,7 @@ export class RepairsService {
 
   async update(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     id: string,
     dto: UpdateRepairDto,
   ) {
@@ -334,7 +334,7 @@ export class RepairsService {
 
   async cancel(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     id: string,
   ) {
     this.requireManager(actor.userRole);
@@ -378,7 +378,7 @@ export class RepairsService {
 
   async assign(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     repairId: string,
     dto: AssignRepairDto,
   ) {
@@ -500,7 +500,7 @@ export class RepairsService {
   // ============================================================
 
   async start(
-    actor: { userId: string; userRole: UserRole; email: string; tenantId: string },
+    actor: { userId: string; userRole: UserRole; tenantId: string },
     repairId: string,
   ) {
     if (actor.userRole !== 'REPAIRMAN' && actor.userRole !== 'MANAGER') {
@@ -559,7 +559,7 @@ export class RepairsService {
   }
 
   async submitDone(
-    actor: { userId: string; userRole: UserRole; email: string; tenantId: string },
+    actor: { userId: string; userRole: UserRole; tenantId: string },
     repairId: string,
     dto: SubmitDoneDto,
   ) {
@@ -675,7 +675,7 @@ export class RepairsService {
   }
 
   async reportProblem(
-    actor: { userId: string; userRole: UserRole; email: string; tenantId: string },
+    actor: { userId: string; userRole: UserRole; tenantId: string },
     repairId: string,
     dto: ReportProblemDto,
   ) {
@@ -757,7 +757,7 @@ export class RepairsService {
 
   async approve(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     repairId: string,
   ) {
     this.requireManager(actor.userRole);
@@ -796,7 +796,7 @@ export class RepairsService {
 
   async rejectReview(
     tenantId: string,
-    actor: { userId: string; userRole: UserRole; email: string },
+    actor: { userId: string; userRole: UserRole },
     repairId: string,
     note?: string,
   ) {
@@ -855,7 +855,7 @@ export class RepairsService {
   // ============================================================
 
   async addComment(
-    actor: { userId: string; userRole: UserRole; email: string; tenantId: string },
+    actor: { userId: string; userRole: UserRole; tenantId: string },
     repairId: string,
     body: string,
   ) {
@@ -990,7 +990,7 @@ export class RepairsService {
   private async audit(
     db: any,
     tenantId: string,
-    actor: { userId: string; email: string },
+    actor: { userId: string },
     action: string,
     targetId: string,
     metadata: Record<string, any>,
@@ -1002,7 +1002,6 @@ export class RepairsService {
           category: 'SYSTEM', // no REPAIR_LIFECYCLE category yet; bucket under SYSTEM
           action,
           actorId: actor.userId,
-          actorEmail: actor.email,
           targetType: 'Repair',
           targetId,
           metadata: metadata as any,

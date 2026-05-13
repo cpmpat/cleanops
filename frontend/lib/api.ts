@@ -479,10 +479,6 @@ export const bookings = {
     post<Booking>(`/bookings/${id}/cancel`),
 };
 
-// ════════════════════════════════════════════════════════════════════
-// APPEND TO frontend/lib/api.ts
-// Paste this section BEFORE the `// ─── Users ───` section.
-// ════════════════════════════════════════════════════════════════════
 
 // ─── Streams ──────────────────────────────────────────────────────────────────
 
@@ -573,6 +569,199 @@ export const streams = {
 
   deleteManual: (id: string) =>
     del<{ deleted: true }>(`/streams/manual/${id}`),
+};
+
+export type RepairStatus =
+  | 'PLANNED'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'IN_REVIEW'
+  | 'DONE'
+  | 'REPORTED_BACK'
+  | 'CANCELLED';
+
+export type RepairAssignmentStatus =
+  | 'ASSIGNED'
+  | 'STARTED'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'REASSIGNED';
+
+export type RepairAuthorRole = 'MANAGER' | 'REPAIRMAN' | 'SYSTEM';
+export type RepairReportUrgency = 'LOW' | 'AVERAGE' | 'HIGH';
+
+export interface RepairAssignment {
+  id: string;
+  repairId: string;
+  userId: string;
+  isPrimary: boolean;
+  status: RepairAssignmentStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  assignedAt: string;
+  user: { id: string; name: string; email: string };
+}
+
+export interface RepairMaterial {
+  id: string;
+  tenantId: string;
+  name: string;
+  unit: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RepairMaterialUsage {
+  id: string;
+  repairId: string;
+  materialId: string;
+  amount: number;
+  note: string | null;
+  createdAt: string;
+  material: { id: string; name: string; unit: string | null };
+}
+
+export interface RepairPhoto {
+  id: string;
+  repairId: string;
+  url: string;
+  caption: string | null;
+  uploadedById: string | null;
+  uploadedAt: string;
+}
+
+export interface RepairComment {
+  id: string;
+  repairId: string;
+  authorId: string;
+  authorRole: RepairAuthorRole;
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string };
+}
+
+export interface RepairReport {
+  id: string;
+  repairId: string;
+  authorId: string;
+  urgency: RepairReportUrgency;
+  description: string;
+  photoUrls: string[];
+  resolvedAt: string | null;
+  createdAt: string;
+  author: { id: string; name: string };
+}
+
+export interface Repair {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  incidentId: string | null;
+  status: RepairStatus;
+  title: string;
+  description: string | null;
+  dueDate: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  reviewedAt: string | null;
+  reportedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  property: { id: string; name: string; address: string | null };
+  assignments: RepairAssignment[];
+  materials: RepairMaterialUsage[];
+  photos: RepairPhoto[];
+  reports: RepairReport[];
+  comments?: RepairComment[]; // included on detail
+  incident: { id: string; title: string; type: string; status: string } | null;
+}
+
+export const repairs = {
+  list: (params?: {
+    status?: RepairStatus | RepairStatus[];
+    propertyId?: string;
+    assignedToId?: string;
+    due?: 'overdue' | 'today' | 'week' | 'all';
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.status) {
+      const s = Array.isArray(params.status) ? params.status.join(',') : params.status;
+      q.set('status', s);
+    }
+    if (params?.propertyId) q.set('propertyId', params.propertyId);
+    if (params?.assignedToId) q.set('assignedToId', params.assignedToId);
+    if (params?.due) q.set('due', params.due);
+    const qs = q.toString();
+    return get<Repair[]>(`/repairs${qs ? `?${qs}` : ''}`);
+  },
+
+  listMine: () => get<Repair[]>('/repairs/mine'),
+
+  getById: (id: string) => get<Repair>(`/repairs/${id}`),
+
+  create: (data: {
+    title: string;
+    description?: string;
+    propertyId: string;
+    dueDate: string;
+    assignTo?: string[];
+    primaryUserId?: string;
+  }) => post<Repair>('/repairs', data),
+
+  createFromIncident: (incidentId: string, data: {
+    title?: string;
+    description?: string;
+    dueDate: string;
+    assignTo?: string[];
+    primaryUserId?: string;
+  }) => post<Repair>(`/repairs/from-incident/${incidentId}`, data),
+
+  update: (id: string, data: {
+    title?: string;
+    description?: string;
+    dueDate?: string;
+    propertyId?: string;
+  }) => patch<Repair>(`/repairs/${id}`, data),
+
+  cancel: (id: string) => del<Repair>(`/repairs/${id}`),
+
+  assign: (id: string, data: { userIds: string[]; primaryUserId?: string }) =>
+    post<Repair>(`/repairs/${id}/assign`, data),
+
+  start: (id: string) => post<Repair>(`/repairs/${id}/start`, {}),
+
+  submitDone: (id: string, data: {
+    comment?: string;
+    materials?: Array<{ materialId: string; amount: number; note?: string }>;
+    photoUrls?: string[];
+  }) => post<Repair>(`/repairs/${id}/done`, data),
+
+  reportProblem: (id: string, data: {
+    urgency: RepairReportUrgency;
+    description: string;
+    photoUrls?: string[];
+  }) => post<Repair>(`/repairs/${id}/report`, data),
+
+  approve: (id: string) => patch<Repair>(`/repairs/${id}/approve`, {}),
+
+  rejectReview: (id: string, note?: string) =>
+    patch<Repair>(`/repairs/${id}/reject-review`, { note }),
+
+  listComments: (id: string) => get<RepairComment[]>(`/repairs/${id}/comments`),
+  addComment: (id: string, body: string) =>
+    post<RepairComment>(`/repairs/${id}/comments`, { body }),
+};
+
+export const repairMaterials = {
+  list: (includeInactive = false) =>
+    get<RepairMaterial[]>(`/repair-materials${includeInactive ? '?includeInactive=true' : ''}`),
+  create: (data: { name: string; unit?: string }) =>
+    post<RepairMaterial>('/repair-materials', data),
+  update: (id: string, data: { name?: string; unit?: string | null; isActive?: boolean }) =>
+    patch<RepairMaterial>(`/repair-materials/${id}`, data),
+  deactivate: (id: string) => del<RepairMaterial>(`/repair-materials/${id}`),
 };
 
 

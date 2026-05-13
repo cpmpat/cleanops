@@ -7,7 +7,7 @@ import { translations, type Locale } from '@/i18n/translations';
 import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
-  AlertTriangle, Activity, Database,
+  AlertTriangle, Activity, Database, Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
@@ -38,6 +38,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading) {
       if (!user) { router.replace('/login'); return; }
+      if (user.role === 'REPAIRMAN') { router.replace('/my-repairs'); return; }
       if (user.role !== 'MANAGER') { router.replace('/cleanings'); return; }
     }
   }, [user, loading]);
@@ -45,15 +46,16 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   const t = translations[locale];
 
   const navItems = [
-    { href: '/dashboard', icon: LayoutDashboard, label: t.nav.dashboard },
-    { href: '/planning',  icon: CalendarCheck,   label: t.nav.planning },
-    { href: '/schedule',  icon: CalendarRange,   label: (t.nav as any).schedule ?? 'Schedule' },
-    { href: '/streams',   icon: Activity,        label: (t.nav as any).streams  ?? 'Streams' },
-    { href: '/incidents', icon: AlertTriangle,   label: t.nav.incidents },
-    { href: '/staff',     icon: Users,           label: t.nav.staff },
-    { href: '/properties',icon: Building2,       label: t.nav.properties },
-    { href: '/datasets',  icon: Database,        label: (t.nav as any).datasets ?? 'Datasets' },
-    { href: '/settings',  icon: Settings,        label: t.nav.settings },
+    { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
+    { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
+    { href: '/schedule',   icon: CalendarRange,   label: (t.nav as any).schedule ?? 'Schedule' },
+    { href: '/streams',    icon: Activity,        label: (t.nav as any).streams  ?? 'Streams' },
+    { href: '/incidents',  icon: AlertTriangle,   label: t.nav.incidents },
+    { href: '/repairs',    icon: Wrench,          label: (t.nav as any).repairs  ?? 'Repairs' },
+    { href: '/staff',      icon: Users,           label: t.nav.staff },
+    { href: '/properties', icon: Building2,       label: t.nav.properties },
+    { href: '/datasets',   icon: Database,        label: (t.nav as any).datasets ?? 'Datasets' },
+    { href: '/settings',   icon: Settings,        label: t.nav.settings },
   ];
 
   if (loading || !user) {
