@@ -1,6 +1,6 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type Role = 'MANAGER' | 'CLEANER';
+export type Role = 'MANAGER' | 'CLEANER' | 'REPAIRMAN';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;
@@ -237,6 +237,7 @@ export interface Incident extends IncidentListItem {
   /** @deprecated use cleaning */
   cleaningEvent?: any;
   attachments: IncidentAttachment[];
+  repair?: { id: string; title: string; status: "PLANNED" | "ASSIGNED" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "REPORTED_BACK" | "CANCELLED" } | null;
 }
 
 export interface IncidentListResponse {

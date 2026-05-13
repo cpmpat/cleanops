@@ -1,1014 +1,984 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
-import {
-  RepairStatus,
-  RepairAssignmentStatus,
-  RepairAuthorRole,
-  RepairReportUrgency,
-  UserRole,
-} from '@prisma/client';
-import { PrismaService } from '../common/prisma.service';
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-// ─── DTOs ───────────────────────────────────────────────────────────
+export type Role = 'MANAGER' | 'CLEANER' | 'REPAIRMAN';
+export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
+/** @deprecated use CleaningStatus */
+export type EventStatus = CleaningStatus;
+export type BookingStatus = 'CONFIRMED' | 'CANCELLED';
+export type CleaningType = 'CHECKOUT' | 'MIDSTAY' | 'DEEP';
+export type BookingChannel = 'AIRBNB' | 'BOOKING_COM' | 'VRBO' | 'EXPEDIA' | 'DIRECT' | 'OTHER';
+export type AssignmentStatus = 'ASSIGNED' | 'STARTED' | 'COMPLETED' | 'REJECTED' | 'REASSIGNED';
 
-export interface CreateRepairDto {
+// ─── Incidents types ───
+export type IncidentStatus = 'OPEN' | 'SCHEDULED' | 'RESOLVED' | 'CLOSED';
+export type IncidentPriority = 'LOW' | 'MEDIUM' | 'HIGH';
+export type IncidentType =
+  | 'CLEANING'
+  | 'BOILER_INSPECTION'
+  | 'ACCIDENT'
+  | 'PHOTO_SHOOT'
+  | 'REPAIR'
+  | 'GENERAL';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  language: string;
+  tenantId: string;
+  preferences?: UserPreferences;
+}
+
+export interface UserPreferences {
+  cleaningsPoolFilter?: {
+    propertyIds: string[];
+  };
+  [key: string]: any;
+}
+
+export interface Property {
+  id: string;
+  name: string;
+  address?: string;
+  locationLat?: number;
+  locationLng?: number;
+  pmsPropertyId?: string;
+  defaultCleanerId?: string;
+}
+
+export interface Assignment {
+  id: string;
+  userId: string;
+  isPrimary: boolean;
+  status: AssignmentStatus;
+  startedAt?: string;
+  completedAt?: string;
+  user: { id: string; name: string; email: string };
+  assignedBy?: { id: string; name: string };
+  photos: Photo[];
+}
+
+export interface Photo {
+  id: string;
+  url: string;
+  createdAt: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+export interface Booking {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  bookingRef: string;
+  pmsBookingId?: string;
+  status: BookingStatus;
+  cancelledAt?: string | null;
+  checkInTime: string;
+  checkOutTime?: string;
+  accommodationName: string;
+  accommodationType?: string;
+  numAdults: number;
+  numChildren: number;
+  channel: BookingChannel;
+  pmsLastSyncedAt?: string;
+  property?: Property;
+  cleaning?: Cleaning | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Cleaning {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  bookingId: string;
+
+  cleaningType: CleaningType;
+  status: CleaningStatus;
+  timeSlot: string;
+  maxCleaners: number;
+
+  managerNote?: string;
+  supplyNote?: string;
+  cleanerNote?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+
+  // Denormalized booking fields (read-only \u2014 sync owns them)
+  bookingRef: string;
+  checkInTime: string;
+  checkOutTime?: string;
+  accommodationName: string;
+  numAdults: number;
+  numChildren: number;
+  channel: BookingChannel;
+  pmsLastSyncedAt?: string;
+
+  // When the underlying booking was cancelled. Cleaning may still be active.
+  bookingCancelledAt?: string | null;
+
+  property?: Property;
+  booking?: { id: string; bookingRef: string; pmsBookingId?: string; status: BookingStatus; cancelledAt?: string | null };
+  assignments: Assignment[];
+  tags?: { tag: Tag }[];
+  photos: Photo[];
+}
+
+/** @deprecated use Cleaning */
+export type CleaningEvent = Cleaning;
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+  payload?: Record<string, any>;
+}
+
+export interface PlanningBooking {
+  id: string;
+  cleaningId?: string;
+  pmsBookingId?: string;
+  bookingRef: string;
+  accommodationName: string;
+  accommodationType?: string;
+  propertyId?: string;
+  pmsPropertyId?: string;
+  checkInTime: string;
+  checkOutTime?: string;
+  timeSlot?: string;
+  numAdults: number;
+  numChildren: number;
+  channel: BookingChannel;
+  status?: CleaningStatus;
+  bookingStatus: BookingStatus;
+  bookingCancelledAt?: string | null;
+  assignments: {
+    id: string;
+    userId: string;
+    userName: string;
+    isPrimary: boolean;
+    status: AssignmentStatus;
+  }[];
+}
+
+export interface DayStats {
+  total: number;
+  completed: number;
+  pending: number;
+  inProgress: number;
+  overdue: number;
+}
+
+// ─── Incident types ─────
+
+export interface IncidentUserRef {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
+export interface IncidentAttachment {
+  id: string;
+  url: string;
+  mimeType: string | null;
+  createdAt: string;
+}
+
+export interface IncidentListItem {
+  id: string;
+  type: IncidentType;
+  status: IncidentStatus;
+  priority: IncidentPriority;
+  title: string;
+  propertyId: string | null;
+  isGeneral: boolean;
+  bookingId: string | null;
+  cleaningId: string | null;
+  /** @deprecated use cleaningId */
+  cleaningEventId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  property: { id: string; name: string } | null;
+  reportedBy: IncidentUserRef | null;
+  assignedTo: IncidentUserRef | null;
+  _count?: { attachments: number };
+}
+
+export interface Incident extends IncidentListItem {
+  description: string | null;
+  scheduledFor: string | null;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  property: { id: string; name: string; address?: string | null } | null;
+  resolvedBy: IncidentUserRef | null;
+  cleaning: {
+    id: string;
+    accommodationName: string;
+    timeSlot: string;
+    checkInTime: string;
+    booking?: { id: string; bookingRef: string } | null;
+  } | null;
+  booking: {
+    id: string;
+    bookingRef: string;
+    accommodationName: string;
+    checkInTime: string;
+  } | null;
+  /** @deprecated use cleaning */
+  cleaningEvent?: any;
+  attachments: IncidentAttachment[];
+  repair?: {
+    id: string;
+    title: string;
+    status:
+      | 'PLANNED'
+      | 'ASSIGNED'
+      | 'IN_PROGRESS'
+      | 'IN_REVIEW'
+      | 'DONE'
+      | 'REPORTED_BACK'
+      | 'CANCELLED';
+  } | null;
+}
+
+export interface IncidentListResponse {
+  rows: IncidentListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface IncidentFilters {
+  status?: IncidentStatus;
+  type?: IncidentType;
+  priority?: IncidentPriority;
+  propertyId?: string;
+  assignedToId?: string;
+  isGeneral?: boolean;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CreateIncidentPayload {
+  type: IncidentType;
+  priority?: IncidentPriority;
   title: string;
   description?: string;
-  propertyId: string;
-  dueDate: string; // ISO
-  assignTo?: string[]; // optional userIds — if given, repair starts ASSIGNED
-  primaryUserId?: string; // optional — which assignee is primary
+  propertyId?: string;
+  isGeneral?: boolean;
+  bookingId?: string;
+  cleaningId?: string;
+  assignedToId?: string;
+  scheduledFor?: string;
 }
 
-export interface CreateRepairFromIncidentDto {
-  title?: string;       // defaults to incident.title
-  description?: string; // defaults to incident.description
-  dueDate: string;
-  assignTo?: string[];
-  primaryUserId?: string;
-}
-
-export interface UpdateRepairDto {
+export interface UpdateIncidentPayload {
+  type?: IncidentType;
+  status?: IncidentStatus;
+  priority?: IncidentPriority;
   title?: string;
   description?: string;
-  dueDate?: string;
-  propertyId?: string;
+  assignedToId?: string | null;
+  scheduledFor?: string | null;
+  resolutionNote?: string;
 }
 
-export interface AssignRepairDto {
-  userIds: string[];          // all assignees (replaces current active set)
-  primaryUserId?: string;     // which one is primary
+// ─── API Client ───────────────────────────────────────────────────────────────
+
+const BASE = '/api/v1';
+
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('cleanops_token');
 }
 
-export interface SubmitDoneDto {
-  comment?: string;
-  materials?: Array<{ materialId: string; amount: number; note?: string }>;
-  photoUrls?: string[];
+class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
 }
 
-export interface ReportProblemDto {
-  urgency: RepairReportUrgency;
-  description: string;
-  photoUrls?: string[];
-}
-
-// ─── Includes (shared) ──────────────────────────────────────────────
-
-const REPAIR_INCLUDE = {
-  property: { select: { id: true, name: true, address: true } },
-  assignments: {
-    where: { status: { in: ['ASSIGNED', 'STARTED'] as RepairAssignmentStatus[] } },
-    include: { user: { select: { id: true, name: true, email: true } } },
-  },
-  materials: {
-    include: {
-      material: { select: { id: true, name: true, unit: true } },
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
     },
-    orderBy: { createdAt: 'asc' as const },
-  },
-  photos: {
-    orderBy: { uploadedAt: 'desc' as const },
-    take: 50,
-  },
-  reports: {
-    orderBy: { createdAt: 'desc' as const },
-    include: { author: { select: { id: true, name: true } } },
-  },
-  incident: { select: { id: true, title: true, type: true, status: true } },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    throw new ApiError(res.status, body.message || 'Request failed');
+  }
+
+  return res.json();
+}
+
+const get = <T>(path: string) => request<T>(path);
+const post = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+const patch = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface VerifyResponse {
+  setupToken: string;
+  email: string;
+  name: string;
+  isFirstTime: boolean;
+}
+
+export const auth = {
+  login: (email: string, password: string) =>
+    post<{ accessToken: string; user: User }>('/auth/login', { email, password }),
+
+  requestMagicLink: (email: string) =>
+    post<{ message: string; _dev_token?: string }>(
+      '/auth/magic-link', { email }
+    ),
+
+  verify: (token: string) =>
+    post<VerifyResponse>('/auth/verify', { token }),
+
+  setPassword: (setupToken: string, password: string) =>
+    post<{ accessToken: string; user: User }>('/auth/set-password', {
+      setupToken,
+      password,
+    }),
+
+  me: () => get<User>('/auth/me'),
+  logout: () => post('/auth/logout'),
 };
 
-// ─── Service ────────────────────────────────────────────────────────
-
-@Injectable()
-export class RepairsService {
-  private readonly logger = new Logger(RepairsService.name);
-
-  constructor(private prisma: PrismaService) {}
-
-  // ============================================================
-  // CREATE
-  // ============================================================
-
-  async createManual(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    dto: CreateRepairDto,
-  ) {
-    this.requireManager(actor.userRole);
-    this.validateRepairBasics(dto.title, dto.description, dto.dueDate, dto.propertyId);
-
-    const property = await this.prisma.property.findFirst({
-      where: { id: dto.propertyId, tenantId },
-    });
-    if (!property) throw new NotFoundException('Property not found');
-
-    const willAssign = dto.assignTo && dto.assignTo.length > 0;
-
-    return this.prisma.$transaction(async (tx) => {
-      const repair = await tx.repair.create({
-        data: {
-          tenantId,
-          propertyId: dto.propertyId,
-          title: dto.title.trim(),
-          description: dto.description?.trim() || null,
-          dueDate: new Date(dto.dueDate),
-          status: willAssign ? 'ASSIGNED' : 'PLANNED',
-        },
-      });
-
-      if (willAssign) {
-        await this.assignInTx(tx, repair.id, dto.assignTo!, dto.primaryUserId, actor.userId);
-      }
-
-      await this.audit(tx, tenantId, actor, 'repair.created', repair.id, {
-        title: repair.title,
-        assignedTo: dto.assignTo ?? [],
-      });
-
-      return tx.repair.findUnique({
-        where: { id: repair.id },
-        include: REPAIR_INCLUDE,
-      });
-    });
-  }
-
-  async createFromIncident(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    incidentId: string,
-    dto: CreateRepairFromIncidentDto,
-  ) {
-    this.requireManager(actor.userRole);
-
-    const incident = await this.prisma.incident.findFirst({
-      where: { id: incidentId, tenantId },
-      include: { repair: true },
-    });
-    if (!incident) throw new NotFoundException('Incident not found');
-    if (incident.repair) {
-      throw new ConflictException('This incident already has a linked repair');
-    }
-    if (!incident.propertyId) {
-      throw new BadRequestException(
-        'Incident has no property — cannot create repair from a tenant-wide incident',
-      );
-    }
-
-    const title = (dto.title || incident.title).trim();
-    const description = (dto.description ?? incident.description ?? '').trim() || null;
-    this.validateRepairBasics(title, description, dto.dueDate, incident.propertyId);
-
-    const willAssign = dto.assignTo && dto.assignTo.length > 0;
-
-    return this.prisma.$transaction(async (tx) => {
-      const repair = await tx.repair.create({
-        data: {
-          tenantId,
-          propertyId: incident.propertyId!,
-          incidentId,
-          title,
-          description,
-          dueDate: new Date(dto.dueDate),
-          status: willAssign ? 'ASSIGNED' : 'PLANNED',
-        },
-      });
-
-      if (willAssign) {
-        await this.assignInTx(tx, repair.id, dto.assignTo!, dto.primaryUserId, actor.userId);
-      }
-
-      await this.audit(tx, tenantId, actor, 'repair.created_from_incident', repair.id, {
-        incidentId,
-        title,
-      });
-
-      return tx.repair.findUnique({
-        where: { id: repair.id },
-        include: REPAIR_INCLUDE,
-      });
-    });
-  }
-
-  // ============================================================
-  // LIST / GET
-  // ============================================================
-
-  async list(
-    tenantId: string,
-    filters: {
-      status?: RepairStatus | RepairStatus[];
-      propertyId?: string;
-      assignedToId?: string;
-      due?: 'overdue' | 'today' | 'week' | 'all';
-    } = {},
-  ) {
-    const where: any = { tenantId };
-
-    if (filters.status) {
-      where.status = Array.isArray(filters.status) ? { in: filters.status } : filters.status;
-    }
-    if (filters.propertyId) where.propertyId = filters.propertyId;
-
-    if (filters.assignedToId) {
-      where.assignments = {
-        some: {
-          userId: filters.assignedToId,
-          status: { in: ['ASSIGNED', 'STARTED'] },
-        },
-      };
-    }
-
-    const now = new Date();
-    if (filters.due === 'overdue') {
-      where.dueDate = { lt: now };
-      where.status = { notIn: ['DONE', 'CANCELLED'] };
-    } else if (filters.due === 'today') {
-      const start = new Date(now); start.setHours(0, 0, 0, 0);
-      const end = new Date(now); end.setHours(23, 59, 59, 999);
-      where.dueDate = { gte: start, lte: end };
-    } else if (filters.due === 'week') {
-      const start = new Date(now); start.setHours(0, 0, 0, 0);
-      const end = new Date(start); end.setDate(end.getDate() + 7);
-      where.dueDate = { gte: start, lte: end };
-    }
-
-    return this.prisma.repair.findMany({
-      where,
-      include: REPAIR_INCLUDE,
-      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
-      take: 200,
-    });
-  }
-
-  async listMine(tenantId: string, userId: string) {
-    return this.prisma.repair.findMany({
-      where: {
-        tenantId,
-        assignments: {
-          some: { userId, status: { in: ['ASSIGNED', 'STARTED'] } },
-        },
-        status: { notIn: ['DONE', 'CANCELLED'] },
-      },
-      include: REPAIR_INCLUDE,
-      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
-    });
-  }
-
-  async getById(tenantId: string, id: string, actor?: { userId: string; userRole: UserRole }) {
-    const repair = await this.prisma.repair.findFirst({
-      where: { id, tenantId },
-      include: {
-        ...REPAIR_INCLUDE,
-        comments: {
-          include: { author: { select: { id: true, name: true } } },
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    // Repairmen can only see repairs they're assigned to
-    if (actor && actor.userRole === 'REPAIRMAN') {
-      const isAssigned = repair.assignments.some((a) => a.user.id === actor.userId);
-      if (!isAssigned) {
-        throw new ForbiddenException('You are not assigned to this repair');
-      }
-    }
-
-    return repair;
-  }
-
-  // ============================================================
-  // UPDATE / CANCEL (manager)
-  // ============================================================
-
-  async update(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    id: string,
-    dto: UpdateRepairDto,
-  ) {
-    this.requireManager(actor.userRole);
-
-    const existing = await this.prisma.repair.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new NotFoundException('Repair not found');
-    if (existing.status === 'DONE') {
-      throw new BadRequestException('Cannot edit a completed repair');
-    }
-    if (existing.status === 'CANCELLED') {
-      throw new BadRequestException('Cannot edit a cancelled repair');
-    }
-
-    if (dto.propertyId && dto.propertyId !== existing.propertyId) {
-      const property = await this.prisma.property.findFirst({
-        where: { id: dto.propertyId, tenantId },
-      });
-      if (!property) throw new NotFoundException('Property not found');
-    }
-
-    const data: any = {};
-    if (dto.title !== undefined) data.title = dto.title.trim();
-    if (dto.description !== undefined) data.description = dto.description?.trim() || null;
-    if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
-    if (dto.propertyId !== undefined) data.propertyId = dto.propertyId;
-
-    if (data.title !== undefined && (data.title.length < 3 || data.title.length > 200)) {
-      throw new BadRequestException('Title must be 3-200 characters');
-    }
-
-    const updated = await this.prisma.repair.update({
-      where: { id },
-      data,
-      include: REPAIR_INCLUDE,
-    });
-
-    await this.audit(this.prisma, tenantId, actor, 'repair.updated', id, dto);
-    return updated;
-  }
-
-  async cancel(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    id: string,
-  ) {
-    this.requireManager(actor.userRole);
-
-    const existing = await this.prisma.repair.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new NotFoundException('Repair not found');
-    if (existing.status === 'DONE') throw new BadRequestException('Cannot cancel a completed repair');
-    if (existing.status === 'CANCELLED') return existing;
-
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.repair.update({
-        where: { id },
-        data: { status: 'CANCELLED', cancelledAt: new Date() },
-        include: REPAIR_INCLUDE,
-      });
-
-      // Mark all active assignments as REASSIGNED (effectively retired)
-      await tx.repairAssignment.updateMany({
-        where: { repairId: id, status: { in: ['ASSIGNED', 'STARTED'] } },
-        data: { status: 'REASSIGNED' },
-      });
-
-      // Notify any active assignees
-      const active = await tx.repairAssignment.findMany({
-        where: { repairId: id, status: 'REASSIGNED' },
-        select: { userId: true },
-      });
-      for (const a of active) {
-        await this.notify(tx, tenantId, a.userId, 'CANCELLATION', 'Repair cancelled',
-          `Repair "${existing.title}" was cancelled by the manager.`, { repairId: id });
-      }
-
-      await this.audit(tx, tenantId, actor, 'repair.cancelled', id, { title: existing.title });
-      return updated;
-    });
-  }
-
-  // ============================================================
-  // ASSIGN / REASSIGN
-  // ============================================================
-
-  async assign(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    repairId: string,
-    dto: AssignRepairDto,
-  ) {
-    this.requireManager(actor.userRole);
-
-    if (!dto.userIds || dto.userIds.length === 0) {
-      throw new BadRequestException('At least one assignee required');
-    }
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-    if (repair.status === 'DONE') throw new BadRequestException('Cannot assign a completed repair');
-    if (repair.status === 'CANCELLED') throw new BadRequestException('Cannot assign a cancelled repair');
-
-    // Verify all userIds are REPAIRMAN role in this tenant
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: dto.userIds }, tenantId, role: 'REPAIRMAN', isActive: true },
-      select: { id: true, name: true },
-    });
-    if (users.length !== dto.userIds.length) {
-      throw new BadRequestException('One or more users are not active repairmen in this tenant');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await this.assignInTx(tx, repairId, dto.userIds, dto.primaryUserId, actor.userId);
-
-      // Transition status if it was PLANNED
-      const next = repair.status === 'PLANNED' ? 'ASSIGNED' : repair.status;
-      const updated = await tx.repair.update({
-        where: { id: repairId },
-        data: { status: next },
-        include: REPAIR_INCLUDE,
-      });
-
-      // Notify newly assigned repairmen
-      for (const userId of dto.userIds) {
-        await this.notify(tx, tenantId, userId, 'NEW_ASSIGNMENT',
-          'New repair assigned',
-          `You have been assigned to repair "${repair.title}".`,
-          { repairId });
-      }
-
-      await this.audit(tx, tenantId, actor, 'repair.assigned', repairId, {
-        userIds: dto.userIds, primaryUserId: dto.primaryUserId,
-      });
-      return updated;
-    });
-  }
-
-  // Internal helper — assumes manager check already done
-  private async assignInTx(
-    tx: any,
-    repairId: string,
-    userIds: string[],
-    primaryUserId: string | undefined,
-    assignedById: string,
-  ) {
-    // Retire any current active assignments NOT in the new set
-    await tx.repairAssignment.updateMany({
-      where: {
-        repairId,
-        status: { in: ['ASSIGNED', 'STARTED'] },
-        userId: { notIn: userIds },
-      },
-      data: { status: 'REASSIGNED' },
-    });
-
-    // For each new userId, create-or-reactivate
-    for (const userId of userIds) {
-      const isPrimary = primaryUserId
-        ? userId === primaryUserId
-        : userId === userIds[0]; // default first as primary
-
-      const existing = await tx.repairAssignment.findFirst({
-        where: { repairId, userId },
-      });
-
-      if (existing) {
-        // Reactivate if previously REASSIGNED/REJECTED; preserve status if active
-        if (existing.status === 'REASSIGNED' || existing.status === 'REJECTED') {
-          await tx.repairAssignment.update({
-            where: { id: existing.id },
-            data: {
-              status: 'ASSIGNED',
-              isPrimary,
-              rejectedReason: null,
-              assignedAt: new Date(),
-              assignedById,
-            },
-          });
-        } else {
-          // Just update primary flag if needed
-          if (existing.isPrimary !== isPrimary) {
-            await tx.repairAssignment.update({
-              where: { id: existing.id },
-              data: { isPrimary },
-            });
-          }
-        }
-      } else {
-        await tx.repairAssignment.create({
-          data: {
-            repairId,
-            userId,
-            assignedById,
-            isPrimary,
-            status: 'ASSIGNED',
-          },
-        });
-      }
-    }
-  }
-
-  // ============================================================
-  // REPAIRMAN ACTIONS: start / submitDone / reportProblem
-  // ============================================================
-
-  async start(
-    actor: { userId: string; userRole: UserRole; tenantId: string },
-    repairId: string,
-  ) {
-    if (actor.userRole !== 'REPAIRMAN' && actor.userRole !== 'MANAGER') {
-      throw new ForbiddenException('Only repairmen can start repairs');
-    }
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId: actor.tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    const myAssignment = repair.assignments.find(
-      (a) => a.userId === actor.userId && (a.status === 'ASSIGNED' || a.status === 'STARTED'),
-    );
-    if (!myAssignment) throw new ForbiddenException('You are not assigned to this repair');
-
-    if (repair.status === 'DONE' || repair.status === 'CANCELLED') {
-      throw new BadRequestException('Repair is no longer active');
-    }
-    if (repair.status === 'IN_REVIEW') {
-      throw new BadRequestException('Repair is already submitted for review');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-
-      // Update assignment status if not already STARTED
-      if (myAssignment.status === 'ASSIGNED') {
-        await tx.repairAssignment.update({
-          where: { id: myAssignment.id },
-          data: { status: 'STARTED', startedAt: now },
-        });
-      }
-
-      // Update repair status if it wasn't IN_PROGRESS yet
-      const updateData: any = {};
-      if (repair.status === 'ASSIGNED' || repair.status === 'REPORTED_BACK') {
-        updateData.status = 'IN_PROGRESS';
-      }
-      if (!repair.startedAt) {
-        updateData.startedAt = now;
-      }
-
-      const updated = Object.keys(updateData).length > 0
-        ? await tx.repair.update({
-            where: { id: repairId },
-            data: updateData,
-            include: REPAIR_INCLUDE,
-          })
-        : await tx.repair.findUnique({ where: { id: repairId }, include: REPAIR_INCLUDE });
-
-      await this.audit(tx, actor.tenantId, actor, 'repair.started', repairId, {});
-      return updated;
-    });
-  }
-
-  async submitDone(
-    actor: { userId: string; userRole: UserRole; tenantId: string },
-    repairId: string,
-    dto: SubmitDoneDto,
-  ) {
-    if (actor.userRole !== 'REPAIRMAN' && actor.userRole !== 'MANAGER') {
-      throw new ForbiddenException('Only repairmen can submit work');
-    }
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId: actor.tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    const myAssignment = repair.assignments.find(
-      (a) => a.userId === actor.userId && (a.status === 'ASSIGNED' || a.status === 'STARTED'),
-    );
-    if (!myAssignment) throw new ForbiddenException('You are not assigned to this repair');
-
-    if (repair.status === 'DONE' || repair.status === 'CANCELLED' || repair.status === 'IN_REVIEW') {
-      throw new BadRequestException(`Cannot submit Done from status ${repair.status}`);
-    }
-
-    // Validate materials reference real catalog entries
-    if (dto.materials && dto.materials.length > 0) {
-      const materialIds = dto.materials.map((m) => m.materialId);
-      const found = await this.prisma.repairMaterial.findMany({
-        where: { id: { in: materialIds }, tenantId: actor.tenantId, isActive: true },
-        select: { id: true },
-      });
-      if (found.length !== materialIds.length) {
-        throw new BadRequestException('One or more materials are invalid or inactive');
-      }
-      for (const m of dto.materials) {
-        if (!Number.isFinite(m.amount) || m.amount <= 0) {
-          throw new BadRequestException('Material amount must be > 0');
-        }
-      }
-    }
-
-    if (dto.photoUrls && dto.photoUrls.length > 20) {
-      throw new BadRequestException('Maximum 20 photos per submission');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-
-      // Materials usage
-      if (dto.materials && dto.materials.length > 0) {
-        await tx.repairMaterialUsage.createMany({
-          data: dto.materials.map((m) => ({
-            repairId,
-            materialId: m.materialId,
-            amount: m.amount,
-            note: m.note?.trim() || null,
-          })),
-        });
-      }
-
-      // Photos
-      if (dto.photoUrls && dto.photoUrls.length > 0) {
-        await tx.repairPhoto.createMany({
-          data: dto.photoUrls.map((url) => ({
-            repairId,
-            url,
-            uploadedById: actor.userId,
-          })),
-        });
-      }
-
-      // Optional comment
-      if (dto.comment && dto.comment.trim()) {
-        await tx.repairComment.create({
-          data: {
-            repairId,
-            authorId: actor.userId,
-            authorRole: actor.userRole === 'MANAGER' ? 'MANAGER' : 'REPAIRMAN',
-            body: dto.comment.trim(),
-          },
-        });
-      }
-
-      // Mark assignment complete
-      await tx.repairAssignment.update({
-        where: { id: myAssignment.id },
-        data: { status: 'COMPLETED', completedAt: now },
-      });
-
-      // Mark repair IN_REVIEW
-      const updated = await tx.repair.update({
-        where: { id: repairId },
-        data: { status: 'IN_REVIEW', completedAt: now },
-        include: REPAIR_INCLUDE,
-      });
-
-      // Notify managers
-      const managers = await tx.user.findMany({
-        where: { tenantId: actor.tenantId, role: 'MANAGER', isActive: true },
-        select: { id: true },
-      });
-      for (const m of managers) {
-        await this.notify(tx, actor.tenantId, m.id, 'REMINDER',
-          'Repair ready for review',
-          `Repair "${repair.title}" is ready for your review.`,
-          { repairId });
-      }
-
-      await this.audit(tx, actor.tenantId, actor, 'repair.done_submitted', repairId, {
-        materialsUsed: dto.materials?.length ?? 0,
-        photosAttached: dto.photoUrls?.length ?? 0,
-      });
-      return updated;
-    });
-  }
-
-  async reportProblem(
-    actor: { userId: string; userRole: UserRole; tenantId: string },
-    repairId: string,
-    dto: ReportProblemDto,
-  ) {
-    if (actor.userRole !== 'REPAIRMAN' && actor.userRole !== 'MANAGER') {
-      throw new ForbiddenException('Only repairmen can report problems');
-    }
-
-    if (!dto.description || dto.description.trim().length < 3) {
-      throw new BadRequestException('Description is required');
-    }
-    if (dto.description.length > 1000) {
-      throw new BadRequestException('Description too long (max 1000 chars)');
-    }
-    if (dto.photoUrls && dto.photoUrls.length > 20) {
-      throw new BadRequestException('Maximum 20 photos per report');
-    }
-    if (!['LOW', 'AVERAGE', 'HIGH'].includes(dto.urgency)) {
-      throw new BadRequestException('Invalid urgency');
-    }
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId: actor.tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    const myAssignment = repair.assignments.find(
-      (a) => a.userId === actor.userId && (a.status === 'ASSIGNED' || a.status === 'STARTED'),
-    );
-    if (!myAssignment) throw new ForbiddenException('You are not assigned to this repair');
-
-    if (repair.status === 'DONE' || repair.status === 'CANCELLED') {
-      throw new BadRequestException('Repair is no longer active');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-
-      // Create report record
-      await tx.repairReport.create({
-        data: {
-          repairId,
-          authorId: actor.userId,
-          urgency: dto.urgency,
-          description: dto.description.trim(),
-          photoUrls: dto.photoUrls ?? [],
-        },
-      });
-
-      // Move repair to REPORTED_BACK
-      const updated = await tx.repair.update({
-        where: { id: repairId },
-        data: { status: 'REPORTED_BACK', reportedAt: now },
-        include: REPAIR_INCLUDE,
-      });
-
-      // Notify managers
-      const managers = await tx.user.findMany({
-        where: { tenantId: actor.tenantId, role: 'MANAGER', isActive: true },
-        select: { id: true },
-      });
-      for (const m of managers) {
-        await this.notify(tx, actor.tenantId, m.id, 'REMINDER',
-          'Repair problem reported',
-          `Repairman reported a ${dto.urgency.toLowerCase()} issue on "${repair.title}".`,
-          { repairId, urgency: dto.urgency });
-      }
-
-      await this.audit(tx, actor.tenantId, actor, 'repair.problem_reported', repairId, {
-        urgency: dto.urgency,
-      });
-      return updated;
-    });
-  }
-
-  // ============================================================
-  // MANAGER REVIEW: approve / rejectReview
-  // ============================================================
-
-  async approve(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    repairId: string,
-  ) {
-    this.requireManager(actor.userRole);
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-    if (repair.status !== 'IN_REVIEW') {
-      throw new BadRequestException(`Can only approve repairs in review (current: ${repair.status})`);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.repair.update({
-        where: { id: repairId },
-        data: { status: 'DONE', reviewedAt: new Date() },
-        include: REPAIR_INCLUDE,
-      });
-
-      await this.audit(tx, tenantId, actor, 'repair.approved', repairId, {});
-
-      // Notify primary repairman
-      const primary = await tx.repairAssignment.findFirst({
-        where: { repairId, isPrimary: true },
-      });
-      if (primary) {
-        await this.notify(tx, tenantId, primary.userId, 'REMINDER',
-          'Repair approved',
-          `Your repair "${repair.title}" has been approved. Great work!`,
-          { repairId });
-      }
-
-      return updated;
-    });
-  }
-
-  async rejectReview(
-    tenantId: string,
-    actor: { userId: string; userRole: UserRole },
-    repairId: string,
-    note?: string,
-  ) {
-    this.requireManager(actor.userRole);
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-    if (repair.status !== 'IN_REVIEW') {
-      throw new BadRequestException('Can only reject a repair in review');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      // Add a comment with the rejection note
-      if (note && note.trim()) {
-        await tx.repairComment.create({
-          data: {
-            repairId,
-            authorId: actor.userId,
-            authorRole: 'MANAGER',
-            body: `Review rejected: ${note.trim()}`,
-          },
-        });
-      }
-
-      // Reactivate primary assignee so they can continue
-      const primary = repair.assignments.find((a) => a.isPrimary);
-      if (primary) {
-        await tx.repairAssignment.update({
-          where: { id: primary.id },
-          data: { status: 'STARTED', completedAt: null },
-        });
-        await this.notify(tx, tenantId, primary.userId, 'REMINDER',
-          'Repair review rejected',
-          note?.trim()
-            ? `Manager rejected the review: ${note.trim()}`
-            : 'Manager rejected the review. Please check and resubmit.',
-          { repairId });
-      }
-
-      const updated = await tx.repair.update({
-        where: { id: repairId },
-        data: { status: 'IN_PROGRESS', completedAt: null },
-        include: REPAIR_INCLUDE,
-      });
-
-      await this.audit(tx, tenantId, actor, 'repair.review_rejected', repairId, { note });
-      return updated;
-    });
-  }
-
-  // ============================================================
-  // COMMENTS
-  // ============================================================
-
-  async addComment(
-    actor: { userId: string; userRole: UserRole; tenantId: string },
-    repairId: string,
-    body: string,
-  ) {
-    if (!body || body.trim().length === 0) {
-      throw new BadRequestException('Comment cannot be empty');
-    }
-    if (body.length > 2000) {
-      throw new BadRequestException('Comment too long (max 2000 chars)');
-    }
-
-    const repair = await this.prisma.repair.findFirst({
-      where: { id: repairId, tenantId: actor.tenantId },
-      include: { assignments: true },
-    });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    // Repairmen can only comment if assigned
-    if (actor.userRole === 'REPAIRMAN') {
-      const isAssigned = repair.assignments.some((a) => a.userId === actor.userId);
-      if (!isAssigned) throw new ForbiddenException('You are not assigned to this repair');
-    }
-
-    const authorRole: RepairAuthorRole =
-      actor.userRole === 'MANAGER' ? 'MANAGER' : 'REPAIRMAN';
-
-    const comment = await this.prisma.repairComment.create({
-      data: {
-        repairId,
-        authorId: actor.userId,
-        authorRole,
-        body: body.trim(),
-      },
-      include: { author: { select: { id: true, name: true } } },
-    });
-
-    // Notify the other party
-    if (actor.userRole === 'REPAIRMAN') {
-      const managers = await this.prisma.user.findMany({
-        where: { tenantId: actor.tenantId, role: 'MANAGER', isActive: true },
-        select: { id: true },
-      });
-      for (const m of managers) {
-        await this.notify(this.prisma, actor.tenantId, m.id, 'REMINDER',
-          'New repair comment',
-          `Repairman commented on "${repair.title}".`,
-          { repairId });
-      }
-    } else {
-      // Manager → notify all active assignees
-      const assignees = repair.assignments
-        .filter((a) => a.status === 'ASSIGNED' || a.status === 'STARTED')
-        .map((a) => a.userId);
-      for (const uid of assignees) {
-        await this.notify(this.prisma, actor.tenantId, uid, 'REMINDER',
-          'New repair comment',
-          `Manager commented on "${repair.title}".`,
-          { repairId });
-      }
-    }
-
-    return comment;
-  }
-
-  async listComments(tenantId: string, repairId: string) {
-    const repair = await this.prisma.repair.findFirst({ where: { id: repairId, tenantId } });
-    if (!repair) throw new NotFoundException('Repair not found');
-
-    return this.prisma.repairComment.findMany({
-      where: { repairId },
-      include: { author: { select: { id: true, name: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  // ============================================================
-  // HELPERS
-  // ============================================================
-
-  private requireManager(role: UserRole) {
-    if (role !== 'MANAGER') {
-      throw new ForbiddenException('Manager role required');
-    }
-  }
-
-  private validateRepairBasics(
-    title: string | undefined,
-    description: string | null | undefined,
-    dueDate: string | undefined,
-    propertyId: string | undefined,
-  ) {
-    if (!title || title.trim().length < 3 || title.trim().length > 200) {
-      throw new BadRequestException('Title must be 3-200 characters');
-    }
-    if (description && description.length > 1000) {
-      throw new BadRequestException('Description too long (max 1000 chars)');
-    }
-    if (!propertyId) throw new BadRequestException('Property is required');
-    if (!dueDate) throw new BadRequestException('Due date is required');
-    const d = new Date(dueDate);
-    if (Number.isNaN(d.getTime())) {
-      throw new BadRequestException('Invalid due date');
-    }
-  }
-
-  private async notify(
-    db: any,
-    tenantId: string,
-    userId: string,
-    type: 'NEW_ASSIGNMENT' | 'REASSIGNMENT' | 'CANCELLATION' | 'REMINDER',
-    title: string,
-    body: string,
-    payload: Record<string, any>,
-  ) {
-    try {
-      await db.notification.create({
-        data: {
-          tenantId,
-          userId,
-          type,
-          channel: 'IN_APP',
-          title,
-          body,
-          payload,
-        },
-      });
-    } catch (e) {
-      // Don't block on notification failure
-      this.logger.warn(`Failed to create notification: ${(e as Error).message}`);
-    }
-  }
-
-  private async audit(
-    db: any,
-    tenantId: string,
-    actor: { userId: string },
-    action: string,
-    targetId: string,
-    metadata: Record<string, any>,
-  ) {
-    try {
-      await db.auditEvent.create({
-        data: {
-          tenantId,
-          category: 'SYSTEM', // no REPAIR_LIFECYCLE category yet; bucket under SYSTEM
-          action,
-          actorId: actor.userId,
-          targetType: 'Repair',
-          targetId,
-          metadata: metadata as any,
-        },
-      });
-    } catch (e) {
-      this.logger.warn(`Failed to write audit event: ${(e as Error).message}`);
-    }
-  }
+// ─── Cleanings ────────────────────────────────────────────────────────────────
+
+export interface MarkDoneResponse {
+  done: true;
+  needsIncident: boolean;
+  incidentId: string | null;
+  cleaning: Cleaning;
 }
+
+export interface ClaimResponse {
+  cleaning: Cleaning;
+  assignment: Assignment;
+}
+
+export const events = {
+  byDate: (date: string) =>
+    get<Cleaning[]>(`/cleanings?date=${date}`),
+  byDateRange: (from: string, to: string) =>
+    get<Cleaning[]>(`/cleanings?from=${from}&to=${to}`),
+  stats: (date: string) =>
+    get<DayStats>(`/cleanings/stats?date=${date}`),
+  overdue: () =>
+    get<Cleaning[]>('/cleanings/overdue'),
+  calendar: (year: number, month: number) =>
+    get<{ statusCounts: Record<string, number>; dailyCounts: { day: string; count: number }[] }>(
+      `/cleanings/calendar/${year}/${month}`
+    ),
+  byId: (id: string) =>
+    get<Cleaning>(`/cleanings/${id}`),
+  // create() removed \u2014 cleanings now only come from the Avantio sync
+  update: (id: string, data: { timeSlot?: string; cleaningType?: CleaningType; managerNote?: string; supplyNote?: string; maxCleaners?: number }) =>
+    patch<Cleaning>(`/cleanings/${id}`, data),
+  cancel: (id: string) =>
+    del<Cleaning>(`/cleanings/${id}`),
+
+  // ─── Pool lifecycle ───
+  pool: () =>
+    get<Cleaning[]>('/cleanings/pool'),
+  mine: (from?: string, to?: string, propertyIds?: string[]) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (propertyIds && propertyIds.length > 0) {
+      params.set('propertyIds', propertyIds.join(','));
+    }
+    const q = params.toString();
+    return get<Cleaning[]>(`/cleanings/mine${q ? `?${q}` : ''}`);
+  },
+  claim: (cleaningId: string) =>
+    post<ClaimResponse>(`/cleanings/${cleaningId}/claim`),
+  drop: (cleaningId: string) =>
+    post<{ dropped: true; cleaning: Cleaning }>(`/cleanings/${cleaningId}/drop`),
+  markDone: (
+    cleaningId: string,
+    body: {
+      allGood: boolean;
+      note?: string;
+      photoUrls?: string[];
+      priority?: IncidentPriority;
+    },
+  ) => patch<MarkDoneResponse>(`/cleanings/${cleaningId}/done`, body),
+  releaseToPool: (cleaningId: string) =>
+    post<{ released: true; affectedUserIds: string[]; cleaning: Cleaning }>(
+      `/cleanings/${cleaningId}/release-to-pool`
+    ),
+};
+
+/** Alias for clarity \u2014 same as `events` namespace */
+export const cleanings = events;
+
+// ─── Assignments ──────────────────────────────────────────────────────────────
+
+export const assignments = {
+  mine: (date: string) =>
+    get<Assignment[]>(`/assignments/my?date=${date}`),
+  assign: (cleaningId: string, userId: string) =>
+    post('/assignments/assign', { cleaningId, userId }),
+  reassign: (cleaningId: string, oldUserId: string, newUserId: string) =>
+    post('/assignments/reassign', { cleaningId, oldUserId, newUserId }),
+  start: (id: string) =>
+    patch(`/assignments/${id}/start`),
+  complete: (id: string, cleanerNote?: string) =>
+    patch(`/assignments/${id}/complete`, { cleanerNote }),
+  reject: (id: string, reason?: string) =>
+    patch(`/assignments/${id}/reject`, { reason }),
+};
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+export interface BookingDetail extends Booking {
+  cleaning?: Cleaning | null;
+}
+
+export const bookings = {
+  list: (query?: {
+    arrivalFrom?: string;
+    arrivalTo?: string;
+    status?: BookingStatus;
+    propertyId?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (query?.arrivalFrom) params.set('arrivalFrom', query.arrivalFrom);
+    if (query?.arrivalTo) params.set('arrivalTo', query.arrivalTo);
+    if (query?.status) params.set('status', query.status);
+    if (query?.propertyId) params.set('propertyId', query.propertyId);
+    if (query?.limit) params.set('limit', String(query.limit));
+    if (query?.offset) params.set('offset', String(query.offset));
+    const q = params.toString();
+    return get<{ rows: Booking[]; total: number; limit: number; offset: number }>(
+      `/bookings${q ? `?${q}` : ''}`,
+    );
+  },
+  byId: (id: string) => get<BookingDetail>(`/bookings/${id}`),
+  update: (id: string, data: { checkInTime?: string; checkOutTime?: string; accommodationName?: string; numAdults?: number; numChildren?: number }) =>
+    patch<Booking>(`/bookings/${id}`, data),
+  cancel: (id: string) =>
+    post<Booking>(`/bookings/${id}/cancel`),
+};
+
+
+// ─── Streams ──────────────────────────────────────────────────────────────────
+
+export type StreamItemType =
+  | 'RESERVATION'
+  | 'CLEANING'
+  | 'INCIDENT'
+  | 'REPAIR'
+  | 'INSPECTION'
+  | 'MANUAL';
+
+export type StreamEventCategory = 'MANUAL' | 'NOTE' | 'REPAIR' | 'INSPECTION';
+
+export interface StreamItem {
+  id: string;
+  type: StreamItemType;
+  occurredAt: string;
+  propertyId: string | null;
+  propertyName: string | null;
+  title: string;
+  subtitle?: string;
+  thumbnailUrl?: string;
+  photoUrls?: string[];
+  status?: string;
+  priority?: string;
+  source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual'; id: string };
+  authorName?: string;
+}
+
+export interface StreamFeed {
+  items: StreamItem[];
+  nextCursor: string | null;
+}
+
+export interface ManualStreamEvent {
+  id: string;
+  tenantId: string;
+  propertyId: string | null;
+  authorId: string;
+  category: StreamEventCategory;
+  title: string;
+  description: string | null;
+  photoUrls: string[];
+  occurredAt: string;
+  createdAt: string;
+  updatedAt: string;
+  property?: { id: string; name: string } | null;
+  author?: { id: string; name: string; email: string };
+}
+
+export const streams = {
+  feed: (params?: {
+    propertyId?: string;
+    cursor?: string;
+    limit?: number;
+    types?: StreamItemType[];
+    from?: string;
+    to?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.propertyId) q.set('propertyId', params.propertyId);
+    if (params?.cursor) q.set('cursor', params.cursor);
+    if (params?.limit) q.set('limit', String(params.limit));
+    if (params?.types?.length) q.set('types', params.types.join(','));
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    const qs = q.toString();
+    return get<StreamFeed>(`/streams${qs ? `?${qs}` : ''}`);
+  },
+
+  createManual: (data: {
+    category?: StreamEventCategory;
+    title: string;
+    description?: string;
+    propertyId?: string | null;
+    photoUrls?: string[];
+    occurredAt?: string;
+  }) => post<ManualStreamEvent>('/streams/manual', data),
+
+  updateManual: (id: string, data: {
+    category?: StreamEventCategory;
+    title?: string;
+    description?: string;
+    propertyId?: string | null;
+    photoUrls?: string[];
+    occurredAt?: string;
+  }) => patch<ManualStreamEvent>(`/streams/manual/${id}`, data),
+
+  deleteManual: (id: string) =>
+    del<{ deleted: true }>(`/streams/manual/${id}`),
+};
+
+export type RepairStatus =
+  | 'PLANNED'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'IN_REVIEW'
+  | 'DONE'
+  | 'REPORTED_BACK'
+  | 'CANCELLED';
+
+export type RepairAssignmentStatus =
+  | 'ASSIGNED'
+  | 'STARTED'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'REASSIGNED';
+
+export type RepairAuthorRole = 'MANAGER' | 'REPAIRMAN' | 'SYSTEM';
+export type RepairReportUrgency = 'LOW' | 'AVERAGE' | 'HIGH';
+
+export interface RepairAssignment {
+  id: string;
+  repairId: string;
+  userId: string;
+  isPrimary: boolean;
+  status: RepairAssignmentStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  assignedAt: string;
+  user: { id: string; name: string; email: string };
+}
+
+export interface RepairMaterial {
+  id: string;
+  tenantId: string;
+  name: string;
+  unit: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RepairMaterialUsage {
+  id: string;
+  repairId: string;
+  materialId: string;
+  amount: number;
+  note: string | null;
+  createdAt: string;
+  material: { id: string; name: string; unit: string | null };
+}
+
+export interface RepairPhoto {
+  id: string;
+  repairId: string;
+  url: string;
+  caption: string | null;
+  uploadedById: string | null;
+  uploadedAt: string;
+}
+
+export interface RepairComment {
+  id: string;
+  repairId: string;
+  authorId: string;
+  authorRole: RepairAuthorRole;
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string };
+}
+
+export interface RepairReport {
+  id: string;
+  repairId: string;
+  authorId: string;
+  urgency: RepairReportUrgency;
+  description: string;
+  photoUrls: string[];
+  resolvedAt: string | null;
+  createdAt: string;
+  author: { id: string; name: string };
+}
+
+export interface Repair {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  incidentId: string | null;
+  status: RepairStatus;
+  title: string;
+  description: string | null;
+  dueDate: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  reviewedAt: string | null;
+  reportedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  property: { id: string; name: string; address: string | null };
+  assignments: RepairAssignment[];
+  materials: RepairMaterialUsage[];
+  photos: RepairPhoto[];
+  reports: RepairReport[];
+  comments?: RepairComment[]; // included on detail
+  incident: { id: string; title: string; type: string; status: string } | null;
+}
+
+export const repairs = {
+  list: (params?: {
+    status?: RepairStatus | RepairStatus[];
+    propertyId?: string;
+    assignedToId?: string;
+    due?: 'overdue' | 'today' | 'week' | 'all';
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.status) {
+      const s = Array.isArray(params.status) ? params.status.join(',') : params.status;
+      q.set('status', s);
+    }
+    if (params?.propertyId) q.set('propertyId', params.propertyId);
+    if (params?.assignedToId) q.set('assignedToId', params.assignedToId);
+    if (params?.due) q.set('due', params.due);
+    const qs = q.toString();
+    return get<Repair[]>(`/repairs${qs ? `?${qs}` : ''}`);
+  },
+
+  listMine: () => get<Repair[]>('/repairs/mine'),
+
+  getById: (id: string) => get<Repair>(`/repairs/${id}`),
+
+  create: (data: {
+    title: string;
+    description?: string;
+    propertyId: string;
+    dueDate: string;
+    assignTo?: string[];
+    primaryUserId?: string;
+  }) => post<Repair>('/repairs', data),
+
+  createFromIncident: (incidentId: string, data: {
+    title?: string;
+    description?: string;
+    dueDate: string;
+    assignTo?: string[];
+    primaryUserId?: string;
+  }) => post<Repair>(`/repairs/from-incident/${incidentId}`, data),
+
+  update: (id: string, data: {
+    title?: string;
+    description?: string;
+    dueDate?: string;
+    propertyId?: string;
+  }) => patch<Repair>(`/repairs/${id}`, data),
+
+  cancel: (id: string) => del<Repair>(`/repairs/${id}`),
+
+  assign: (id: string, data: { userIds: string[]; primaryUserId?: string }) =>
+    post<Repair>(`/repairs/${id}/assign`, data),
+
+  start: (id: string) => post<Repair>(`/repairs/${id}/start`, {}),
+
+  submitDone: (id: string, data: {
+    comment?: string;
+    materials?: Array<{ materialId: string; amount: number; note?: string }>;
+    photoUrls?: string[];
+  }) => post<Repair>(`/repairs/${id}/done`, data),
+
+  reportProblem: (id: string, data: {
+    urgency: RepairReportUrgency;
+    description: string;
+    photoUrls?: string[];
+  }) => post<Repair>(`/repairs/${id}/report`, data),
+
+  approve: (id: string) => patch<Repair>(`/repairs/${id}/approve`, {}),
+
+  rejectReview: (id: string, note?: string) =>
+    patch<Repair>(`/repairs/${id}/reject-review`, { note }),
+
+  listComments: (id: string) => get<RepairComment[]>(`/repairs/${id}/comments`),
+  addComment: (id: string, body: string) =>
+    post<RepairComment>(`/repairs/${id}/comments`, { body }),
+};
+
+export const repairMaterials = {
+  list: (includeInactive = false) =>
+    get<RepairMaterial[]>(`/repair-materials${includeInactive ? '?includeInactive=true' : ''}`),
+  create: (data: { name: string; unit?: string }) =>
+    post<RepairMaterial>('/repair-materials', data),
+  update: (id: string, data: { name?: string; unit?: string | null; isActive?: boolean }) =>
+    patch<RepairMaterial>(`/repair-materials/${id}`, data),
+  deactivate: (id: string) => del<RepairMaterial>(`/repair-materials/${id}`),
+};
+
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+export const users = {
+  list: () => get<User[]>('/users'),
+  workload: (date: string) =>
+    get<(User & { assignmentCount: number })[]>(`/users/cleaners/workload?date=${date}`),
+  create: (data: { name: string; email: string; role: Role; language: string }) =>
+    post<User>('/users', data),
+  update: (id: string, data: Partial<User> & { preferences?: UserPreferences }) =>
+    patch<User>(`/users/${id}`, data),
+  /**
+   * Self-service preference update — works for any logged-in user (cleaner or
+   * manager) and only updates the `preferences` JSON column.
+   */
+  updateMyPreferences: (preferences: UserPreferences) =>
+    patch<User>('/users/me/preferences', { preferences }),
+  deactivate: (id: string) =>
+    del(`/users/${id}`),
+};
+
+// ─── Properties ───────────────────────────────────────────────────────────────
+
+export const properties = {
+  list: () => get<Property[]>('/properties'),
+  byId: (id: string) => get<Property>(`/properties/${id}`),
+  create: (data: Partial<Property>) => post<Property>('/properties', data),
+  update: (id: string, data: Partial<Property>) => patch<Property>(`/properties/${id}`, data),
+  delete: (id: string) => del(`/properties/${id}`),
+};
+
+// ─── Tags ─────────────────────────────────────────────────────────────────────
+
+export const tags = {
+  list: () => get<Tag[]>('/tags'),
+  create: (name: string, color?: string) => post<Tag>('/tags', { name, color }),
+  delete: (id: string) => del(`/tags/${id}`),
+  addToEvent: (eventId: string, tagId: string) =>
+    post(`/tags/event/${eventId}/tag/${tagId}`),
+  removeFromEvent: (eventId: string, tagId: string) =>
+    del(`/tags/event/${eventId}/tag/${tagId}`),
+};
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export const notifications = {
+  list: () => get<Notification[]>('/notifications'),
+  unreadCount: () => get<{ count: number }>('/notifications/unread/count'),
+  markRead: (id: string) => patch(`/notifications/${id}/read`),
+  markAllRead: () => patch('/notifications/read-all'),
+};
+
+// ─── Incidents ────────────────────────────────────────────────────────────────
+
+export const incidents = {
+  list: (filters: IncidentFilters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        params.set(k, String(v));
+      }
+    });
+    const q = params.toString();
+    return get<IncidentListResponse>(`/incidents${q ? `?${q}` : ''}`);
+  },
+  byId: (id: string) => get<Incident>(`/incidents/${id}`),
+  create: (data: CreateIncidentPayload) =>
+    post<Incident>('/incidents', data),
+  update: (id: string, data: UpdateIncidentPayload) =>
+    patch<Incident>(`/incidents/${id}`, data),
+  addAttachment: (id: string, data: { url: string; mimeType?: string }) =>
+    post<IncidentAttachment>(`/incidents/${id}/attachments`, data),
+  deleteAttachment: (id: string, attachmentId: string) =>
+    del<{ deleted: true }>(`/incidents/${id}/attachments/${attachmentId}`),
+};
+
+// ─── Integrations / Planning ──────────────────────────────────────────────────
+
+export const integrations = {
+  sync: () => post('/integrations/sync'),
+  syncAccommodations: () => post('/integrations/sync/accommodations'),
+  testConnection: () => post<{ connected: boolean; error?: string }>('/integrations/test-connection'),
+  planning: {
+    list: (filters: {
+      arrivalFrom?: string;
+      arrivalTo?: string;
+      creationDateFrom?: string;
+      creationDateTo?: string;
+      status?: string;
+    }) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([k, v]) => v && params.set(k, v));
+      return get<PlanningBooking[]>(`/integrations/planning/bookings?${params}`);
+    },
+    detail: (pmsBookingId: string) =>
+      get(`/integrations/planning/bookings/${pmsBookingId}`),
+    updateTimes: (pmsBookingId: string, data: { checkInTime?: string; checkOutTime?: string }) =>
+      patch(`/integrations/planning/bookings/${pmsBookingId}`, data),
+  },
+};
+
+// ─── Tenant ───────────────────────────────────────────────────────────────────
+
+export const tenant = {
+  get: () => get('/tenant'),
+  updatePmsConfig: (data: {
+    pmsProvider?: string;
+    pmsApiBaseUrl?: string;
+    pmsApiKey?: string;
+    pmsSyncEnabled?: boolean;
+  }) => patch('/tenant/pms-config', data),
+};
+
+// ─── Uploads ──────────────────────────────────────────────────────────────────
+
+export type MediaEventType =
+  | 'cleaning'
+  | 'incident'
+  | 'manual'
+  | 'repair'
+  | 'inspection';
+
+export interface SignedUploadResponse {
+  key: string;
+  uploadUrl: string;
+  publicUrl: string;
+  expiresAt: string;
+}
+
+export const uploads = {
+  /**
+   * Step 1 of the upload flow: ask the backend for a signed URL to PUT the file
+   * directly to GCS. Returns the URL + the canonical publicUrl to store in the DB.
+   */
+  getSignedUrl: (params: {
+    propertyId?: string;
+    pmsPropertyId?: string;
+    eventType: MediaEventType;
+    contentType: string;
+    sizeBytes?: number;
+  }) => post<SignedUploadResponse>('/uploads/signed-url', params),
+
+  /**
+   * Step 2: PUT the file directly to GCS. Bypasses the backend, so the upload
+   * isn't capped by Railway proxy timeouts. The Authorization header MUST NOT
+   * be set on this request (GCS rejects it).
+   */
+  putToGcs: async (uploadUrl: string, file: File): Promise<void> => {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, `GCS upload failed: ${res.statusText}`);
+    }
+  },
+
+  /**
+   * Convenience helper: do steps 1 + 2 in one call. Returns the publicUrl
+   * (= the canonical object URL stored in the DB after the photo is referenced
+   * by an incident or cleaning event).
+   */
+  uploadToGcs: async (params: {
+    file: File;
+    eventType: MediaEventType;
+    propertyId?: string;
+    pmsPropertyId?: string;
+  }): Promise<{ publicUrl: string; key: string }> => {
+    const signed = await uploads.getSignedUrl({
+      propertyId: params.propertyId,
+      pmsPropertyId: params.pmsPropertyId,
+      eventType: params.eventType,
+      contentType: params.file.type,
+      sizeBytes: params.file.size,
+    });
+    await uploads.putToGcs(signed.uploadUrl, params.file);
+    return { publicUrl: signed.publicUrl, key: signed.key };
+  },
+
+  /**
+   * For displaying private bucket photos: ask backend for a short-lived
+   * signed READ URL (default 1 hour TTL).
+   */
+  getReadUrl: (key: string, ttlMinutes?: number) =>
+    post<{ url: string }>('/uploads/read-url', { key, ttlMinutes }),
+
+  /**
+   * Legacy multipart upload. Kept for back-compat with code that hasn't
+   * been migrated to the signed-URL flow yet.
+   */
+  photo: async (eventId: string, file: File) => {
+    const token = getToken();
+    const form = new FormData();
+    form.append('photo', file);
+    const res = await fetch(`${BASE}/uploads/event/${eventId}/photo`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Upload failed');
+    return res.json() as Promise<{ id: string; url: string }>;
+  },
+};
+
+export { ApiError };

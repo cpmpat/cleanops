@@ -9,6 +9,8 @@ import {
   Home,
   User as UserIcon,
   Paperclip,
+  Wrench,
+  ChevronRight,
 } from 'lucide-react';
 import { incidents, users as usersApi, ApiError } from '@/lib/api';
 import type {
@@ -182,6 +184,57 @@ function IncidentDetailShell() {
             </p>
           )}
         </div>
+
+        {/* Repair link — manager-only, shown when relevant */}
+        {user?.role === 'MANAGER' && (
+          incident.repair ? (
+            <Link
+              href={`/repairs/${incident.repair.id}`}
+              className="block bg-white border border-surface-border rounded-2xl p-4 hover:border-ink-faint transition"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-ink/5 flex items-center justify-center flex-shrink-0">
+                  <Wrench size={18} className="text-ink-muted" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                    Linked repair
+                  </p>
+                  <p className="text-sm font-semibold text-ink truncate">
+                    {incident.repair.title}
+                  </p>
+                  <p className="text-[11px] text-ink-faint mt-0.5">
+                    Status: {incident.repair.status.replace('_', ' ').toLowerCase()}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="text-ink-faint flex-shrink-0" />
+              </div>
+            </Link>
+          ) : (
+            (incident.status === 'OPEN' || incident.status === 'SCHEDULED') &&
+            incident.propertyId && (
+              <Link
+                href={`/repairs/new?fromIncident=${incident.id}`}
+                className="block bg-ink/5 border-2 border-dashed border-ink/20 hover:border-ink/40 rounded-2xl p-4 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0">
+                    <Wrench size={18} className="text-ink" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink">
+                      Create repair from this incident
+                    </p>
+                    <p className="text-[11px] text-ink-muted mt-0.5">
+                      Schedule a repairman to fix the problem. The incident will be marked as scheduled.
+                    </p>
+                  </div>
+                  <ChevronRight size={16} className="text-ink-faint flex-shrink-0" />
+                </div>
+              </Link>
+            )
+          )
+        )}
 
         {/* Meta card */}
         <div className="bg-white border border-surface-border rounded-2xl p-5 space-y-3">
