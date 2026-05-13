@@ -479,6 +479,103 @@ export const bookings = {
     post<Booking>(`/bookings/${id}/cancel`),
 };
 
+// ════════════════════════════════════════════════════════════════════
+// APPEND TO frontend/lib/api.ts
+// Paste this section BEFORE the `// ─── Users ───` section.
+// ════════════════════════════════════════════════════════════════════
+
+// ─── Streams ──────────────────────────────────────────────────────────────────
+
+export type StreamItemType =
+  | 'RESERVATION'
+  | 'CLEANING'
+  | 'INCIDENT'
+  | 'REPAIR'
+  | 'INSPECTION'
+  | 'MANUAL';
+
+export type StreamEventCategory = 'MANUAL' | 'NOTE' | 'REPAIR' | 'INSPECTION';
+
+export interface StreamItem {
+  id: string;
+  type: StreamItemType;
+  occurredAt: string;
+  propertyId: string | null;
+  propertyName: string | null;
+  title: string;
+  subtitle?: string;
+  thumbnailUrl?: string;
+  photoUrls?: string[];
+  status?: string;
+  priority?: string;
+  source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual'; id: string };
+  authorName?: string;
+}
+
+export interface StreamFeed {
+  items: StreamItem[];
+  nextCursor: string | null;
+}
+
+export interface ManualStreamEvent {
+  id: string;
+  tenantId: string;
+  propertyId: string | null;
+  authorId: string;
+  category: StreamEventCategory;
+  title: string;
+  description: string | null;
+  photoUrls: string[];
+  occurredAt: string;
+  createdAt: string;
+  updatedAt: string;
+  property?: { id: string; name: string } | null;
+  author?: { id: string; name: string; email: string };
+}
+
+export const streams = {
+  feed: (params?: {
+    propertyId?: string;
+    cursor?: string;
+    limit?: number;
+    types?: StreamItemType[];
+    from?: string;
+    to?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.propertyId) q.set('propertyId', params.propertyId);
+    if (params?.cursor) q.set('cursor', params.cursor);
+    if (params?.limit) q.set('limit', String(params.limit));
+    if (params?.types?.length) q.set('types', params.types.join(','));
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    const qs = q.toString();
+    return get<StreamFeed>(`/streams${qs ? `?${qs}` : ''}`);
+  },
+
+  createManual: (data: {
+    category?: StreamEventCategory;
+    title: string;
+    description?: string;
+    propertyId?: string | null;
+    photoUrls?: string[];
+    occurredAt?: string;
+  }) => post<ManualStreamEvent>('/streams/manual', data),
+
+  updateManual: (id: string, data: {
+    category?: StreamEventCategory;
+    title?: string;
+    description?: string;
+    propertyId?: string | null;
+    photoUrls?: string[];
+    occurredAt?: string;
+  }) => patch<ManualStreamEvent>(`/streams/manual/${id}`, data),
+
+  deleteManual: (id: string) =>
+    del<{ deleted: true }>(`/streams/manual/${id}`),
+};
+
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export const users = {
