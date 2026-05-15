@@ -6,7 +6,7 @@ import { formatTime, cn } from '@/lib/utils';
 import type { Translations } from '@/i18n/translations';
 import {
   X, Camera, MapPin, Clock, Users, AlertTriangle,
-  CheckCircle2, UserPlus, ChevronDown, ArrowLeftRight,
+  CheckCircle2, UserPlus, ChevronDown, ArrowLeftRight, Crown,
 } from 'lucide-react';
 
 interface EventDetailSheetProps {
@@ -176,6 +176,23 @@ export function EventDetailSheet({
             )}
           </div>
 
+          {/* Owner stay banner — prominent reminder for cleaners */}
+          {event.isOwnerStay && (
+            <div className="flex items-start gap-3 bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-300 rounded-2xl p-3.5">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-200 to-yellow-200 flex items-center justify-center flex-shrink-0">
+                <Crown size={18} className="text-amber-800" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                  Owner stay
+                </p>
+                <p className="text-[12px] text-amber-800 mt-0.5 leading-snug">
+                  The property owner is staying — extra-careful, spotless cleaning expected.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Key info grid */}
           <div className="grid grid-cols-2 gap-3">
             <InfoCell label={t.event.timeSlot} icon={<Clock size={13} />}>
@@ -187,14 +204,17 @@ export function EventDetailSheet({
             {event.previousGuestCheckOutTime && (() => {
               const prev = new Date(event.previousGuestCheckOutTime);
               const checkIn = new Date(event.checkInTime);
-              const sameDay = prev.toDateString() === checkIn.toDateString();
-              const gapH = Math.round((checkIn.getTime() - prev.getTime()) / (1000 * 60 * 60));
-              const subtitle = sameDay
-                ? `${gapH}h gap`
-                : prev.toLocaleDateString();
+              const ms = checkIn.getTime() - prev.getTime();
+              const hours = ms / (1000 * 60 * 60);
+              const days = Math.floor(hours / 24);
+              const dateLabel = prev.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+              const subtitle =
+                days === 0 ? `${Math.max(0, Math.round(hours))}h gap`
+                : days === 1 ? '1 day idle'
+                : `${days} days idle`;
               return (
                 <InfoCell label={(t.event as any).previousLeft ?? 'Previous left'} icon={<Clock size={13} />}>
-                  <span className="text-ink">{formatTime(event.previousGuestCheckOutTime)}</span>
+                  <span className="text-ink">{dateLabel}, {formatTime(event.previousGuestCheckOutTime)}</span>
                   <span className="text-[11px] text-ink-faint ml-1">· {subtitle}</span>
                 </InfoCell>
               );

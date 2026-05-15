@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame } from 'lucide-react';
+import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame, Crown } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -100,7 +100,9 @@ export function CleaningCard({
   return (
     <div
       className={`bg-white rounded-2xl border shadow-card transition-all ${
-        isLastMinute
+        event.isOwnerStay
+          ? 'border-amber-300 ring-2 ring-amber-100'
+          : isLastMinute
           ? 'border-red-300 ring-2 ring-red-100'
           : 'border-surface-border'
       } ${isPast || isCompleted ? 'opacity-70' : ''}`}
@@ -108,11 +110,21 @@ export function CleaningCard({
       <div className={`h-1 rounded-t-2xl ${mode === 'mine' ? mineAccent(event) : statusAccent(event.status)}`} />
 
       <div className="p-4">
-        {/* Last minute banner */}
-        {isLastMinute && (
-          <div className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
-            <Flame size={11} />
-            Last minute
+        {/* Top badges row — Owner stay + Last minute */}
+        {(event.isOwnerStay || isLastMinute) && (
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {event.isOwnerStay && (
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-900 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 rounded-full px-2.5 py-1 shadow-sm">
+                <Crown size={11} className="text-amber-700" />
+                Owner stay
+              </div>
+            )}
+            {isLastMinute && (
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
+                <Flame size={11} />
+                Last minute
+              </div>
+            )}
           </div>
         )}
 
@@ -182,25 +194,39 @@ export function CleaningCard({
           )}
         </div>
 
-        {/* Previous guest turnover — only shown when same-day handover */}
+        {/* Previous guest turnover — date + time + gap context */}
         {(() => {
           if (!event.previousGuestCheckOutTime) return null;
           const prev = new Date(event.previousGuestCheckOutTime);
           const checkIn = new Date(event.checkInTime);
-          const sameDay = prev.toDateString() === checkIn.toDateString();
-          if (!sameDay) return null;
-          const gapH = Math.round((checkIn.getTime() - prev.getTime()) / (1000 * 60 * 60));
-          // Colour the gap by tightness
-          const tight =
-            gapH <= 2 ? 'text-red-700 bg-red-50 border-red-200' :
-            gapH <= 4 ? 'text-amber-800 bg-amber-50 border-amber-200' :
-                        'text-emerald-700 bg-emerald-50 border-emerald-200';
+          const ms = checkIn.getTime() - prev.getTime();
+          const hours = ms / (1000 * 60 * 60);
+          const days = Math.floor(hours / 24);
+
+          const dateLabel = prev.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          let gapLabel: string;
+          let pillClass: string;
+
+          if (days === 0) {
+            // Same-day turnover — show urgency colour by hours
+            const gapH = Math.max(0, Math.round(hours));
+            gapLabel = `${gapH}h gap`;
+            pillClass =
+              gapH <= 2 ? 'text-red-700 bg-red-50 border-red-200' :
+              gapH <= 4 ? 'text-amber-800 bg-amber-50 border-amber-200' :
+                          'text-emerald-700 bg-emerald-50 border-emerald-200';
+          } else {
+            // Multi-day gap — property was idle, lower urgency
+            gapLabel = days === 1 ? '1 day idle' : `${days} days idle`;
+            pillClass = 'text-stone-600 bg-stone-50 border-stone-200';
+          }
+
           return (
-            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${tight}`}>
+            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${pillClass}`}>
               <LogOut size={11} />
-              <span>Previous left {formatTime(event.previousGuestCheckOutTime)}</span>
+              <span>Previous left {dateLabel}, {formatTime(event.previousGuestCheckOutTime)}</span>
               <span className="opacity-70">·</span>
-              <span className="font-bold">{gapH}h gap</span>
+              <span className="font-bold">{gapLabel}</span>
             </div>
           );
         })()}

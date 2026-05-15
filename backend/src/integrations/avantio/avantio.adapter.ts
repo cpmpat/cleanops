@@ -478,7 +478,46 @@ export class AvantioAdapter implements PmsAdapter {
     const hour = rawHour.padStart(2, "0");
     const min = rawMin.slice(0, 2).padStart(2, "0");
 
-    return `${dateStr}T${hour}:${min}:00.000Z`;
+    // Avantio returns times in property local timezone (Europe/Prague for Prague Stays).
+    // Build the local datetime string and convert to actual UTC ISO with DST awareness.
+    const localISO = `${dateStr}T${hour}:${min}:00`;
+    return this.localToUtcIso(localISO, 'Europe/Prague');
+  }
+
+  /**
+   * Convert a naive local datetime string ("YYYY-MM-DDTHH:mm:ss") in the given
+   * timezone to a proper UTC ISO string, with DST handled automatically.
+   * Uses only built-in Intl APIs — no external timezone library required.
+   */
+  private localToUtcIso(localISO: string, timeZone: string): string {
+    const m = localISO.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (!m) throw new Error(`Invalid local ISO: ${localISO}`);
+    const [, y, mo, d, h, mi, s] = m.map(Number);
+
+    // Treat the local components as if they were UTC — gives us a probe timestamp.
+    const probeUtc = Date.UTC(y, mo - 1, d, h, mi, s);
+
+    // Ask Intl: at this probe timestamp, what time does the target timezone display?
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = dtf.formatToParts(new Date(probeUtc));
+    const get = (t: string) => parseInt(parts.find(p => p.type === t)!.value, 10);
+
+    // What Intl shows for the target tz, expressed back as UTC ms.
+    const inTzAsUtc = Date.UTC(
+      get('year'), get('month') - 1, get('day'),
+      get('hour'), get('minute'), get('second'),
+    );
+
+    // The difference is the timezone's offset at that moment (DST-aware).
+    const offsetMs = inTzAsUtc - probeUtc;
+
+    // The actual UTC timestamp is the probe MINUS the offset.
+    return new Date(probeUtc - offsetMs).toISOString();
   }
 
   private toTimeString(input: string): string {
@@ -500,16 +539,32 @@ export class AvantioAdapter implements PmsAdapter {
   }
 
   private mapStatus(status: string): 'active' | 'cancelled' | 'modified' {
-  const s = status.toUpperCase();
+    const s = (status || '').toUpperCase();
 
-  // Hard cancellations — cancel the cleaning event
-  if (['CANCELLED', 'CANCELED', 'DELETED'].includes(s)) return 'cancelled';
+    // Hard cancellations — cancel the cleaning event
+    if (['CANCELLED', 'CANCELED', 'DELETED'].includes(s)) return 'cancelled';
 
-  // Enquiries only — never generate a cleaning event
-  if (s === 'INFORMATION_REQUEST') return 'cancelled';
+    // Enquiries only — never generate a cleaning event
+    if (s === 'INFORMATION_REQUEST') return 'cancelled';
 
-  // Everything else (CONFIRMED, UNPAID, NO_SHOW, any future statuses)
-  // generates or keeps a cleaning event
-  return 'active';
-}
+    // Explicit "active" statuses — confirmed bookings, owner stays, etc.
+    // Owner stays are real occupancy and need cleaning between guests.
+    const ACTIVE = [
+      'CONFIRMED',
+      'UNPAID',
+      'NO_SHOW',
+      'OWNER',
+      'OWNER_BLOCK',
+      'OWNER_RESERVATION',
+      'OWNER_STAY',
+      'BLOCK',
+      'BLOCKED',
+    ];
+    if (ACTIVE.includes(s)) return 'active';
+
+    // Unknown status — log it so we can recognise new Avantio statuses, but
+    // treat as active by default so we don't silently drop legitimate bookings.
+    this.logger.warn(`Unknown Avantio booking status "${status}" — treating as active`);
+    return 'active';
+  }
 }

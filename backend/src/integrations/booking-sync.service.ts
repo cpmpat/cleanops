@@ -250,6 +250,9 @@ export class BookingSyncService {
           data: {
             ...(data.checkInTime && { checkInTime: new Date(data.checkInTime) }),
             ...(data.checkOutTime && { checkOutTime: new Date(data.checkOutTime) }),
+            // Keep timeSlot in sync with the incoming guest's check-in.
+            // Under the new model, timeSlot mirrors checkInTime.
+            ...(data.checkInTime && { timeSlot: new Date(data.checkInTime) }),
             pmsLastSyncedAt: now,
           },
         });
@@ -475,6 +478,9 @@ export class BookingSyncService {
                 bookingRef: booking.bookingRef,
                 checkInTime: checkIn,
                 checkOutTime: checkOut,
+                // Keep timeSlot in sync with the incoming guest's check-in.
+                // Under the new model, timeSlot mirrors checkInTime.
+                timeSlot: checkIn,
                 accommodationName: property.name,
                 numAdults: booking.numAdults,
                 numChildren: booking.numChildren,
@@ -530,11 +536,11 @@ export class BookingSyncService {
           pmsRawData: booking.rawData,
         },
       });
-
-      // Default timeSlot: check-out time (when guests leave) or 3h before check-in
-      const defaultTimeSlot = checkOut
-        ? checkOut
-        : new Date(checkIn.getTime() - 3 * 60 * 60 * 1000);
+      // Cleaning is preparation for the incoming guest.
+      // timeSlot equals the booking's check-in time — that's the deadline by
+      // which the unit must be ready. The cleaner decides her own start time
+      // based on the previous-guest checkout (denormalized as previousGuestCheckOutTime).
+      const defaultTimeSlot = checkIn;
 
       // Look up the previous CONFIRMED booking at this property whose checkout
       // is on or before our new check-in. Stored as denormalized field.
