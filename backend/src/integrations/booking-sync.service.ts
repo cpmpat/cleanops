@@ -87,19 +87,24 @@ export class BookingSyncService {
 
   /**
    * Bulk-update `previousGuestCheckOutTime` on every cleaning for this tenant
-   * based on prior CONFIRMED bookings at the same property. Idempotent; only
-   * touches rows whose computed value differs from the stored one.
-   * Returns the number of rows actually updated.
+   * based on prior CONFIRMED bookings at the same property. The previous
+   * booking is the one that STARTED most recently before this booking — we
+   * take its checkout time. This correctly handles bookings with small
+   * overlaps from midnight check-ins.
+   * Idempotent; only touches rows whose computed value differs from the
+   * stored one. Returns the number of rows actually updated.
    */
   private async reconcilePreviousGuestCheckOut(tenantId: string): Promise<number> {
     const result = await this.prisma.$executeRaw`
       WITH computed AS (
         SELECT c.id,
-          (SELECT MAX(b."checkOutTime") FROM "bookings" b
+          (SELECT b."checkOutTime" FROM "bookings" b
            WHERE b."propertyId" = c."propertyId"
-             AND b."checkOutTime" <= c."checkInTime"
+             AND b."checkInTime" < c."checkInTime"
              AND b."status" = 'CONFIRMED'
              AND b.id != c."bookingId"
+           ORDER BY b."checkInTime" DESC
+           LIMIT 1
           ) AS prev
         FROM "cleanings" c
         WHERE c."tenantId" = ${tenantId}
@@ -547,17 +552,18 @@ export class BookingSyncService {
       // based on the previous-guest checkout (denormalized as previousGuestCheckOutTime).
       const defaultTimeSlot = checkIn;
 
-      // Look up the previous CONFIRMED booking at this property whose checkout
-      // is on or before our new check-in. Stored as denormalized field.
+      // Look up the booking that STARTED most recently before this one at
+      // the same property. Its checkout time is the previous-guest checkout.
+      // This handles small overlaps caused by midnight-check-in conventions.
       const priorBooking = await tx.booking.findFirst({
         where: {
           propertyId: property.id,
           tenantId,
           status: 'CONFIRMED',
-          checkOutTime: { lte: checkIn, not: null },
+          checkInTime: { lt: checkIn },
           NOT: { id: newBooking.id },
         },
-        orderBy: { checkOutTime: 'desc' },
+        orderBy: { checkInTime: 'desc' },
         select: { checkOutTime: true },
       });
 
