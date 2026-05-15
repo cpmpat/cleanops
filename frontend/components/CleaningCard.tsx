@@ -134,6 +134,9 @@ export function CleaningCard({
             <p className="font-semibold text-ink text-sm leading-snug">
               {event.accommodationName}
             </p>
+            <p className="text-[11px] text-ink-faint font-mono mt-0.5 truncate">
+              {event.bookingRef}
+            </p>
             {event.property?.address && (
               <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1 truncate">
                 <MapPin size={10} className="flex-shrink-0" />
