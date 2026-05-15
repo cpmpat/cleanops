@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame, Crown } from 'lucide-react';
+import { MapPin, Users, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame, Crown } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -97,10 +97,6 @@ export function CleaningCard({
 
   const nights = calcNights(event.checkInTime, event.checkOutTime);
 
-  // Prefer denormalized bookingRef on the cleaning row; fall back to the relation
-  // (defensive — both should always be present post-sync).
-  const bookingRef = event.bookingRef ?? event.booking?.bookingRef;
-
   return (
     <div
       className={`bg-white rounded-2xl border shadow-card transition-all ${
@@ -138,11 +134,6 @@ export function CleaningCard({
             <p className="font-semibold text-ink text-sm leading-snug">
               {event.accommodationName}
             </p>
-            {bookingRef && (
-              <p className="text-xs text-ink-muted mt-0.5 truncate font-mono tracking-tight">
-                {bookingRef}
-              </p>
-            )}
             {event.property?.address && (
               <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1 truncate">
                 <MapPin size={10} className="flex-shrink-0" />
@@ -170,30 +161,16 @@ export function CleaningCard({
           </div>
         </div>
 
-        {/* Primary info row — cleaning slot + guests + type */}
+        {/* Info row — guest count + arrival time + length of stay */}
         <div className="flex items-center gap-3 text-xs text-ink-muted flex-wrap">
-          <span className="flex items-center gap-1 font-medium text-ink-soft">
-            <Clock size={12} />
-            {formatTime(event.timeSlot)}
-          </span>
           <span className="flex items-center gap-1">
             <Users size={12} />
             {event.numAdults + event.numChildren}
           </span>
-          <span className="text-ink-faint">{t.cleanType[event.cleaningType]}</span>
-          {event.maxCleaners > 1 && (
-            <span className="text-ink-faint">
-              {t.pool.slotsRemaining(slotsLeft, event.maxCleaners)}
-            </span>
-          )}
-        </div>
-
-        {/* Secondary info row — guest arrival + length of stay */}
-        <div className="flex items-center gap-3 text-xs text-ink-muted flex-wrap mt-1.5">
           <span className="flex items-center gap-1">
             <LogIn size={12} className="text-ink-faint" />
             <span className="text-ink-faint">Guest arrives</span>
-            <span className="font-medium text-ink-soft">{formatTime(event.checkInTime)}</span>
+            <span className="font-semibold text-ink-soft">{formatTime(event.checkInTime)}</span>
           </span>
           {nights !== null && (
             <span className="flex items-center gap-1">
@@ -201,9 +178,14 @@ export function CleaningCard({
               <span className="text-ink-soft">{nights} {nights === 1 ? 'night' : 'nights'}</span>
             </span>
           )}
+          {event.maxCleaners > 1 && (
+            <span className="text-ink-faint">
+              {t.pool.slotsRemaining(slotsLeft, event.maxCleaners)}
+            </span>
+          )}
         </div>
 
-        {/* Previous guest turnover — date + time + gap context */}
+        {/* Last checkout — when the previous guest departed */}
         {(() => {
           if (!event.previousGuestCheckOutTime) return null;
           const prev = new Date(event.previousGuestCheckOutTime);
@@ -213,27 +195,15 @@ export function CleaningCard({
           const days = Math.floor(hours / 24);
 
           const dateLabel = prev.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-          let gapLabel: string;
-          let pillClass: string;
-
-          if (days === 0) {
-            // Same-day turnover — show urgency colour by hours
-            const gapH = Math.max(0, Math.round(hours));
-            gapLabel = `${gapH}h gap`;
-            pillClass =
-              gapH <= 2 ? 'text-red-700 bg-red-50 border-red-200' :
-              gapH <= 4 ? 'text-amber-800 bg-amber-50 border-amber-200' :
-                          'text-emerald-700 bg-emerald-50 border-emerald-200';
-          } else {
-            // Multi-day gap — property was idle, lower urgency
-            gapLabel = days === 1 ? '1 day idle' : `${days} days idle`;
-            pillClass = 'text-stone-600 bg-stone-50 border-stone-200';
-          }
+          const gapLabel =
+            days === 0 ? `${Math.max(0, Math.round(hours))}h gap` :
+            days === 1 ? '1 day idle' :
+                         `${days} days idle`;
 
           return (
-            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${pillClass}`}>
+            <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-sky-700 bg-sky-50 border-sky-200">
               <LogOut size={11} />
-              <span>Previous left {dateLabel}, {formatTime(event.previousGuestCheckOutTime)}</span>
+              <span>Last checkout {dateLabel}, {formatTime(event.previousGuestCheckOutTime)}</span>
               <span className="opacity-70">·</span>
               <span className="font-bold">{gapLabel}</span>
             </div>

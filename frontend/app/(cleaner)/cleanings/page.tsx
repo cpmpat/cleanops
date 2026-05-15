@@ -188,7 +188,7 @@ export default function CleaningsPoolPage() {
         ) : (
           grouped.map(([day, items]) => (
             <div key={day}>
-              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2 px-1">
+              <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
                 {formatDayHeader(day, locale)}
               </p>
               <div className="space-y-3">
