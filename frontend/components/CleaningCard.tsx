@@ -97,6 +97,10 @@ export function CleaningCard({
 
   const nights = calcNights(event.checkInTime, event.checkOutTime);
 
+  // Prefer denormalized bookingRef on the cleaning row; fall back to the relation
+  // (defensive — both should always be present post-sync).
+  const bookingRef = event.bookingRef ?? event.booking?.bookingRef;
+
   return (
     <div
       className={`bg-white rounded-2xl border shadow-card transition-all ${
@@ -134,6 +138,11 @@ export function CleaningCard({
             <p className="font-semibold text-ink text-sm leading-snug">
               {event.accommodationName}
             </p>
+            {bookingRef && (
+              <p className="text-xs text-ink-muted mt-0.5 truncate font-mono tracking-tight">
+                {bookingRef}
+              </p>
+            )}
             {event.property?.address && (
               <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1 truncate">
                 <MapPin size={10} className="flex-shrink-0" />
