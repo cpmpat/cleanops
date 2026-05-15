@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, Flame } from 'lucide-react';
+import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -181,6 +181,29 @@ export function CleaningCard({
             </span>
           )}
         </div>
+
+        {/* Previous guest turnover — only shown when same-day handover */}
+        {(() => {
+          if (!event.previousGuestCheckOutTime) return null;
+          const prev = new Date(event.previousGuestCheckOutTime);
+          const checkIn = new Date(event.checkInTime);
+          const sameDay = prev.toDateString() === checkIn.toDateString();
+          if (!sameDay) return null;
+          const gapH = Math.round((checkIn.getTime() - prev.getTime()) / (1000 * 60 * 60));
+          // Colour the gap by tightness
+          const tight =
+            gapH <= 2 ? 'text-red-700 bg-red-50 border-red-200' :
+            gapH <= 4 ? 'text-amber-800 bg-amber-50 border-amber-200' :
+                        'text-emerald-700 bg-emerald-50 border-emerald-200';
+          return (
+            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${tight}`}>
+              <LogOut size={11} />
+              <span>Previous left {formatTime(event.previousGuestCheckOutTime)}</span>
+              <span className="opacity-70">·</span>
+              <span className="font-bold">{gapH}h gap</span>
+            </div>
+          );
+        })()}
 
         {/* Manager note */}
         {event.managerNote && (

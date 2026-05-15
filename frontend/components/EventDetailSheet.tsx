@@ -184,11 +184,34 @@ export function EventDetailSheet({
             <InfoCell label={t.event.checkIn} icon={<Clock size={13} />}>
               <span className="text-ink">{formatTime(event.checkInTime)}</span>
             </InfoCell>
-            {event.checkOutTime && (
-              <InfoCell label={t.event.checkOut} icon={<Clock size={13} />}>
-                <span className="text-ink">{formatTime(event.checkOutTime)}</span>
-              </InfoCell>
-            )}
+            {event.previousGuestCheckOutTime && (() => {
+              const prev = new Date(event.previousGuestCheckOutTime);
+              const checkIn = new Date(event.checkInTime);
+              const sameDay = prev.toDateString() === checkIn.toDateString();
+              const gapH = Math.round((checkIn.getTime() - prev.getTime()) / (1000 * 60 * 60));
+              const subtitle = sameDay
+                ? `${gapH}h gap`
+                : prev.toLocaleDateString();
+              return (
+                <InfoCell label={(t.event as any).previousLeft ?? 'Previous left'} icon={<Clock size={13} />}>
+                  <span className="text-ink">{formatTime(event.previousGuestCheckOutTime)}</span>
+                  <span className="text-[11px] text-ink-faint ml-1">· {subtitle}</span>
+                </InfoCell>
+              );
+            })()}
+            {(() => {
+              if (!event.checkOutTime) return null;
+              const ms = new Date(event.checkOutTime).getTime() - new Date(event.checkInTime).getTime();
+              if (!Number.isFinite(ms) || ms <= 0) return null;
+              const nights = Math.round(ms / (1000 * 60 * 60 * 24));
+              return (
+                <InfoCell label={(t.event as any).lengthOfStay ?? 'Length of stay'} icon={<Clock size={13} />}>
+                  <span className="text-ink">
+                    {nights} {nights === 1 ? ((t.event as any).night ?? 'night') : ((t.event as any).nights ?? 'nights')}
+                  </span>
+                </InfoCell>
+              );
+            })()}
             <InfoCell label={t.event.guests} icon={<Users size={13} />}>
               <span className="text-ink">
                 {event.numAdults} {t.event.adults}
