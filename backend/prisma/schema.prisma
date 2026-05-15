@@ -201,6 +201,8 @@ model Booking {
   id                String         @id @default(uuid())
   tenantId          String
   propertyId        String
+  isOwnerStay       Boolean        @default(false)
+
 
   // PMS identity & ref
   bookingRef        String
@@ -243,6 +245,8 @@ model Cleaning {
   id                String         @id @default(uuid())
   tenantId          String
   propertyId        String
+  isOwnerStay       Boolean        @default(false)
+
 
   // 1:1 with Booking (cleaning is derived from booking)
   bookingId         String         @unique

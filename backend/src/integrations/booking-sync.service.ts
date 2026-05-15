@@ -442,13 +442,15 @@ export class BookingSyncService {
     });
 
     if (existing) {
+      const incomingOwnerFlag = booking.isOwnerStay ?? false;
       // Update PMS-owned fields on Booking + propagate denormalized to Cleaning
       const hasChanges =
         existing.checkInTime.toISOString() !== new Date(booking.checkInTime).toISOString() ||
         (booking.checkOutTime && existing.checkOutTime?.toISOString() !== new Date(booking.checkOutTime).toISOString()) ||
         existing.numAdults !== booking.numAdults ||
         existing.numChildren !== booking.numChildren ||
-        existing.accommodationName !== property.name;
+        existing.accommodationName !== property.name ||
+        existing.isOwnerStay !== incomingOwnerFlag;
 
       if (hasChanges) {
         const now = new Date();
@@ -468,6 +470,7 @@ export class BookingSyncService {
               channel: this.mapChannel(booking.channel),
               pmsLastSyncedAt: now,
               pmsRawData: booking.rawData,
+              isOwnerStay: incomingOwnerFlag,
             },
           });
 
@@ -486,6 +489,7 @@ export class BookingSyncService {
                 numChildren: booking.numChildren,
                 channel: this.mapChannel(booking.channel),
                 pmsLastSyncedAt: now,
+                isOwnerStay: incomingOwnerFlag,
               },
             });
           }
@@ -534,6 +538,7 @@ export class BookingSyncService {
           channel: this.mapChannel(booking.channel),
           pmsLastSyncedAt: syncedAt,
           pmsRawData: booking.rawData,
+          isOwnerStay: booking.isOwnerStay ?? false,
         },
       });
       // Cleaning is preparation for the incoming guest.
@@ -575,6 +580,7 @@ export class BookingSyncService {
           channel: this.mapChannel(booking.channel),
           pmsLastSyncedAt: syncedAt,
           previousGuestCheckOutTime: priorBooking?.checkOutTime ?? null,
+          isOwnerStay: booking.isOwnerStay ?? false,
         },
       });
 
@@ -778,6 +784,22 @@ export class BookingSyncService {
           );
         }
       }
+    }
+
+    // Notify all managers for this tenant — they need to decide if the cleaning
+    // should be reassigned, released to pool, or cancelled entirely.
+    const managers = await this.prisma.user.findMany({
+      where: { tenantId, role: 'MANAGER', isActive: true },
+      select: { id: true },
+    });
+    for (const m of managers) {
+      await this.createNotification(
+        tenantId, m.id, 'CANCELLATION',
+        'Booking cancelled in Avantio',
+        `${existing.accommodationName} \u2014 booking ${existing.bookingRef} was cancelled. ` +
+        `The linked cleaning may need to be reassigned, released, or cancelled.`,
+        existing.cleaning?.id ?? '',
+      );
     }
 
     return 'cancelled';

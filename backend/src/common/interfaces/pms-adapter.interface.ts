@@ -19,6 +19,7 @@ export interface PmsBooking {
   guestName?: string;
   guestEmail?: string;
   rawData?: any;                 // full PMS response for debugging
+  isOwnerStay?: boolean;
 }
 
 export interface PmsAccommodation {

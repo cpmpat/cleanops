@@ -463,6 +463,7 @@ export class AvantioAdapter implements PmsAdapter {
       numChildren,
       channel: this.normalizeChannel(channel),
       status: this.mapStatus(raw.status),
+      isOwnerStay: (raw.status || '').toUpperCase() === 'OWNER',
       guestName,
       guestEmail,
       rawData: raw,
@@ -538,33 +539,35 @@ export class AvantioAdapter implements PmsAdapter {
     return channel;
   }
 
+  /**
+   * Map Avantio booking status into our internal three-state model.
+   * Avantio returns one of: CONFIRMED, INFORMATION_REQUEST, UNAVAILABLE,
+   * UNPAID, CANCELLED, CANCELLED_BY_OWNER, OWNER, UNDER_REQUEST, CONFLICTED.
+   */
   private mapStatus(status: string): 'active' | 'cancelled' | 'modified' {
     const s = (status || '').toUpperCase();
 
-    // Hard cancellations — cancel the cleaning event
-    if (['CANCELLED', 'CANCELED', 'DELETED'].includes(s)) return 'cancelled';
+    // Real cancellations — booking existed but was cancelled. Notify cleaners/managers.
+    if (s === 'CANCELLED' || s === 'CANCELLED_BY_OWNER') return 'cancelled';
 
-    // Enquiries only — never generate a cleaning event
-    if (s === 'INFORMATION_REQUEST') return 'cancelled';
+    // Active bookings — guest or owner physically present, cleaning required.
+    if (s === 'CONFIRMED' || s === 'UNPAID' || s === 'OWNER') return 'active';
 
-    // Explicit "active" statuses — confirmed bookings, owner stays, etc.
-    // Owner stays are real occupancy and need cleaning between guests.
-    const ACTIVE = [
-      'CONFIRMED',
-      'UNPAID',
-      'NO_SHOW',
-      'OWNER',
-      'OWNER_BLOCK',
-      'OWNER_RESERVATION',
-      'OWNER_STAY',
-      'BLOCK',
-      'BLOCKED',
-    ];
-    if (ACTIVE.includes(s)) return 'active';
+    // Non-bookings — inquiries, blocks, conflicts, pending. Skip cleaning creation.
+    if (
+      s === 'INFORMATION_REQUEST' ||
+      s === 'UNAVAILABLE' ||
+      s === 'UNDER_REQUEST' ||
+      s === 'CONFLICTED'
+    ) {
+      return 'cancelled';
+    }
 
-    // Unknown status — log it so we can recognise new Avantio statuses, but
-    // treat as active by default so we don't silently drop legitimate bookings.
-    this.logger.warn(`Unknown Avantio booking status "${status}" — treating as active`);
-    return 'active';
+    // Truly unknown — log loudly and skip rather than create spurious cleanings.
+    this.logger.warn(
+      `Unknown Avantio booking status "${status}" — skipping (no cleaning will be created). ` +
+      `If this is a legitimate booking type, add it to the active list in mapStatus.`,
+    );
+    return 'cancelled';
   }
 }

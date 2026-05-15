@@ -127,6 +127,9 @@ export interface Cleaning {
   // Previous guest's checkout at this property (denormalized; reconciled by sync)
   previousGuestCheckOutTime?: string | null;
 
+  // Whether this booking is an owner stay (not a paying guest)
+  isOwnerStay?: boolean;
+
   createdAt: string;
   updatedAt: string;
 
