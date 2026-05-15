@@ -71,7 +71,46 @@ export class BookingSyncService {
       `${bookingResult.created} new events, ${bookingResult.updated} updated, ${bookingResult.cancelled} cancelled`
     );
 
+    // Bulk reconcile previous-guest-checkout column on all cleanings for this tenant.
+    // Catches edge cases from cancellations, mid-period inserts, etc.
+    try {
+      const updated = await this.reconcilePreviousGuestCheckOut(tenantId);
+      if (updated > 0) {
+        this.logger.log(`[${tenant.name}] Reconciled previousGuestCheckOutTime on ${updated} cleanings`);
+      }
+    } catch (e) {
+      this.logger.warn(`[${tenant.name}] Reconcile failed: ${(e as Error).message}`);
+    }
+
     return { accommodations: accomResult, bookings: bookingResult };
+  }
+
+  /**
+   * Bulk-update `previousGuestCheckOutTime` on every cleaning for this tenant
+   * based on prior CONFIRMED bookings at the same property. Idempotent; only
+   * touches rows whose computed value differs from the stored one.
+   * Returns the number of rows actually updated.
+   */
+  private async reconcilePreviousGuestCheckOut(tenantId: string): Promise<number> {
+    const result = await this.prisma.$executeRaw`
+      WITH computed AS (
+        SELECT c.id,
+          (SELECT MAX(b."checkOutTime") FROM "bookings" b
+           WHERE b."propertyId" = c."propertyId"
+             AND b."checkOutTime" <= c."checkInTime"
+             AND b."status" = 'CONFIRMED'
+             AND b.id != c."bookingId"
+          ) AS prev
+        FROM "cleanings" c
+        WHERE c."tenantId" = ${tenantId}
+      )
+      UPDATE "cleanings" c
+      SET "previousGuestCheckOutTime" = computed.prev
+      FROM computed
+      WHERE c.id = computed.id
+        AND c."previousGuestCheckOutTime" IS DISTINCT FROM computed.prev
+    `;
+    return Number(result) || 0;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -497,6 +536,20 @@ export class BookingSyncService {
         ? checkOut
         : new Date(checkIn.getTime() - 3 * 60 * 60 * 1000);
 
+      // Look up the previous CONFIRMED booking at this property whose checkout
+      // is on or before our new check-in. Stored as denormalized field.
+      const priorBooking = await tx.booking.findFirst({
+        where: {
+          propertyId: property.id,
+          tenantId,
+          status: 'CONFIRMED',
+          checkOutTime: { lte: checkIn, not: null },
+          NOT: { id: newBooking.id },
+        },
+        orderBy: { checkOutTime: 'desc' },
+        select: { checkOutTime: true },
+      });
+
       const newCleaning = await tx.cleaning.create({
         data: {
           tenantId,
@@ -515,6 +568,7 @@ export class BookingSyncService {
           numChildren: booking.numChildren,
           channel: this.mapChannel(booking.channel),
           pmsLastSyncedAt: syncedAt,
+          previousGuestCheckOutTime: priorBooking?.checkOutTime ?? null,
         },
       });
 

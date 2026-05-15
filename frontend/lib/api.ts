@@ -124,6 +124,12 @@ export interface Cleaning {
   // When the underlying booking was cancelled. Cleaning may still be active.
   bookingCancelledAt?: string | null;
 
+  // Previous guest's checkout at this property (denormalized; reconciled by sync)
+  previousGuestCheckOutTime?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
   property?: Property;
   booking?: { id: string; bookingRef: string; pmsBookingId?: string; status: BookingStatus; cancelledAt?: string | null };
   assignments: Assignment[];

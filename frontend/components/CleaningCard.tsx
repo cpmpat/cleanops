@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { MapPin, Users, Clock, Check, Undo2, AlertTriangle } from 'lucide-react';
+import { MapPin, Users, Clock, Check, Undo2, AlertTriangle, Moon, LogIn, Flame } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -35,20 +35,29 @@ function statusAccent(status: string): string {
   return map[status] ?? 'bg-stone-200';
 }
 
-/**
- * Mine-view colour: distinguish the 4 logical states a cleaner cares about.
- *   - COMPLETED     → emerald (done)
- *   - IN_PROGRESS   → blue (currently doing it)
- *   - future ASSIGNED → amber (upcoming, on track)
- *   - past, not completed → red (overdue, unfinished)
- */
 function mineAccent(event: CleaningEvent): string {
   if (event.status === 'COMPLETED') return 'bg-emerald-500';
   if (event.status === 'IN_PROGRESS') return 'bg-blue-500';
-
   const isPast = new Date(event.timeSlot) < new Date();
-  if (isPast) return 'bg-red-500';        // past check-in, not done = overdue
-  return 'bg-amber-400';                  // future, on track
+  if (isPast) return 'bg-red-500';
+  return 'bg-amber-400';
+}
+
+function isToday(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/** Nights between check-in and check-out. Returns null if missing data. */
+function calcNights(checkIn: string | Date, checkOut?: string | Date | null): number | null {
+  if (!checkOut) return null;
+  const ms = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return Math.round(ms / (1000 * 60 * 60 * 24));
 }
 
 export function CleaningCard({
@@ -80,15 +89,33 @@ export function CleaningCard({
     (new Date(event.timeSlot).getTime() - Date.now()) / (1000 * 60 * 60);
   const canDrop = hoursUntil >= DROP_CUTOFF_HOURS && !isCompleted;
 
+  // ─── Last minute: check-in is today AND booking was created today ───
+  const checkInDate = new Date(event.checkInTime);
+  const createdDate = new Date(event.createdAt);
+  const isLastMinute =
+    isToday(checkInDate) && isToday(createdDate) && !isCompleted;
+
+  const nights = calcNights(event.checkInTime, event.checkOutTime);
+
   return (
     <div
-      className={`bg-white rounded-2xl border border-surface-border shadow-card transition-all ${
-        isPast || isCompleted ? 'opacity-70' : ''
-      }`}
+      className={`bg-white rounded-2xl border shadow-card transition-all ${
+        isLastMinute
+          ? 'border-red-300 ring-2 ring-red-100'
+          : 'border-surface-border'
+      } ${isPast || isCompleted ? 'opacity-70' : ''}`}
     >
       <div className={`h-1 rounded-t-2xl ${mode === 'mine' ? mineAccent(event) : statusAccent(event.status)}`} />
 
       <div className="p-4">
+        {/* Last minute banner */}
+        {isLastMinute && (
+          <div className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
+            <Flame size={11} />
+            Last minute
+          </div>
+        )}
+
         {/* Header row */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0 flex-1">
@@ -122,7 +149,7 @@ export function CleaningCard({
           </div>
         </div>
 
-        {/* Info row */}
+        {/* Primary info row — cleaning slot + guests + type */}
         <div className="flex items-center gap-3 text-xs text-ink-muted flex-wrap">
           <span className="flex items-center gap-1 font-medium text-ink-soft">
             <Clock size={12} />
@@ -136,6 +163,21 @@ export function CleaningCard({
           {event.maxCleaners > 1 && (
             <span className="text-ink-faint">
               {t.pool.slotsRemaining(slotsLeft, event.maxCleaners)}
+            </span>
+          )}
+        </div>
+
+        {/* Secondary info row — guest arrival + length of stay */}
+        <div className="flex items-center gap-3 text-xs text-ink-muted flex-wrap mt-1.5">
+          <span className="flex items-center gap-1">
+            <LogIn size={12} className="text-ink-faint" />
+            <span className="text-ink-faint">Guest arrives</span>
+            <span className="font-medium text-ink-soft">{formatTime(event.checkInTime)}</span>
+          </span>
+          {nights !== null && (
+            <span className="flex items-center gap-1">
+              <Moon size={12} className="text-ink-faint" />
+              <span className="text-ink-soft">{nights} {nights === 1 ? 'night' : 'nights'}</span>
             </span>
           )}
         </div>

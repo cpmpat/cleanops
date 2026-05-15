@@ -276,6 +276,9 @@ model Cleaning {
   // Cleaning continues even if booking is cancelled — but UI shows the flag.
   bookingCancelledAt DateTime?
 
+  // Previous guest's checkout at the same property (denormalized; reconciled by sync)
+  previousGuestCheckOutTime DateTime?
+
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
