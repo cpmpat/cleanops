@@ -69,11 +69,13 @@ export default function CleaningsPoolPage() {
     return pool.filter((e) => selectedPropIds.has(e.propertyId));
   }, [pool, selectedPropIds]);
 
-  // Group by day
+  // Group by day (using local Prague date so cleanings near midnight UTC
+  // appear under the correct local calendar day)
   const grouped = useMemo(() => {
     const map = new Map<string, CleaningEvent[]>();
     for (const ev of visible) {
-      const day = new Date(ev.timeSlot).toISOString().slice(0, 10);
+      const d = new Date(ev.timeSlot);
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const arr = map.get(day) ?? [];
       arr.push(ev);
       map.set(day, arr);
