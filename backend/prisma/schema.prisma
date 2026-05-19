@@ -39,6 +39,7 @@ model Tenant {
   manualStreamEvents  ManualStreamEvent[]
   repairs             Repair[]
   repairMaterials     RepairMaterial[]
+  turnovers           Turnover[]
 
   @@map("tenants")
 }
@@ -103,6 +104,9 @@ model User {
   repairComments           RepairComment[]    @relation("RepairCommentAuthor")
   repairReports            RepairReport[]     @relation("RepairReportAuthor")
 
+  assignedTurnovers          TurnoverAssignment[]  @relation("AssignedTurnover")
+  createdTurnoverAssignments TurnoverAssignment[]  @relation("TurnoverAssignedBy")
+
   @@unique([tenantId, email])
   @@index([tenantId])
   @@index([email])
@@ -157,6 +161,7 @@ model Property {
   incidents           Incident[]
   manualStreamEvents  ManualStreamEvent[]
   repairs             Repair[]
+  turnovers           Turnover[]
 
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
@@ -229,6 +234,8 @@ model Booking {
   tenant            Tenant         @relation(fields: [tenantId], references: [id])
   property          Property       @relation(fields: [propertyId], references: [id])
   cleaning          Cleaning?      // 1:1 (a booking has at most one cleaning)
+  turnoversAsFrom   Turnover[]            @relation("TurnoverFromBooking")
+  turnoversAsTo     Turnover[]            @relation("TurnoverToBooking")
   incidents         Incident[]
 
   @@unique([tenantId, pmsBookingId])
@@ -753,4 +760,85 @@ model RepairReport {
 
   @@index([repairId, createdAt])
   @@map("repair_reports")
+}
+
+// ─── TURNOVER (Phase 1 — additive, alongside Cleaning) ──────
+
+enum TurnoverStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  FLAGGED
+  CANCELLED
+  SKIPPED
+}
+
+model Turnover {
+  id              String           @id @default(uuid())
+  tenantId        String
+  propertyId      String
+
+  fromBookingId   String?
+  toBookingId     String?
+
+  availableFrom   DateTime?
+  dueBy           DateTime?
+
+  status          TurnoverStatus   @default(PENDING)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+
+  completedAllGood Boolean?
+
+  maxCleaners      Int             @default(1)
+  managerNote      String?
+  cleanerNote      String?
+  supplyNote       String?
+  isOwnerStay      Boolean         @default(false)
+
+  supersededById   String?         @unique
+  supersededBy     Turnover?       @relation("TurnoverSupersession", fields: [supersededById], references: [id])
+  supersedes       Turnover?       @relation("TurnoverSupersession")
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  property         Property        @relation(fields: [propertyId], references: [id])
+  fromBooking      Booking?        @relation("TurnoverFromBooking", fields: [fromBookingId], references: [id])
+  toBooking        Booking?        @relation("TurnoverToBooking",   fields: [toBookingId],   references: [id])
+  assignments      TurnoverAssignment[]
+
+  @@index([tenantId, propertyId, availableFrom])
+  @@index([tenantId, status, dueBy])
+  @@index([tenantId, status])
+  @@index([toBookingId])
+  @@index([fromBookingId])
+  @@map("turnovers")
+}
+
+model TurnoverAssignment {
+  id               String            @id @default(uuid())
+  turnoverId       String
+  userId           String
+  assignedById     String?
+
+  isPrimary        Boolean           @default(false)
+  status           AssignmentStatus  @default(ASSIGNED)
+
+  rejectedReason   String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  assignedAt       DateTime          @default(now())
+
+  turnover         Turnover          @relation(fields: [turnoverId],   references: [id], onDelete: Cascade)
+  user             User              @relation("AssignedTurnover",    fields: [userId],       references: [id])
+  assignedBy       User?             @relation("TurnoverAssignedBy",  fields: [assignedById], references: [id])
+
+  @@index([turnoverId])
+  @@index([userId])
+  @@index([userId, status])
+  @@map("turnover_assignments")
 }
