@@ -4,6 +4,7 @@ import {
   PmsBooking, PmsAccommodation, PmsTenantConfig,
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
+import { TurnoverSyncService } from './turnover-sync.service';
 import { BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
 
@@ -28,7 +29,46 @@ export class BookingSyncService {
     private prisma: PrismaService,
     private avantioAdapter: AvantioAdapter,
     private gcs: GcsService,
+    private turnoverSync: TurnoverSyncService,
   ) {}
+
+  // ──────────────────────────────────────────────────────────────────
+  // TURNOVER SYNC (Phase 2 — feature-flagged dual-write)
+  // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether to write to the new Turnover model alongside Cleaning.
+   * Controlled by env var TURNOVER_SYNC_ENABLED ('true' to enable).
+   * Defaults to disabled — safe to deploy this code without affecting prod.
+   */
+  private isTurnoverSyncEnabled(): boolean {
+    return process.env.TURNOVER_SYNC_ENABLED === 'true';
+  }
+
+  /**
+   * Wrap a turnover sync operation so:
+   *   1. It only runs when the feature flag is on
+   *   2. Errors are logged but never re-thrown — turnover bugs cannot
+   *      break cleaning sync (which is still the source of truth)
+   *   3. Each operation gets its own atomic transaction
+   */
+  private async safelyRunTurnoverSync(
+    label: string,
+    operation: (tx: any) => Promise<void>,
+  ): Promise<void> {
+    if (!this.isTurnoverSyncEnabled()) return;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await operation(tx);
+      });
+    } catch (err) {
+      this.logger.error(
+        `Turnover sync [${label}] failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      // Intentionally swallow — Cleaning is source of truth during Phase 2 dual-write
+    }
+  }
 
   /**
    * Full sync for a tenant:
@@ -238,6 +278,8 @@ export class BookingSyncService {
       return { success: true };
     }
 
+    const oldCheckInTime = b.checkInTime; // capture for turnover sync
+
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.booking.update({
@@ -263,6 +305,13 @@ export class BookingSyncService {
         });
       }
     });
+
+    // Turnover dual-write: only relevant if checkInTime actually changed
+    if (data.checkInTime) {
+      await this.safelyRunTurnoverSync('onBookingModified.fromPlanning', async (tx) => {
+        await this.turnoverSync.onBookingModified(b.id, oldCheckInTime, tx);
+      });
+    }
 
     // Step 3: notify assigned cleaners
     if (b.cleaning?.assignments) {
@@ -461,6 +510,7 @@ export class BookingSyncService {
         const now = new Date();
         const checkIn = new Date(booking.checkInTime);
         const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
+        const oldCheckInTime = existing.checkInTime; // capture for turnover sync
 
         await this.prisma.$transaction(async (tx) => {
           await tx.booking.update({
@@ -498,6 +548,12 @@ export class BookingSyncService {
               },
             });
           }
+        });
+
+        // Turnover dual-write: re-thread chain if position changed, or just
+        // update anchors if booking is still in the same slot
+        await this.safelyRunTurnoverSync('onBookingModified', async (tx) => {
+          await this.turnoverSync.onBookingModified(existing.id, oldCheckInTime, tx);
         });
 
         // Notify assigned cleaners
@@ -620,6 +676,11 @@ export class BookingSyncService {
       }
       throw e;
     }
+
+    // Turnover dual-write: slot the new booking into the chain at its property
+    await this.safelyRunTurnoverSync('onBookingInserted', async (tx) => {
+      await this.turnoverSync.onBookingInserted(created.booking.id, tx);
+    });
 
     // Out-of-transaction notification
     if (property.defaultCleanerId) {
@@ -776,6 +837,11 @@ export class BookingSyncService {
           } as any,
         },
       });
+    });
+
+    // Turnover dual-write: stitch the chain back together
+    await this.safelyRunTurnoverSync('onBookingCancelled', async (tx) => {
+      await this.turnoverSync.onBookingCancelled(existing.id, tx);
     });
 
     if (existing.cleaning?.assignments?.length) {
