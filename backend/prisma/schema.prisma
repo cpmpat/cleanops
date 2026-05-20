@@ -798,9 +798,9 @@ model Turnover {
   supplyNote       String?
   isOwnerStay      Boolean         @default(false)
 
-  supersededById   String?         @unique
+  supersededById   String?         
   supersededBy     Turnover?       @relation("TurnoverSupersession", fields: [supersededById], references: [id])
-  supersedes       Turnover?       @relation("TurnoverSupersession")
+  supersedes       Turnover[]       @relation("TurnoverSupersession")
 
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
