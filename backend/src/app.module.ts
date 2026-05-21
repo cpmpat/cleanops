@@ -21,6 +21,7 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { StorageModule } from './storage/storage.module';
 import { StreamsModule } from './streams/streams.module';
 import { RepairsModule } from './repairs/repairs.module';
+import { TurnoversModule } from './turnovers/turnovers.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { RepairsModule } from './repairs/repairs.module';
     PropertiesModule,
     BookingsModule,
     CleaningsModule,
+    TurnoversModule,
     AssignmentsModule,
     NotificationsModule,
     TagsModule,
