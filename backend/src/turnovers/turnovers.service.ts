@@ -37,6 +37,26 @@ const ACTIVE_STATUSES: AssignmentStatus[] = [
 /** Minimum hours before dueBy during which drop is allowed. */
 const DROP_CUTOFF_HOURS = 12;
 
+/**
+ * Rolling window for the cleaner pool, in days.
+ *
+ * The pool only shows turnovers whose `availableFrom` (the moment the cleaning
+ * slot opens, i.e. the prior guest's check-out time) is on or after
+ * `now - POOL_STALE_CUTOFF_DAYS`. Anything older is considered stale and is
+ * assumed to have been resolved out-of-band; it stays in the database for audit
+ * but is hidden from the cleaner's pool.
+ *
+ * This filter also implicitly excludes "orphan" rows where `availableFrom IS
+ * NULL`. In practice every NULL-availableFrom row in this codebase also has
+ * NULL `fromBookingId`, so those leading-null rows are excluded too — they are
+ * almost always artifacts of the historical re-projection, not real first-ever
+ * bookings.
+ *
+ * Owner stays (`isOwnerStay = true`) are NOT excluded — they still need
+ * cleaning and remain in the pool.
+ */
+const POOL_STALE_CUTOFF_DAYS = 2;
+
 // Full include for turnover detail queries
 const TURNOVER_INCLUDE = {
   property: {
@@ -191,17 +211,33 @@ export class TurnoversService {
 
   /**
    * POOL — turnovers in PENDING status that a cleaner can claim.
-   * Returns ALL pending turnovers (no date filter). Frontend groups by
-   * COALESCE(availableFrom, dueBy) with carry-forward to today.
    *
-   * If userId given (CLEANER role), filters by their property preferences.
-   * No selection → empty list (forces cleaner to pick in Settings first).
+   * Filtered by a rolling `availableFrom >= now - POOL_STALE_CUTOFF_DAYS`
+   * window (see the constant at the top of this file). This narrows the pool
+   * from "every PENDING row that ever existed" to "turnovers whose cleaning
+   * slot is current or recently opened", which is what cleaners actually need
+   * to see.
+   *
+   * Frontend then groups by COALESCE(availableFrom, dueBy) with carry-forward
+   * to today, so items with availableFrom in the last few days surface under
+   * today's header.
+   *
+   * If userId given (CLEANER role), additionally filters by their property
+   * preferences. No selection → empty list (forces cleaner to pick in Settings
+   * first).
    */
   async getPool(tenantId: string, userId?: string) {
+    // Rolling cutoff: midnight, N days ago, in server local time.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - POOL_STALE_CUTOFF_DAYS);
+    cutoff.setHours(0, 0, 0, 0);
+
     const where: any = {
       tenantId,
       status: TurnoverStatus.PENDING,
       supersededById: null,
+      // Implicitly drops orphan rows (availableFrom IS NULL) — { gte } excludes nulls.
+      availableFrom: { gte: cutoff },
     };
 
     if (userId) {
