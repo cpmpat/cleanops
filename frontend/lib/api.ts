@@ -438,6 +438,158 @@ export const events = {
 /** Alias for clarity \u2014 same as `events` namespace */
 export const cleanings = events;
 
+export type TurnoverStatus =
+  | 'PENDING'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FLAGGED'
+  | 'SKIPPED';
+
+export interface TurnoverAssignment {
+  id: string;
+  turnoverId: string;
+  userId: string;
+  assignedById?: string | null;
+  isPrimary: boolean;
+  status: AssignmentStatus;
+  rejectedReason?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  assignedAt: string;
+  user?: { id: string; name: string; email: string };
+  assignedBy?: { id: string; name: string } | null;
+}
+
+/** Booking shape as included on a Turnover (subset of Booking). */
+export interface TurnoverBookingRef {
+  id: string;
+  bookingRef: string;
+  pmsBookingId?: string;
+  status: BookingStatus;
+  cancelledAt?: string | null;
+  checkInTime: string;
+  checkOutTime?: string;
+  isOwnerStay?: boolean;
+  accommodationName?: string;
+  numAdults: number;
+  numChildren: number;
+  channel: BookingChannel;
+}
+
+export interface Turnover {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+
+  // Chain endpoints — either can be null
+  fromBookingId: string | null;
+  toBookingId: string | null;
+
+  // Time window
+  availableFrom: string | null;   // when work CAN start
+  dueBy: string | null;           // when work MUST be done
+
+  // State
+  status: TurnoverStatus;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  completedAllGood?: boolean | null;
+
+  // Settings
+  maxCleaners: number;
+  managerNote?: string | null;
+  supplyNote?: string | null;
+  cleanerNote?: string | null;
+
+  // Whether this turnover prepares for an owner stay
+  isOwnerStay: boolean;
+
+  // Audit chain
+  supersededById: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  // Joined relations
+  property?: Property;
+  fromBooking?: TurnoverBookingRef | null;
+  toBooking?: TurnoverBookingRef | null;
+  assignments: TurnoverAssignment[];
+}
+
+export interface TurnoverMarkDoneResponse {
+  done: true;
+  needsIncident: boolean;
+  incidentId: string | null;
+  turnover: Turnover;
+}
+
+export interface TurnoverClaimResponse {
+  turnover: Turnover;
+  assignment: TurnoverAssignment;
+}
+
+// ─── Turnovers API ────────────────────────────────────────────────────────────
+
+export const turnovers = {
+  byDate: (date: string) =>
+    get<Turnover[]>(`/turnovers?date=${date}`),
+
+  byDateRange: (from: string, to: string) =>
+    get<Turnover[]>(`/turnovers?from=${from}&to=${to}`),
+
+  byId: (id: string) =>
+    get<Turnover>(`/turnovers/${id}`),
+
+  update: (
+    id: string,
+    data: { managerNote?: string; supplyNote?: string; maxCleaners?: number },
+  ) => patch<Turnover>(`/turnovers/${id}`, data),
+
+  cancel: (id: string) =>
+    del<Turnover>(`/turnovers/${id}`),
+
+  // ─── Pool lifecycle ───
+  pool: () =>
+    get<Turnover[]>('/turnovers/pool'),
+
+  mine: (from?: string, to?: string, propertyIds?: string[]) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (propertyIds && propertyIds.length > 0) {
+      params.set('propertyIds', propertyIds.join(','));
+    }
+    const q = params.toString();
+    return get<Turnover[]>(`/turnovers/mine${q ? `?${q}` : ''}`);
+  },
+
+  claim: (turnoverId: string) =>
+    post<TurnoverClaimResponse>(`/turnovers/${turnoverId}/claim`),
+
+  drop: (turnoverId: string) =>
+    post<{ dropped: true; turnover: Turnover }>(`/turnovers/${turnoverId}/drop`),
+
+  markDone: (
+    turnoverId: string,
+    body: {
+      allGood: boolean;
+      note?: string;
+      photoUrls?: string[];
+      priority?: IncidentPriority;
+    },
+  ) => patch<TurnoverMarkDoneResponse>(`/turnovers/${turnoverId}/done`, body),
+
+  releaseToPool: (turnoverId: string) =>
+    post<{ released: true; affectedUserIds: string[]; turnover: Turnover }>(
+      `/turnovers/${turnoverId}/release-to-pool`,
+    ),
+};
+
+
 // ─── Assignments ──────────────────────────────────────────────────────────────
 
 export const assignments = {

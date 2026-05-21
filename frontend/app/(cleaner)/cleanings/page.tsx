@@ -2,14 +2,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
-  events as eventsApi,
+  turnovers as turnoversApi,
   properties as propsApi,
   users as usersApi,
   ApiError,
-  type CleaningEvent,
+  type Turnover,
   type Property,
 } from '@/lib/api';
-import { CleaningCard } from '@/components/CleaningCard';
+import { TurnoverCard } from '@/components/TurnoverCard';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
 import { LogOut, Filter, X, Check } from 'lucide-react';
@@ -19,7 +19,7 @@ export default function CleaningsPoolPage() {
   const locale = (user?.language as Locale) ?? 'en';
   const t = translations[locale];
 
-  const [pool, setPool] = useState<CleaningEvent[]>([]);
+  const [pool, setPool] = useState<Turnover[]>([]);
   const [allProps, setAllProps] = useState<Property[]>([]);
   const [selectedPropIds, setSelectedPropIds] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
@@ -41,7 +41,7 @@ export default function CleaningsPoolPage() {
     setError('');
     try {
       const [poolRes, propsRes] = await Promise.all([
-        eventsApi.pool(),
+        turnoversApi.pool(),
         propsApi.list(),
       ]);
       setPool(poolRes);
@@ -63,33 +63,35 @@ export default function CleaningsPoolPage() {
     'event:cancelled': () => load(),
   });
 
-  // Apply filter
+  // Apply property filter
   const visible = useMemo(() => {
     if (selectedPropIds.size === 0) return pool;
-    return pool.filter((e) => selectedPropIds.has(e.propertyId));
+    return pool.filter((t) => selectedPropIds.has(t.propertyId));
   }, [pool, selectedPropIds]);
 
-  // Group by day (using local Prague date so cleanings near midnight UTC
-  // appear under the correct local calendar day)
+  // Group by carry-forward date — turnovers from past dates float to today
   const grouped = useMemo(() => {
-    const map = new Map<string, CleaningEvent[]>();
-    for (const ev of visible) {
-      const d = new Date(ev.timeSlot);
-      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const arr = map.get(day) ?? [];
-      arr.push(ev);
-      map.set(day, arr);
+    const todayStr = todayLocalDate();
+    const map = new Map<string, Turnover[]>();
+
+    for (const turnover of visible) {
+      const groupDate = getGroupDate(turnover, todayStr);
+      const arr = map.get(groupDate) ?? [];
+      arr.push(turnover);
+      map.set(groupDate, arr);
     }
+
+    // Sort entries by date ascending
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [visible]);
 
-  async function handleClaim(eventId: string) {
-    setClaimingId(eventId);
+  async function handleClaim(turnoverId: string) {
+    setClaimingId(turnoverId);
     setError('');
     try {
-      await eventsApi.claim(eventId);
+      await turnoversApi.claim(turnoverId);
       // Remove from visible pool immediately; the socket broadcast will refresh
-      setPool((p) => p.filter((e) => e.id !== eventId));
+      setPool((p) => p.filter((t) => t.id !== turnoverId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.pool.claimFailed);
     } finally {
@@ -122,7 +124,6 @@ export default function CleaningsPoolPage() {
       });
       if (token) setAuth(token, { ...user, preferences: updated.preferences });
       setSavedState('saved');
-      // Re-fetch pool with the new filter applied server-side
       load();
       setTimeout(() => setSavedState('idle'), 2000);
     } catch {
@@ -151,7 +152,6 @@ export default function CleaningsPoolPage() {
           </button>
         </div>
 
-        {/* Filter button */}
         <button
           onClick={() => setFilterOpen(true)}
           className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full px-3 py-1.5 text-xs font-medium transition"
@@ -194,15 +194,15 @@ export default function CleaningsPoolPage() {
                 {formatDayHeader(day, locale)}
               </p>
               <div className="space-y-3">
-                {items.map((event) => (
-                  <CleaningCard
-                    key={event.id}
-                    event={event}
+                {items.map((turnover) => (
+                  <TurnoverCard
+                    key={turnover.id}
+                    turnover={turnover}
                     t={t}
                     mode="pool"
                     userId={user?.id}
-                    onClaim={() => handleClaim(event.id)}
-                    claiming={claimingId === event.id}
+                    onClaim={() => handleClaim(turnover.id)}
+                    claiming={claimingId === turnover.id}
                   />
                 ))}
               </div>
@@ -299,13 +299,37 @@ export default function CleaningsPoolPage() {
   );
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Today's date as YYYY-MM-DD in local time (Prague). */
+function todayLocalDate(): string {
+  const d = new Date();
+  return formatLocalDate(d);
+}
+
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Compute the day-group a turnover belongs to with carry-forward semantics:
+ *   - If the natural date (availableFrom or dueBy) is in the past → today
+ *   - Otherwise → the natural date itself
+ */
+function getGroupDate(turnover: Turnover, todayStr: string): string {
+  const candidateIso = turnover.availableFrom ?? turnover.dueBy;
+  if (!candidateIso) return todayStr;
+
+  const candidateDate = new Date(candidateIso);
+  const candidateStr = formatLocalDate(candidateDate);
+
+  return candidateStr < todayStr ? todayStr : candidateStr;
+}
+
 function formatDayHeader(day: string, locale: Locale): string {
   const date = new Date(day + 'T12:00:00');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
   const dayDate = new Date(date);
   dayDate.setHours(0, 0, 0, 0);
 
@@ -313,9 +337,6 @@ function formatDayHeader(day: string, locale: Locale): string {
 
   const t = translations[locale];
   if (diff === 0) return t.mine.today;
-  if (diff === 1) {
-    // "Tomorrow" — not in translations, fall back to formatted
-  }
 
   return date.toLocaleDateString(
     locale === 'en' ? 'en-GB' : locale === 'cs' ? 'cs-CZ' : locale === 'ru' ? 'ru-RU' : 'uk-UA',

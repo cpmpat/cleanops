@@ -2,14 +2,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
-  events as eventsApi,
+  turnovers as turnoversApi,
   properties as propertiesApi,
   ApiError,
-  type CleaningEvent,
+  type Turnover,
   type Property,
 } from '@/lib/api';
-import { CleaningCard } from '@/components/CleaningCard';
-import { MarkDoneSheet } from '@/components/MarkDoneSheet';
+import { TurnoverCard } from '@/components/TurnoverCard';
+import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
 import { LogOut, Calendar, X, Check } from 'lucide-react';
@@ -34,7 +34,7 @@ function getPresetRange(key: Exclude<RangeKey, 'custom'>): DateRange {
       return { from, to };
     }
     case 'thisWeek': {
-      const day = now.getDay(); // 0 = Sun
+      const day = now.getDay();
       const mondayOffset = (day + 6) % 7;
       const from = new Date(now);
       from.setHours(0, 0, 0, 0);
@@ -51,7 +51,6 @@ function getPresetRange(key: Exclude<RangeKey, 'custom'>): DateRange {
   }
 }
 
-/** Format a Date to YYYY-MM-DD for <input type="date"> values. */
 function toInputDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -59,8 +58,24 @@ function toInputDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function dayKey(iso: string): string {
-  return new Date(iso).toISOString().slice(0, 10);
+/**
+ * Compute the grouping date for a turnover. Uses availableFrom if set, else
+ * dueBy. For carry-forward in the active list, past dates float to today.
+ */
+function groupingDateKey(tv: Turnover, carryForward: boolean): string {
+  const base = tv.availableFrom ?? tv.dueBy ?? tv.createdAt;
+  const d = new Date(base);
+  d.setHours(0, 0, 0, 0);
+  let target = d;
+  if (carryForward) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d < today) target = today;
+  }
+  const y = target.getFullYear();
+  const m = String(target.getMonth() + 1).padStart(2, '0');
+  const day = String(target.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function formatDayHeader(day: string, locale: Locale): string {
@@ -89,13 +104,13 @@ function formatDayHeader(day: string, locale: Locale): string {
   });
 }
 
-function groupByDay(events: CleaningEvent[]): [string, CleaningEvent[]][] {
-  const map = new Map<string, CleaningEvent[]>();
-  for (const ev of events) {
-    const d = dayKey(ev.timeSlot);
-    const arr = map.get(d) ?? [];
-    arr.push(ev);
-    map.set(d, arr);
+function groupByDay(items: Turnover[], carryForward: boolean): [string, Turnover[]][] {
+  const map = new Map<string, Turnover[]>();
+  for (const tv of items) {
+    const day = groupingDateKey(tv, carryForward);
+    const arr = map.get(day) ?? [];
+    arr.push(tv);
+    map.set(day, arr);
   }
   return Array.from(map.entries());
 }
@@ -111,18 +126,16 @@ export default function MinePage() {
   );
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
 
-  // Property filter — only applied when range is "custom"
   const [allProperties, setAllProperties] = useState<Property[]>([]);
   const [propertyFilter, setPropertyFilter] = useState<string[]>([]);
 
-  const [items, setItems] = useState<CleaningEvent[]>([]);
+  const [items, setItems] = useState<Turnover[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [droppingId, setDroppingId] = useState<string | null>(null);
-  const [dropConfirm, setDropConfirm] = useState<CleaningEvent | null>(null);
-  const [doneTarget, setDoneTarget] = useState<CleaningEvent | null>(null);
+  const [dropConfirm, setDropConfirm] = useState<Turnover | null>(null);
+  const [doneTarget, setDoneTarget] = useState<Turnover | null>(null);
 
-  // Load properties once for the custom filter picker
   useEffect(() => {
     propertiesApi
       .list()
@@ -143,7 +156,7 @@ export default function MinePage() {
         rangeKey === 'custom' && propertyFilter.length > 0
           ? propertyFilter
           : undefined;
-      const res = await eventsApi.mine(
+      const res = await turnoversApi.mine(
         activeRange.from.toISOString(),
         activeRange.to.toISOString(),
         ids,
@@ -168,39 +181,45 @@ export default function MinePage() {
 
   const { futureGrouped, pastGrouped } = useMemo(() => {
     const now = new Date();
-    const future: CleaningEvent[] = [];
-    const past: CleaningEvent[] = [];
+    const future: Turnover[] = [];
+    const past: Turnover[] = [];
 
-    for (const e of items) {
-      if (e.status === 'COMPLETED') {
-        past.push(e);
-      } else if (new Date(e.timeSlot) >= now) {
-        future.push(e);
+    for (const tv of items) {
+      if (tv.status === 'COMPLETED') {
+        past.push(tv);
+      } else if (tv.dueBy && new Date(tv.dueBy) < now) {
+        past.push(tv);
       } else {
-        past.push(e);
+        future.push(tv);
       }
     }
 
-    future.sort(
-      (a, b) => new Date(a.timeSlot).getTime() - new Date(b.timeSlot).getTime(),
-    );
-    past.sort(
-      (a, b) => new Date(b.timeSlot).getTime() - new Date(a.timeSlot).getTime(),
-    );
+    // Future: earliest dueBy first; carry-forward applied
+    future.sort((a, b) => {
+      const aKey = a.dueBy ?? a.availableFrom ?? a.createdAt;
+      const bKey = b.dueBy ?? b.availableFrom ?? b.createdAt;
+      return new Date(aKey).getTime() - new Date(bKey).getTime();
+    });
+    // Past: most recent first (by completedAt or dueBy)
+    past.sort((a, b) => {
+      const aKey = a.completedAt ?? a.dueBy ?? a.availableFrom ?? a.createdAt;
+      const bKey = b.completedAt ?? b.dueBy ?? b.availableFrom ?? b.createdAt;
+      return new Date(bKey).getTime() - new Date(aKey).getTime();
+    });
 
-    const futureGrouped = groupByDay(future).sort(([a], [b]) => a.localeCompare(b));
-    const pastGrouped = groupByDay(past).sort(([a], [b]) => b.localeCompare(a));
+    const futureGrouped = groupByDay(future, true).sort(([a], [b]) => a.localeCompare(b));
+    const pastGrouped = groupByDay(past, false).sort(([a], [b]) => b.localeCompare(a));
 
     return { futureGrouped, pastGrouped };
   }, [items]);
 
-  async function handleDrop(eventId: string) {
+  async function handleDrop(turnoverId: string) {
     setDropConfirm(null);
-    setDroppingId(eventId);
+    setDroppingId(turnoverId);
     setError('');
     try {
-      await eventsApi.drop(eventId);
-      setItems((p) => p.filter((e) => e.id !== eventId));
+      await turnoversApi.drop(turnoverId);
+      setItems((p) => p.filter((tv) => tv.id !== turnoverId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
@@ -208,8 +227,8 @@ export default function MinePage() {
     }
   }
 
-  function handleDoneSuccess(updated: CleaningEvent) {
-    setItems((p) => p.map((e) => (e.id === updated.id ? updated : e)));
+  function handleDoneSuccess(updated: Turnover) {
+    setItems((p) => p.map((tv) => (tv.id === updated.id ? updated : tv)));
     setDoneTarget(null);
   }
 
@@ -219,8 +238,6 @@ export default function MinePage() {
   }
 
   function openCustomPicker() {
-    // Seed the custom range from the current active one so the picker
-    // starts with sensible defaults
     if (rangeKey !== 'custom') {
       setCustomRange(activeRange);
     }
@@ -230,7 +247,7 @@ export default function MinePage() {
   function applyCustomRange(from: string, to: string, propertyIds: string[]) {
     const fromDate = new Date(from + 'T00:00:00');
     const toDate = new Date(to + 'T00:00:00');
-    toDate.setDate(toDate.getDate() + 1); // inclusive end day
+    toDate.setDate(toDate.getDate() + 1);
     setCustomRange({ from: fromDate, to: toDate });
     setPropertyFilter(propertyIds);
     setRangeKey('custom');
@@ -245,20 +262,14 @@ export default function MinePage() {
 
   const customLabel =
     rangeKey === 'custom'
-      ? `${toInputDate(activeRange.from)} → ${toInputDate(
-          new Date(activeRange.to.getTime() - 1),
-        )}`
+      ? `${toInputDate(activeRange.from)} – ${toInputDate(new Date(activeRange.to.getTime() - 1))}`
       : t.mine.rangeCustom;
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Header */}
       <div className="bg-ink text-white px-4 pt-12 pb-6">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <p className="text-white/60 text-sm font-medium">
-              {user?.name?.split(' ')[0]}
-            </p>
             <h1 className="text-xl font-bold mt-0.5">{t.mine.title}</h1>
           </div>
           <button
@@ -270,17 +281,17 @@ export default function MinePage() {
           </button>
         </div>
 
-        {/* Range switcher */}
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+        {/* Range picker chips */}
+        <div className="flex gap-2 flex-wrap">
           {presets.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => pickPreset(key)}
               className={cn(
-                'flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition whitespace-nowrap',
+                'rounded-full px-3 py-1.5 text-xs font-medium transition',
                 rangeKey === key
                   ? 'bg-white text-ink'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20',
+                  : 'bg-white/10 hover:bg-white/20 text-white',
               )}
             >
               {label}
@@ -289,10 +300,10 @@ export default function MinePage() {
           <button
             onClick={openCustomPicker}
             className={cn(
-              'flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition whitespace-nowrap',
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition',
               rangeKey === 'custom'
                 ? 'bg-white text-ink'
-                : 'bg-white/10 text-white/80 hover:bg-white/20',
+                : 'bg-white/10 hover:bg-white/20 text-white',
             )}
           >
             <Calendar size={12} />
@@ -301,8 +312,7 @@ export default function MinePage() {
         </div>
       </div>
 
-      {/* List */}
-      <div className="px-4 py-4 space-y-6">
+      <div className="px-4 py-4 space-y-4">
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
@@ -327,26 +337,23 @@ export default function MinePage() {
         ) : (
           <>
             {futureGrouped.length > 0 && (
-              <div className="space-y-5">
-                <p className="text-xs font-bold text-ink uppercase tracking-wider px-1">
-                  {t.mine.future}
-                </p>
-                {futureGrouped.map(([day, evs]) => (
-                  <div key={'f-' + day}>
-                    <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2 px-1">
+              <div className="space-y-4">
+                {futureGrouped.map(([day, list]) => (
+                  <div key={day}>
+                    <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
                       {formatDayHeader(day, locale)}
                     </p>
                     <div className="space-y-3">
-                      {evs.map((event) => (
-                        <CleaningCard
-                          key={event.id}
-                          event={event}
+                      {list.map((tv) => (
+                        <TurnoverCard
+                          key={tv.id}
+                          turnover={tv}
                           t={t}
                           mode="mine"
                           userId={user?.id}
-                          onDrop={() => setDropConfirm(event)}
-                          onDone={() => setDoneTarget(event)}
-                          dropping={droppingId === event.id}
+                          onDrop={() => setDropConfirm(tv)}
+                          onDone={() => setDoneTarget(tv)}
+                          dropping={droppingId === tv.id}
                         />
                       ))}
                     </div>
@@ -356,20 +363,20 @@ export default function MinePage() {
             )}
 
             {pastGrouped.length > 0 && (
-              <div className="space-y-5">
-                <p className="text-xs font-bold text-ink uppercase tracking-wider px-1 pt-2">
+              <div className="space-y-4 pt-4 border-t border-surface-border">
+                <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider px-1">
                   {t.mine.past}
                 </p>
-                {pastGrouped.map(([day, evs]) => (
-                  <div key={'p-' + day}>
-                    <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2 px-1">
+                {pastGrouped.map(([day, list]) => (
+                  <div key={day}>
+                    <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
                       {formatDayHeader(day, locale)}
                     </p>
                     <div className="space-y-3">
-                      {evs.map((event) => (
-                        <CleaningCard
-                          key={event.id}
-                          event={event}
+                      {list.map((tv) => (
+                        <TurnoverCard
+                          key={tv.id}
+                          turnover={tv}
                           t={t}
                           mode="mine"
                           userId={user?.id}
@@ -384,7 +391,6 @@ export default function MinePage() {
         )}
       </div>
 
-      {/* Custom range picker */}
       {customPickerOpen && (
         <CustomRangePicker
           initial={activeRange}
@@ -396,7 +402,6 @@ export default function MinePage() {
         />
       )}
 
-      {/* Drop confirmation */}
       {dropConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -409,7 +414,7 @@ export default function MinePage() {
             <h2 className="font-bold text-ink mb-1">{t.mine.dropConfirmTitle}</h2>
             <p className="text-sm text-ink-muted mb-4">{t.mine.dropConfirmBody}</p>
             <p className="text-sm font-semibold text-ink bg-surface rounded-lg p-3 mb-4 truncate">
-              {dropConfirm.accommodationName}
+              {dropConfirm.property?.name ?? dropConfirm.toBooking?.accommodationName ?? '—'}
             </p>
             <div className="flex gap-2">
               <button
@@ -429,10 +434,9 @@ export default function MinePage() {
         </div>
       )}
 
-      {/* Done flow sheet */}
       {doneTarget && (
-        <MarkDoneSheet
-          event={doneTarget}
+        <TurnoverMarkDoneSheet
+          turnover={doneTarget}
           t={t}
           onClose={() => setDoneTarget(null)}
           onSuccess={handleDoneSuccess}
@@ -459,8 +463,6 @@ function CustomRangePicker({
   onApply: (from: string, to: string, propertyIds: string[]) => void;
   t: typeof translations.en;
 }) {
-  // For the <input type="date"> value, we need YYYY-MM-DD.
-  // The stored `to` is exclusive (midnight the day after), so subtract 1ms.
   const initialFrom = toInputDate(initial.from);
   const initialTo = toInputDate(new Date(initial.to.getTime() - 1));
 
@@ -534,7 +536,6 @@ function CustomRangePicker({
             />
           </div>
 
-          {/* Property filter (optional — empty selection means "all") */}
           {allProperties.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
