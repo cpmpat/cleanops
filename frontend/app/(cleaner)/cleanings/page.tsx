@@ -28,13 +28,15 @@ export default function CleaningsPoolPage() {
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [savedState, setSavedState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  // Initialise filter from user preferences on first load
+  // Sync the filter checkboxes with the stored selection whenever:
+  //   - preferences change (initial hydration, save, or layout-level /auth/me refresh)
+  //   - the filter sheet opens (defensive — guarantees the checkboxes
+  //     reflect the saved default every time she opens it)
+  // No empty-guard, so clearing the saved filter is also reflected here.
   useEffect(() => {
-    const stored = user?.preferences?.cleaningsPoolFilter?.propertyIds;
-    if (stored && stored.length > 0) {
-      setSelectedPropIds(new Set(stored));
-    }
-  }, [user?.preferences]);
+    const stored = user?.preferences?.cleaningsPoolFilter?.propertyIds ?? [];
+    setSelectedPropIds(new Set(stored));
+  }, [user?.preferences, filterOpen]);
 
   const load = useCallback(async () => {
     setLoading(true);
