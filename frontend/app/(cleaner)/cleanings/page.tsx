@@ -2,14 +2,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
-  turnovers as turnoversApi,
+  events as eventsApi,
   properties as propsApi,
   users as usersApi,
   ApiError,
-  type Turnover,
+  type CleaningEvent,
   type Property,
 } from '@/lib/api';
-import { TurnoverCard } from '@/components/TurnoverCard';
+import { CleaningCard } from '@/components/CleaningCard';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
 import { LogOut, Filter, X, Check } from 'lucide-react';
@@ -19,7 +19,7 @@ export default function CleaningsPoolPage() {
   const locale = (user?.language as Locale) ?? 'en';
   const t = translations[locale];
 
-  const [pool, setPool] = useState<Turnover[]>([]);
+  const [pool, setPool] = useState<CleaningEvent[]>([]);
   const [allProps, setAllProps] = useState<Property[]>([]);
   const [selectedPropIds, setSelectedPropIds] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
@@ -28,22 +28,20 @@ export default function CleaningsPoolPage() {
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [savedState, setSavedState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  // Sync the filter checkboxes with the stored selection whenever:
-  //   - preferences change (initial hydration, save, or layout-level /auth/me refresh)
-  //   - the filter sheet opens (defensive — guarantees the checkboxes
-  //     reflect the saved default every time she opens it)
-  // No empty-guard, so clearing the saved filter is also reflected here.
+  // Initialise filter from user preferences on first load
   useEffect(() => {
-    const stored = user?.preferences?.cleaningsPoolFilter?.propertyIds ?? [];
-    setSelectedPropIds(new Set(stored));
-  }, [user?.preferences, filterOpen]);
+    const stored = user?.preferences?.cleaningsPoolFilter?.propertyIds;
+    if (stored && stored.length > 0) {
+      setSelectedPropIds(new Set(stored));
+    }
+  }, [user?.preferences]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const [poolRes, propsRes] = await Promise.all([
-        turnoversApi.pool(),
+        eventsApi.pool(),
         propsApi.list(),
       ]);
       setPool(poolRes);
@@ -65,35 +63,31 @@ export default function CleaningsPoolPage() {
     'event:cancelled': () => load(),
   });
 
-  // Apply property filter
+  // Apply filter
   const visible = useMemo(() => {
     if (selectedPropIds.size === 0) return pool;
-    return pool.filter((t) => selectedPropIds.has(t.propertyId));
+    return pool.filter((e) => selectedPropIds.has(e.propertyId));
   }, [pool, selectedPropIds]);
 
-  // Group by carry-forward date — turnovers from past dates float to today
+  // Group by day
   const grouped = useMemo(() => {
-    const todayStr = todayLocalDate();
-    const map = new Map<string, Turnover[]>();
-
-    for (const turnover of visible) {
-      const groupDate = getGroupDate(turnover, todayStr);
-      const arr = map.get(groupDate) ?? [];
-      arr.push(turnover);
-      map.set(groupDate, arr);
+    const map = new Map<string, CleaningEvent[]>();
+    for (const ev of visible) {
+      const day = new Date(ev.timeSlot).toISOString().slice(0, 10);
+      const arr = map.get(day) ?? [];
+      arr.push(ev);
+      map.set(day, arr);
     }
-
-    // Sort entries by date ascending
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [visible]);
 
-  async function handleClaim(turnoverId: string) {
-    setClaimingId(turnoverId);
+  async function handleClaim(eventId: string) {
+    setClaimingId(eventId);
     setError('');
     try {
-      await turnoversApi.claim(turnoverId);
+      await eventsApi.claim(eventId);
       // Remove from visible pool immediately; the socket broadcast will refresh
-      setPool((p) => p.filter((t) => t.id !== turnoverId));
+      setPool((p) => p.filter((e) => e.id !== eventId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.pool.claimFailed);
     } finally {
@@ -126,6 +120,7 @@ export default function CleaningsPoolPage() {
       });
       if (token) setAuth(token, { ...user, preferences: updated.preferences });
       setSavedState('saved');
+      // Re-fetch pool with the new filter applied server-side
       load();
       setTimeout(() => setSavedState('idle'), 2000);
     } catch {
@@ -154,6 +149,7 @@ export default function CleaningsPoolPage() {
           </button>
         </div>
 
+        {/* Filter button */}
         <button
           onClick={() => setFilterOpen(true)}
           className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full px-3 py-1.5 text-xs font-medium transition"
@@ -192,19 +188,19 @@ export default function CleaningsPoolPage() {
         ) : (
           grouped.map(([day, items]) => (
             <div key={day}>
-              <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
+              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2 px-1">
                 {formatDayHeader(day, locale)}
               </p>
               <div className="space-y-3">
-                {items.map((turnover) => (
-                  <TurnoverCard
-                    key={turnover.id}
-                    turnover={turnover}
+                {items.map((event) => (
+                  <CleaningCard
+                    key={event.id}
+                    event={event}
                     t={t}
                     mode="pool"
                     userId={user?.id}
-                    onClaim={() => handleClaim(turnover.id)}
-                    claiming={claimingId === turnover.id}
+                    onClaim={() => handleClaim(event.id)}
+                    claiming={claimingId === event.id}
                   />
                 ))}
               </div>
@@ -301,37 +297,13 @@ export default function CleaningsPoolPage() {
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Today's date as YYYY-MM-DD in local time (Prague). */
-function todayLocalDate(): string {
-  const d = new Date();
-  return formatLocalDate(d);
-}
-
-function formatLocalDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/**
- * Compute the day-group a turnover belongs to with carry-forward semantics:
- *   - If the natural date (availableFrom or dueBy) is in the past → today
- *   - Otherwise → the natural date itself
- */
-function getGroupDate(turnover: Turnover, todayStr: string): string {
-  const candidateIso = turnover.availableFrom ?? turnover.dueBy;
-  if (!candidateIso) return todayStr;
-
-  const candidateDate = new Date(candidateIso);
-  const candidateStr = formatLocalDate(candidateDate);
-
-  return candidateStr < todayStr ? todayStr : candidateStr;
-}
-
 function formatDayHeader(day: string, locale: Locale): string {
   const date = new Date(day + 'T12:00:00');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
   const dayDate = new Date(date);
   dayDate.setHours(0, 0, 0, 0);
 
@@ -339,6 +311,9 @@ function formatDayHeader(day: string, locale: Locale): string {
 
   const t = translations[locale];
   if (diff === 0) return t.mine.today;
+  if (diff === 1) {
+    // "Tomorrow" — not in translations, fall back to formatted
+  }
 
   return date.toLocaleDateString(
     locale === 'en' ? 'en-GB' : locale === 'cs' ? 'cs-CZ' : locale === 'ru' ? 'ru-RU' : 'uk-UA',
