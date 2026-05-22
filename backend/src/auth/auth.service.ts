@@ -260,6 +260,7 @@ export class AuthService {
         role: true,
         language: true,
         tenantId: true,
+        preferences: true,
         tenant: { select: { name: true, slug: true, settings: true } },
       },
     });
@@ -301,6 +302,7 @@ export class AuthService {
         language: user.language,
         tenantId: user.tenantId,
         tenantName: user.tenant?.name,
+        preferences: user.preferences,
       },
     };
   }
