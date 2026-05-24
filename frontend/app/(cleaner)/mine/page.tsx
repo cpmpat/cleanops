@@ -185,11 +185,11 @@ export default function MinePage() {
     const past: Turnover[] = [];
 
     for (const tv of items) {
-      if (tv.status === 'COMPLETED') {
-        past.push(tv);
-      } else if (tv.dueBy && new Date(tv.dueBy) < now) {
+      if (tv.status === 'COMPLETED' || tv.status === 'CANCELLED') {
         past.push(tv);
       } else {
+        // Everything else (including overdue ASSIGNED) → future,
+        // carry-forward grouping will float them to "Today"
         future.push(tv);
       }
     }
