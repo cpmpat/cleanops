@@ -352,7 +352,10 @@ export default function MinePage() {
                           mode="mine"
                           userId={user?.id}
                           onDrop={() => setDropConfirm(tv)}
-                          onDone={() => setDoneTarget(tv)}
+                          onDone={() => {
+                            console.log('DONE TAPPED', tv.id, 'currentDoneTarget:', !!doneTarget);
+                            setDoneTarget(tv);
+                          }}
                           dropping={droppingId === tv.id}
                         />
                       ))}
