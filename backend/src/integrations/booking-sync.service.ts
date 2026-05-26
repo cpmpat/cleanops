@@ -399,6 +399,15 @@ export class BookingSyncService {
                 `GCS placeholder failed for ${accom.pmsId}: ${err?.message}`,
               ),
             );
+          // Keep the per-folder _NAME_*.txt marker in sync with the current
+          // Avantio name. Handles renames by deleting stale markers.
+          this.gcs
+            .upsertPropertyNameMarker(accom.pmsId, accom.name)
+            .catch((err) =>
+              this.logger.warn(
+                `GCS name marker failed for ${accom.pmsId}: ${err?.message}`,
+              ),
+            );
         } else {
           // Create new property
           await this.prisma.property.create({
@@ -424,11 +433,33 @@ export class BookingSyncService {
                 `GCS placeholder failed for ${accom.pmsId}: ${err?.message}`,
               ),
             );
+          // Drop a _NAME_*.txt marker inside the folder so the unit name is
+          // visible at a glance when browsing in the GCP console.
+          this.gcs
+            .upsertPropertyNameMarker(accom.pmsId, accom.name)
+            .catch((err) =>
+              this.logger.warn(
+                `GCS name marker failed for ${accom.pmsId}: ${err?.message}`,
+              ),
+            );
         }
       } catch (err) {
         this.logger.warn(`Failed to sync accommodation ${accom.pmsId}: ${err.message}`);
       }
     }
+
+    // Refresh the bucket-root _INDEX.txt listing all current properties.
+    // Pinned at the top when browsing the bucket. Non-blocking.
+    this.gcs
+      .writePropertyIndex(
+        accommodations.map((a) => ({
+          pmsPropertyId: a.pmsId,
+          name: a.name,
+        })),
+      )
+      .catch((err) =>
+        this.logger.warn(`GCS writePropertyIndex failed: ${err?.message}`),
+      );
 
     return { synced: accommodations.length, created, updated };
   }

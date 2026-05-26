@@ -185,6 +185,118 @@ export class GcsService implements OnModuleInit {
     }
   }
 
+async upsertPropertyNameMarker(
+  pmsPropertyId: string,
+  name: string,
+): Promise<void> {
+  if (!this.bucket) return; // GCS not configured — skip
+  if (!pmsPropertyId || !name) return;
+ 
+  const slug = this.slugify(name);
+  const desiredKey = `${pmsPropertyId}/_NAME_${slug}.txt`;
+ 
+  try {
+    // List existing name markers in this folder
+    const [files] = await this.bucket.getFiles({
+      prefix: `${pmsPropertyId}/_NAME_`,
+    });
+ 
+    const correctExists = files.some((f) => f.name === desiredKey);
+ 
+    // Delete stale markers (when name changed)
+    for (const f of files) {
+      if (f.name !== desiredKey) {
+        try {
+          await f.delete();
+          this.logger.log(`Deleted stale name marker: ${f.name}`);
+        } catch (err: any) {
+          this.logger.warn(
+            `Failed to delete stale name marker ${f.name}: ${err.message}`,
+          );
+        }
+      }
+    }
+ 
+    // Create the correct marker if missing
+    if (!correctExists) {
+      await this.bucket.file(desiredKey).save(name, {
+        contentType: 'text/plain; charset=utf-8',
+        metadata: {
+          metadata: {
+            purpose: 'property-name-marker',
+            propertyName: name,
+            generatedAt: new Date().toISOString(),
+          },
+        },
+      });
+      this.logger.log(`Created name marker: ${desiredKey}`);
+    }
+  } catch (err: any) {
+    this.logger.warn(
+      `upsertPropertyNameMarker failed for ${pmsPropertyId}: ${err.message}`,
+    );
+  }
+}
+ 
+/**
+ * Write/overwrite the root `_INDEX.txt` listing all properties (sorted by
+ * pmsPropertyId). Pinned at the top when browsing the bucket. Idempotent —
+ * call once at the end of property sync after individual upserts are done.
+ */
+async writePropertyIndex(
+  properties: Array<{ pmsPropertyId: string; name: string }>,
+): Promise<void> {
+  if (!this.bucket) return;
+ 
+  const sorted = [...properties]
+    .filter((p) => p.pmsPropertyId && p.name)
+    .sort((a, b) => a.pmsPropertyId.localeCompare(b.pmsPropertyId));
+ 
+  const widthId = Math.max(8, ...sorted.map((p) => p.pmsPropertyId.length));
+ 
+  const lines = [
+    `# Property Index — generated ${new Date().toISOString()}`,
+    `# Total: ${sorted.length} properties`,
+    `# Format: pmsPropertyId    name`,
+    '',
+    ...sorted.map(
+      (p) => `${p.pmsPropertyId.padEnd(widthId)}    ${p.name}`,
+    ),
+  ];
+ 
+  try {
+    await this.bucket.file('_INDEX.txt').save(lines.join('\n') + '\n', {
+      contentType: 'text/plain; charset=utf-8',
+      metadata: {
+        metadata: {
+          purpose: 'property-index',
+          generatedAt: new Date().toISOString(),
+          propertyCount: String(sorted.length),
+        },
+      },
+    });
+    this.logger.log(`Wrote _INDEX.txt with ${sorted.length} properties`);
+  } catch (err: any) {
+    this.logger.warn(`writePropertyIndex failed: ${err.message}`);
+  }
+}
+ 
+/**
+ * Slugify a property name for safe filenames:
+ *   "Hartigova 8, unit 009"  ->  "Hartigova-8-unit-009"
+ *   "Roosevelta 5/A — apt 2"  ->  "Roosevelta-5A-apt-2"
+ */
+private slugify(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')   // strip diacritics
+    .replace(/[^a-zA-Z0-9\s-]/g, '')    // drop punctuation/symbols
+    .trim()
+    .replace(/\s+/g, '-')               // spaces -> dashes
+    .replace(/-+/g, '-')                // collapse multiple dashes
+    .slice(0, 80);                      // cap length
+}
+
   // ─── INTERNAL ───────────────────────────────────────────────
 
   private assertReady() {
