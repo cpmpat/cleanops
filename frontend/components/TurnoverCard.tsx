@@ -268,41 +268,65 @@ export function TurnoverCard({
           </div>
         )}
 
-        {/* Last checkout pill with carry-forward escalation */}
-        {fromBooking?.checkOutTime ? (
-          <div
-            className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${PILL_CLASSES[tone]}`}
-          >
-            {tone === 'red' ? <Clock size={11} /> : <LogOut size={11} />}
-            <span>
-              Last checkout{' '}
-              {new Date(fromBooking.checkOutTime).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              })}
-              , {formatTime(fromBooking.checkOutTime)}
-            </span>
-            {daysWaiting > 0 && (
-              <>
-                <span className="opacity-70">·</span>
-                <span className="font-bold">
-                  {daysWaiting === 1 ? '1 day waiting' : `${daysWaiting} days waiting`}
-                </span>
-              </>
-            )}
-            {turnover.dueBy && tone === 'red' && daysWaiting > 0 && (
-              <>
-                <span className="opacity-70">·</span>
-                <span className="font-bold uppercase">Due soon</span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-stone-600 bg-stone-50 border-stone-200">
-            <LogOut size={11} />
-            <span className="italic">No prior booking on record</span>
-          </div>
-        )}
+        {/* Booking endpoint pills: when the cleaner can start (last checkout)
+            and when the next guest needs the unit ready (next check-in). */}
+        <div className="mt-2 flex flex-col items-start gap-1">
+          {/* Last checkout — carry-forward escalation via PILL_CLASSES tone */}
+          {fromBooking?.checkOutTime ? (
+            <div
+              className={`inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${PILL_CLASSES[tone]}`}
+            >
+              {tone === 'red' ? <Clock size={11} /> : <LogOut size={11} />}
+              <span>
+                Last checkout{' '}
+                {new Date(fromBooking.checkOutTime).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+                , {formatTime(fromBooking.checkOutTime)}
+              </span>
+              {daysWaiting > 0 && (
+                <>
+                  <span className="opacity-70">·</span>
+                  <span className="font-bold">
+                    {daysWaiting === 1 ? '1 day waiting' : `${daysWaiting} days waiting`}
+                  </span>
+                </>
+              )}
+              {turnover.dueBy && tone === 'red' && daysWaiting > 0 && (
+                <>
+                  <span className="opacity-70">·</span>
+                  <span className="font-bold uppercase">Due soon</span>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-stone-600 bg-stone-50 border-stone-200">
+              <LogOut size={11} />
+              <span className="italic">No prior booking on record</span>
+            </div>
+          )}
+
+          {/* Next check-in — informational, always shown */}
+          {toBooking?.checkInTime ? (
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-indigo-700 bg-indigo-50 border-indigo-200">
+              <LogIn size={11} />
+              <span>
+                Next check-in{' '}
+                {new Date(toBooking.checkInTime).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+                , {formatTime(toBooking.checkInTime)}
+              </span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-stone-600 bg-stone-50 border-stone-200">
+              <LogIn size={11} />
+              <span className="italic">No next booking yet</span>
+            </div>
+          )}
+        </div>
 
         {/* Manager note */}
         {turnover.managerNote && (
