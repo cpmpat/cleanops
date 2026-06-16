@@ -10,6 +10,7 @@ import {
   type Property,
 } from '@/lib/api';
 import { translations, type Locale } from '@/i18n/translations';
+import type { Translations } from '@/i18n/translations';
 import { ChevronLeft, ChevronRight, Filter, X, Check, LogOut } from 'lucide-react';
 
 const WINDOW_DAYS = 10;
@@ -354,10 +355,8 @@ interface UnitRowProps {
   bookings: CalendarBooking[];
   days: Date[];
   localeTag: string;
-  t: ReturnType<typeof translations[Locale]> extends never ? never : Translations;
+  t: Translations;
 }
-
-type Translations = typeof translations[Locale];
 
 function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
   // Compute, for each visible day, whether the unit is occupied by some booking.
