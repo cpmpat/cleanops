@@ -399,7 +399,7 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
         {bars.map((bar, idx) => (
           <div
             key={`${bar.booking.id}-${idx}`}
-            className="absolute top-1 bottom-1 bg-teal-300 text-teal-900 rounded text-[10px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
+            className="absolute top-1 bottom-1 bg-[#FFC645] text-ink rounded text-[10px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
             style={{ left: `${bar.leftPct}%`, width: `${bar.widthPct}%` }}
             title={`${bar.booking.guestFirstName ?? t.calendar.guestPlaceholder} · ${bar.booking.bookingRef}`}
           >
