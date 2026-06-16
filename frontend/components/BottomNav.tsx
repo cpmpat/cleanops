@@ -21,7 +21,7 @@ export function BottomNav({ t }: BottomNavProps) {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-surface-border safe-area-pb">
-      <div className="flex items-center justify-around px-2 pt-2 pb-safe">
+      <div className="grid grid-cols-3 items-center px-2 pt-2 pb-safe">
         {links.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || pathname?.startsWith(href + '/');
           return (
@@ -29,7 +29,7 @@ export function BottomNav({ t }: BottomNavProps) {
               key={href}
               href={href}
               className={cn(
-                'flex flex-col items-center gap-1 px-5 py-1.5 rounded-xl transition-colors min-w-[64px]',
+                'flex flex-col items-center justify-center gap-1 py-1.5 rounded-xl transition-colors',
                 active ? 'text-accent' : 'text-ink-muted',
               )}
             >

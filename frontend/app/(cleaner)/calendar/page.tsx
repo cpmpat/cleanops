@@ -208,8 +208,9 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Day strip */}
-      <div className="grid grid-cols-10 px-3 py-2.5 bg-surface-sunken border-b border-surface-border select-none">
+      {/* Day strip — stays pinned to the top while scrolling unit rows
+          so the date headers always align with the bars below. */}
+      <div className="grid grid-cols-10 px-3 py-2.5 bg-surface-sunken border-b border-surface-border select-none sticky top-0 z-20">
         {days.map((d) => {
           const isTodayCell = startOfLocalDay(d).getTime() === todayStart;
           return (
