@@ -37,6 +37,24 @@ export class BookingsController {
     return this.service.list(req.tenantId!, query);
   }
 
+  // ─── Cleaner calendar (scoped to her saved property filter) ───
+
+  @Get('calendar')
+  @Roles('CLEANER')
+  @UseGuards(RolesGuard)
+  @ApiOperation({
+    summary: "Bookings overlapping [from, to) for the cleaner's saved property filter",
+  })
+  @ApiQuery({ name: 'from', required: true, description: 'ISO datetime, start of window' })
+  @ApiQuery({ name: 'to', required: true, description: 'ISO datetime, end of window (exclusive)' })
+  calendar(
+    @Req() req: TenantRequest,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.service.getCalendarForUser(req.tenantId!, req.userId!, from, to);
+  }
+
   // ─── Detail (any role, used by incident detail pages) ──────
 
   @Get(':id')

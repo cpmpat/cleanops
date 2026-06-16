@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListChecks, Bookmark } from 'lucide-react';
+import { ListChecks, CalendarDays, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Translations } from '@/i18n/translations';
 
@@ -15,6 +15,7 @@ export function BottomNav({ t }: BottomNavProps) {
 
   const links = [
     { href: '/cleanings', icon: ListChecks, label: t.nav.cleanings },
+    { href: '/calendar', icon: CalendarDays, label: t.nav.calendar },
     { href: '/mine', icon: Bookmark, label: t.nav.mine },
   ];
 

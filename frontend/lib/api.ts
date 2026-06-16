@@ -642,7 +642,29 @@ export const bookings = {
     patch<Booking>(`/bookings/${id}`, data),
   cancel: (id: string) =>
     post<Booking>(`/bookings/${id}/cancel`),
+  calendar: (from: string, to: string) => {
+    const params = new URLSearchParams({ from, to });
+    return get<CalendarResponse>(`/bookings/calendar?${params.toString()}`);
+  },
 };
+
+export interface CalendarBooking {
+  id: string;
+  propertyId: string;
+  propertyName: string;
+  propertyAddress: string | null;
+  bookingRef: string;
+  checkInTime: string;
+  checkOutTime: string | null;
+  status: BookingStatus;
+  isOwnerStay: boolean;
+  guestFirstName: string | null;
+}
+
+export interface CalendarResponse {
+  bookings: CalendarBooking[];
+  propertyIds: string[];
+}
 
 
 // ─── Streams ──────────────────────────────────────────────────────────────────

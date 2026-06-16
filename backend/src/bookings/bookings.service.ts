@@ -96,6 +96,97 @@ export class BookingsService {
   }
 
   /**
+   * Lightweight calendar feed for cleaners. Returns bookings that overlap the
+   * [from, to) window, scoped to the cleaner's saved property filter
+   * (user.preferences.cleaningsPoolFilter.propertyIds). No property filter
+   * saved → empty list, same convention as the cleanings pool.
+   *
+   * Response is intentionally lean: just what the mobile calendar needs to
+   * render bars and labels. Guest first name is extracted from pmsRawData
+   * (Avantio's customer.name) — no PII beyond the first name leaves the
+   * server.
+   */
+  async getCalendarForUser(
+    tenantId: string,
+    userId: string,
+    from: string,
+    to: string,
+  ) {
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    if (
+      isNaN(fromDate.getTime()) ||
+      isNaN(toDate.getTime()) ||
+      fromDate >= toDate
+    ) {
+      throw new BadRequestException('Invalid `from`/`to` range');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { preferences: true },
+    });
+    const prefs = (user?.preferences as any) ?? {};
+    const propertyIds: string[] =
+      prefs?.cleaningsPoolFilter?.propertyIds ?? [];
+
+    if (!propertyIds.length) {
+      return { bookings: [], propertyIds: [] };
+    }
+
+    // Overlap test: a booking overlaps [from, to) iff
+    //   checkInTime < to  AND  (checkOutTime IS NULL OR checkOutTime > from)
+    const rows = await this.prisma.booking.findMany({
+      where: {
+        tenantId,
+        propertyId: { in: propertyIds },
+        status: { not: BookingStatus.CANCELLED },
+        checkInTime: { lt: toDate },
+        OR: [
+          { checkOutTime: null },
+          { checkOutTime: { gt: fromDate } },
+        ],
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        bookingRef: true,
+        checkInTime: true,
+        checkOutTime: true,
+        accommodationName: true,
+        status: true,
+        isOwnerStay: true,
+        pmsRawData: true,
+        property: { select: { id: true, name: true, address: true } },
+      },
+      orderBy: [{ propertyId: 'asc' }, { checkInTime: 'asc' }],
+    });
+
+    const bookings = rows.map((b) => {
+      const raw = b.pmsRawData as any;
+      const guestFirstName =
+        typeof raw?.customer?.name === 'string' && raw.customer.name.trim()
+          ? raw.customer.name.trim()
+          : null;
+      return {
+        id: b.id,
+        propertyId: b.propertyId,
+        propertyName: b.property?.name ?? b.accommodationName,
+        propertyAddress: b.property?.address ?? null,
+        bookingRef: b.bookingRef,
+        checkInTime: b.checkInTime,
+        checkOutTime: b.checkOutTime,
+        status: b.status,
+        isOwnerStay: b.isOwnerStay,
+        guestFirstName,
+      };
+    });
+
+    return { bookings, propertyIds };
+  }
+
+  /**
    * Manager edits booking-level fields. Booking changes that touch dates also
    * propagate to the linked Cleaning's denormalized fields.
    */
