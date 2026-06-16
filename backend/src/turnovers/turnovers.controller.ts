@@ -107,6 +107,14 @@ export class TurnoversController {
     return this.service.drop(req.tenantId!, req.userId!, id);
   }
 
+  @Post(':id/start')
+  @Roles('CLEANER')
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Start a claimed turnover (logs startedAt)' })
+  start(@Req() req: TenantRequest, @Param('id') id: string) {
+    return this.service.start(req.tenantId!, req.userId!, id);
+  }
+
   @Patch(':id/done')
   @Roles('CLEANER')
   @UseGuards(RolesGuard)

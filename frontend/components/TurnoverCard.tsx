@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
-  LogIn, LogOut, Flame, Crown, Clock,
+  LogIn, LogOut, Flame, Crown, Clock, Play,
 } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
@@ -17,8 +17,10 @@ interface TurnoverCardProps {
   userId?: string;
   onClaim?: () => void;
   onDrop?: () => void;
+  onStart?: () => void;
   onDone?: () => void;
   claiming?: boolean;
+  starting?: boolean;
   dropping?: boolean;
   disabled?: boolean;
   incidentCount?: number;
@@ -100,8 +102,10 @@ export function TurnoverCard({
   userId,
   onClaim,
   onDrop,
+  onStart,
   onDone,
   claiming,
+  starting,
   dropping,
   disabled,
   incidentCount,
@@ -194,7 +198,7 @@ export function TurnoverCard({
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-ink text-sm leading-snug">
+            <p className="font-semibold text-ink text-base leading-snug">
               {accommodationName}
             </p>
             {bookingRef && (
@@ -307,19 +311,36 @@ export function TurnoverCard({
             </div>
           )}
 
-          {/* Next check-in — informational, always shown */}
+          {/* Next check-in — informational by default, urgent red + flame
+              when this is a last-minute booking (created today for today). */}
           {toBooking?.checkInTime ? (
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-indigo-700 bg-indigo-50 border-indigo-200">
-              <LogIn size={11} />
-              <span>
-                Next check-in{' '}
-                {new Date(toBooking.checkInTime).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-                , {formatTime(toBooking.checkInTime)}
-              </span>
-            </div>
+            isLastMinute ? (
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-red-700 bg-red-50 border-red-300 animate-pulse">
+                <Flame size={11} />
+                <span className="font-bold uppercase tracking-wide">Last minute</span>
+                <span className="opacity-70">·</span>
+                <span>
+                  Next check-in{' '}
+                  {new Date(toBooking.checkInTime).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                  , {formatTime(toBooking.checkInTime)}
+                </span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-indigo-700 bg-indigo-50 border-indigo-200">
+                <LogIn size={11} />
+                <span>
+                  Next check-in{' '}
+                  {new Date(toBooking.checkInTime).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                  , {formatTime(toBooking.checkInTime)}
+                </span>
+              </div>
+            )
           ) : (
             <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-stone-600 bg-stone-50 border-stone-200">
               <LogIn size={11} />
@@ -359,13 +380,24 @@ export function TurnoverCard({
               <Undo2 size={14} />
               {t.mine.drop}
             </button>
-            <button
-              onClick={onDone}
-              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition active:scale-[0.98]"
-            >
-              <Check size={14} />
-              {t.mine.done}
-            </button>
+            {turnover.startedAt ? (
+              <button
+                onClick={onDone}
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition active:scale-[0.98]"
+              >
+                <Check size={14} />
+                {t.mine.done}
+              </button>
+            ) : (
+              <button
+                onClick={onStart}
+                disabled={starting}
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              >
+                <Play size={14} />
+                {t.mine.start}
+              </button>
+            )}
           </div>
         )}
       </div>

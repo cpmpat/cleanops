@@ -573,6 +573,9 @@ export const turnovers = {
   drop: (turnoverId: string) =>
     post<{ dropped: true; turnover: Turnover }>(`/turnovers/${turnoverId}/drop`),
 
+  start: (turnoverId: string) =>
+    post<{ turnover: Turnover }>(`/turnovers/${turnoverId}/start`),
+
   markDone: (
     turnoverId: string,
     body: {

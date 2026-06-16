@@ -133,6 +133,7 @@ export default function MinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [droppingId, setDroppingId] = useState<string | null>(null);
+  const [startingId, setStartingId] = useState<string | null>(null);
   const [dropConfirm, setDropConfirm] = useState<Turnover | null>(null);
   const [doneTarget, setDoneTarget] = useState<Turnover | null>(null);
 
@@ -224,6 +225,21 @@ export default function MinePage() {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
       setDroppingId(null);
+    }
+  }
+
+  async function handleStart(turnoverId: string) {
+    setStartingId(turnoverId);
+    setError('');
+    try {
+      const { turnover } = await turnoversApi.start(turnoverId);
+      // Replace the row in-place so the card re-renders with startedAt set
+      // and the button swaps from Start → Done.
+      setItems((p) => p.map((tv) => (tv.id === turnoverId ? turnover : tv)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.general.error);
+    } finally {
+      setStartingId(null);
     }
   }
 
@@ -352,11 +368,13 @@ export default function MinePage() {
                           mode="mine"
                           userId={user?.id}
                           onDrop={() => setDropConfirm(tv)}
+                          onStart={() => handleStart(tv.id)}
                           onDone={() => {
                             console.log('DONE TAPPED', tv.id, 'currentDoneTarget:', !!doneTarget);
                             setDoneTarget(tv);
                           }}
                           dropping={droppingId === tv.id}
+                          starting={startingId === tv.id}
                         />
                       ))}
                     </div>

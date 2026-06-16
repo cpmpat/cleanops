@@ -568,6 +568,95 @@ export class TurnoversService {
   }
 
   /**
+   * Cleaner explicitly marks the cleaning as started. Logs `startedAt` on the
+   * assignment (always) and on the turnover (only the first time any cleaner
+   * starts — subsequent starts by co-cleaners don't overwrite the turnover-
+   * level timestamp). Idempotent: calling start twice is a no-op the second
+   * time.
+   */
+  async start(tenantId: string, userId: string, turnoverId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const turnover = await tx.turnover.findFirst({
+        where: { id: turnoverId, tenantId },
+        include: {
+          assignments: true,
+          toBooking: { select: { bookingRef: true, accommodationName: true } },
+          fromBooking: { select: { bookingRef: true, accommodationName: true } },
+        },
+      });
+
+      if (!turnover) throw new NotFoundException('Turnover not found');
+      if (turnover.status === TurnoverStatus.COMPLETED) {
+        throw new BadRequestException('Turnover is already completed');
+      }
+      if (turnover.status === TurnoverStatus.CANCELLED) {
+        throw new BadRequestException('Turnover has been cancelled');
+      }
+
+      const mine = turnover.assignments.find(
+        (a) => a.userId === userId && ACTIVE_STATUSES.includes(a.status),
+      );
+      if (!mine) {
+        throw new BadRequestException(
+          'You are not actively assigned to this turnover',
+        );
+      }
+
+      const now = new Date();
+      const firstStarter = !turnover.startedAt;
+
+      // Assignment: flip to STARTED + stamp startedAt the first time only.
+      if (mine.status !== AssignmentStatus.STARTED) {
+        await tx.turnoverAssignment.update({
+          where: { id: mine.id },
+          data: {
+            status: AssignmentStatus.STARTED,
+            startedAt: mine.startedAt ?? now,
+          },
+        });
+      }
+
+      // Turnover: stamp startedAt + IN_PROGRESS only on first cleaner to start.
+      if (firstStarter) {
+        await tx.turnover.update({
+          where: { id: turnoverId },
+          data: {
+            startedAt: now,
+            status: TurnoverStatus.IN_PROGRESS,
+          },
+        });
+      }
+
+      const bookingRef =
+        turnover.toBooking?.bookingRef ?? turnover.fromBooking?.bookingRef ?? null;
+      const accommodationName =
+        turnover.toBooking?.accommodationName ??
+        turnover.fromBooking?.accommodationName ??
+        null;
+
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.CLEANING_LIFECYCLE,
+          action: 'turnover.started',
+          actorId: userId,
+          targetType: 'Turnover',
+          targetId: turnoverId,
+          metadata: {
+            accommodationName,
+            bookingRef,
+            firstStarter,
+          } as any,
+        },
+      });
+    });
+
+    const fresh = await this.findById(tenantId, turnoverId);
+    this.gateway.notifyEventUpdated(tenantId, fresh as any);
+    return { turnover: fresh };
+  }
+
+  /**
    * Cleaner marks their work on a turnover as done.
    * - allGood: true → just completes the assignment
    * - allGood: false → requires priority; on event-level completion, creates
