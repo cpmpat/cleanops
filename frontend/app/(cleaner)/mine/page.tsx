@@ -3,159 +3,290 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
   turnovers as turnoversApi,
-  properties as propsApi,
-  users as usersApi,
+  properties as propertiesApi,
   ApiError,
   type Turnover,
   type Property,
-  type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
+import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
-import { LogOut, Filter, X, Check } from 'lucide-react';
+import { LogOut, Calendar, X, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-export default function CleaningsPoolPage() {
-  const { user, logout, setAuth, token } = useAuth();
+type RangeKey = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
+
+interface DateRange {
+  from: Date;
+  to: Date;
+}
+
+function getPresetRange(key: Exclude<RangeKey, 'custom'>): DateRange {
+  const now = new Date();
+
+  switch (key) {
+    case 'today': {
+      const from = new Date(now);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(from);
+      to.setDate(from.getDate() + 1);
+      return { from, to };
+    }
+    case 'thisWeek': {
+      const day = now.getDay();
+      const mondayOffset = (day + 6) % 7;
+      const from = new Date(now);
+      from.setHours(0, 0, 0, 0);
+      from.setDate(now.getDate() - mondayOffset);
+      const to = new Date(from);
+      to.setDate(from.getDate() + 7);
+      return { from, to };
+    }
+    case 'thisMonth': {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      return { from, to };
+    }
+  }
+}
+
+function toInputDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Compute the grouping date for a turnover. Uses availableFrom if set, else
+ * dueBy. For carry-forward in the active list, past dates float to today.
+ */
+function groupingDateKey(tv: Turnover, carryForward: boolean): string {
+  const base = tv.availableFrom ?? tv.dueBy ?? tv.createdAt;
+  const d = new Date(base);
+  d.setHours(0, 0, 0, 0);
+  let target = d;
+  if (carryForward) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d < today) target = today;
+  }
+  const y = target.getFullYear();
+  const m = String(target.getMonth() + 1).padStart(2, '0');
+  const day = String(target.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatDayHeader(day: string, locale: Locale): string {
+  const date = new Date(day + 'T12:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayDate = new Date(date);
+  dayDate.setHours(0, 0, 0, 0);
+
+  const diff = Math.round(
+    (dayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  const t = translations[locale];
+  if (diff === 0) return t.mine.today;
+
+  const localeTag =
+    locale === 'en' ? 'en-GB' :
+    locale === 'cs' ? 'cs-CZ' :
+    locale === 'ru' ? 'ru-RU' : 'uk-UA';
+
+  return date.toLocaleDateString(localeTag, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+function groupByDay(items: Turnover[], carryForward: boolean): [string, Turnover[]][] {
+  const map = new Map<string, Turnover[]>();
+  for (const tv of items) {
+    const day = groupingDateKey(tv, carryForward);
+    const arr = map.get(day) ?? [];
+    arr.push(tv);
+    map.set(day, arr);
+  }
+  return Array.from(map.entries());
+}
+
+export default function MinePage() {
+  const { user, logout } = useAuth();
   const locale = (user?.language as Locale) ?? 'en';
   const t = translations[locale];
 
-  const [pool, setPool] = useState<Turnover[]>([]);
-  const [allProps, setAllProps] = useState<Property[]>([]);
-  const [stats, setStats] = useState<TurnoverStats | null>(null);
-  const [selectedPropIds, setSelectedPropIds] = useState<Set<string>>(new Set());
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [rangeKey, setRangeKey] = useState<RangeKey>('thisWeek');
+  const [customRange, setCustomRange] = useState<DateRange>(() =>
+    getPresetRange('thisWeek'),
+  );
+  const [customPickerOpen, setCustomPickerOpen] = useState(false);
+
+  const [allProperties, setAllProperties] = useState<Property[]>([]);
+  const [propertyFilter, setPropertyFilter] = useState<string[]>([]);
+
+  const [items, setItems] = useState<Turnover[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [savedState, setSavedState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [droppingId, setDroppingId] = useState<string | null>(null);
+  const [startingId, setStartingId] = useState<string | null>(null);
+  const [dropConfirm, setDropConfirm] = useState<Turnover | null>(null);
+  const [doneTarget, setDoneTarget] = useState<Turnover | null>(null);
 
-  // Sync the filter checkboxes with the stored selection whenever:
-  //   - preferences change (initial hydration, save, or layout-level /auth/me refresh)
-  //   - the filter sheet opens (defensive — guarantees the checkboxes
-  //     reflect the saved default every time she opens it)
-  // No empty-guard, so clearing the saved filter is also reflected here.
   useEffect(() => {
-    const stored = user?.preferences?.cleaningsPoolFilter?.propertyIds ?? [];
-    setSelectedPropIds(new Set(stored));
-  }, [user?.preferences, filterOpen]);
+    propertiesApi
+      .list()
+      .then(setAllProperties)
+      .catch(() => {});
+  }, []);
+
+  const activeRange: DateRange = useMemo(() => {
+    if (rangeKey === 'custom') return customRange;
+    return getPresetRange(rangeKey);
+  }, [rangeKey, customRange]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [poolRes, propsRes, statsRes] = await Promise.all([
-        turnoversApi.pool(),
-        propsApi.list(),
-        // Stats are supplementary — never let them break the pool render.
-        turnoversApi.myStats().catch(() => null),
-      ]);
-      setPool(poolRes);
-      setAllProps(propsRes);
-      if (statsRes) setStats(statsRes);
+      const ids =
+        rangeKey === 'custom' && propertyFilter.length > 0
+          ? propertyFilter
+          : undefined;
+      const res = await turnoversApi.mine(
+        activeRange.from.toISOString(),
+        activeRange.to.toISOString(),
+        ids,
+      );
+      setItems(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
       setLoading(false);
     }
-  }, [t.general.error]);
+  }, [activeRange, propertyFilter, rangeKey, t.general.error]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Realtime: refetch when anyone claims/drops/releases
   useSocket({
     'event:updated': () => load(),
     'event:cancelled': () => load(),
+    'assignment:released': () => load(),
   });
 
-  // Apply property filter
-  const visible = useMemo(() => {
-    if (selectedPropIds.size === 0) return pool;
-    return pool.filter((t) => selectedPropIds.has(t.propertyId));
-  }, [pool, selectedPropIds]);
+  const { futureGrouped, pastGrouped } = useMemo(() => {
+    const now = new Date();
+    const future: Turnover[] = [];
+    const past: Turnover[] = [];
 
-  // Group by carry-forward date — turnovers from past dates float to today
-  const grouped = useMemo(() => {
-    const todayStr = todayLocalDate();
-    const map = new Map<string, Turnover[]>();
-
-    for (const turnover of visible) {
-      const groupDate = getGroupDate(turnover, todayStr);
-      const arr = map.get(groupDate) ?? [];
-      arr.push(turnover);
-      map.set(groupDate, arr);
+    for (const tv of items) {
+      if (tv.status === 'COMPLETED' || tv.status === 'CANCELLED') {
+        past.push(tv);
+      } else {
+        // Everything else (including overdue ASSIGNED) → future,
+        // carry-forward grouping will float them to "Today"
+        future.push(tv);
+      }
     }
 
-    // Sort entries by date ascending
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [visible]);
+    // Future: earliest dueBy first; carry-forward applied
+    future.sort((a, b) => {
+      const aKey = a.dueBy ?? a.availableFrom ?? a.createdAt;
+      const bKey = b.dueBy ?? b.availableFrom ?? b.createdAt;
+      return new Date(aKey).getTime() - new Date(bKey).getTime();
+    });
+    // Past: most recent first (by completedAt or dueBy)
+    past.sort((a, b) => {
+      const aKey = a.completedAt ?? a.dueBy ?? a.availableFrom ?? a.createdAt;
+      const bKey = b.completedAt ?? b.dueBy ?? b.availableFrom ?? b.createdAt;
+      return new Date(bKey).getTime() - new Date(aKey).getTime();
+    });
 
-  async function handleClaim(turnoverId: string) {
-    setClaimingId(turnoverId);
+    const futureGrouped = groupByDay(future, true).sort(([a], [b]) => a.localeCompare(b));
+    const pastGrouped = groupByDay(past, false).sort(([a], [b]) => b.localeCompare(a));
+
+    return { futureGrouped, pastGrouped };
+  }, [items]);
+
+  async function handleDrop(turnoverId: string) {
+    setDropConfirm(null);
+    setDroppingId(turnoverId);
     setError('');
     try {
-      await turnoversApi.claim(turnoverId);
-      // Remove from visible pool immediately; the socket broadcast will refresh
-      setPool((p) => p.filter((t) => t.id !== turnoverId));
-      // Reflect the new "assigned, not done" count without waiting for the
-      // socket round-trip; load() will reconcile the authoritative value.
-      setStats((s) =>
-        s ? { ...s, assignedNotDone: s.assignedNotDone + 1 } : s,
-      );
+      await turnoversApi.drop(turnoverId);
+      setItems((p) => p.filter((tv) => tv.id !== turnoverId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.pool.claimFailed);
+      setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
-      setClaimingId(null);
+      setDroppingId(null);
     }
   }
 
-  function togglePropFilter(id: string) {
-    setSelectedPropIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    setSavedState('idle');
-  }
-
-  function clearFilter() {
-    setSelectedPropIds(new Set());
-    setSavedState('idle');
-  }
-
-  async function saveFilterAsDefault() {
-    if (!user) return;
-    setSavedState('saving');
+  async function handleStart(turnoverId: string) {
+    setStartingId(turnoverId);
+    setError('');
     try {
-      const updated = await usersApi.updateMyPreferences({
-        ...(user.preferences ?? {}),
-        cleaningsPoolFilter: { propertyIds: Array.from(selectedPropIds) },
-      });
-      if (token) setAuth(token, { ...user, preferences: updated.preferences });
-      // Close immediately — the sheet disappearing IS the confirmation that
-      // the save worked. No flash, no delay, nothing that can race.
-      setFilterOpen(false);
-      setSavedState('idle');
-      load();
-    } catch {
-      setSavedState('idle');
+      const { turnover } = await turnoversApi.start(turnoverId);
+      // Replace the row in-place so the card re-renders with startedAt set
+      // and the button swaps from Start → Done.
+      setItems((p) => p.map((tv) => (tv.id === turnoverId ? turnover : tv)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.general.error);
+    } finally {
+      setStartingId(null);
     }
   }
 
-  const greeting = user?.name ? `${t.greeting}, ${user.name.split(' ')[0]}` : t.greeting;
+  function handleDoneSuccess(updated: Turnover) {
+    setItems((p) => p.map((tv) => (tv.id === updated.id ? updated : tv)));
+    setDoneTarget(null);
+  }
+
+  function pickPreset(key: Exclude<RangeKey, 'custom'>) {
+    setRangeKey(key);
+    setCustomPickerOpen(false);
+  }
+
+  function openCustomPicker() {
+    if (rangeKey !== 'custom') {
+      setCustomRange(activeRange);
+    }
+    setCustomPickerOpen(true);
+  }
+
+  function applyCustomRange(from: string, to: string, propertyIds: string[]) {
+    const fromDate = new Date(from + 'T00:00:00');
+    const toDate = new Date(to + 'T00:00:00');
+    toDate.setDate(toDate.getDate() + 1);
+    setCustomRange({ from: fromDate, to: toDate });
+    setPropertyFilter(propertyIds);
+    setRangeKey('custom');
+    setCustomPickerOpen(false);
+  }
+
+  const presets: { key: Exclude<RangeKey, 'custom'>; label: string }[] = [
+    { key: 'today', label: t.mine.rangeToday },
+    { key: 'thisWeek', label: t.mine.rangeThisWeek },
+    { key: 'thisMonth', label: t.mine.rangeThisMonth },
+  ];
+
+  const customLabel =
+    rangeKey === 'custom'
+      ? `${toInputDate(activeRange.from)} – ${toInputDate(new Date(activeRange.to.getTime() - 1))}`
+      : t.mine.rangeCustom;
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Header */}
       <div className="bg-ink text-white px-4 pt-12 pb-6">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <p className="text-white/60 text-sm font-medium">{greeting}</p>
-            <h1 className="text-xl font-bold mt-0.5">{t.pool.title}</h1>
-            <p className="text-white/60 text-xs mt-1">{t.pool.subtitle}</p>
+            <h1 className="text-xl font-bold mt-0.5">{t.mine.title}</h1>
           </div>
           <button
             onClick={logout}
@@ -166,50 +297,37 @@ export default function CleaningsPoolPage() {
           </button>
         </div>
 
-        <button
-          onClick={() => setFilterOpen(true)}
-          className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full px-3 py-1.5 text-xs font-medium transition"
-        >
-          <Filter size={12} />
-          {selectedPropIds.size === 0
-            ? t.pool.filterAll
-            : t.pool.filterSelected(selectedPropIds.size)}
-        </button>
-      </div>
-
-      {/* Stats segment — cleaner ID + month-to-date counts */}
-      <div className="px-4 pt-4">
-        <div className="bg-white rounded-2xl border border-surface-border p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-medium text-ink-muted">
-              {t.pool.stats.id}
-            </span>
-            <span className="text-xs font-mono text-ink truncate max-w-[65%] text-right">
-              {stats?.cdmUserId ?? '—'}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div className="rounded-xl bg-surface-sunken p-3">
-              <p className="text-2xl font-bold text-ink leading-none tabular-nums">
-                {stats?.doneThisMonth ?? '—'}
-              </p>
-              <p className="text-xs text-ink-muted mt-1.5 leading-tight">
-                {t.pool.stats.doneThisMonth}
-              </p>
-            </div>
-            <div className="rounded-xl bg-surface-sunken p-3">
-              <p className="text-2xl font-bold text-ink leading-none tabular-nums">
-                {stats?.assignedNotDone ?? '—'}
-              </p>
-              <p className="text-xs text-ink-muted mt-1.5 leading-tight">
-                {t.pool.stats.assignedNotDone}
-              </p>
-            </div>
-          </div>
+        {/* Range picker chips */}
+        <div className="flex gap-2 flex-wrap">
+          {presets.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => pickPreset(key)}
+              className={cn(
+                'rounded-full px-3 py-1.5 text-xs font-medium transition',
+                rangeKey === key
+                  ? 'bg-white text-ink'
+                  : 'bg-white/10 hover:bg-white/20 text-white',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={openCustomPicker}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition',
+              rangeKey === 'custom'
+                ? 'bg-white text-ink'
+                : 'bg-white/10 hover:bg-white/20 text-white',
+            )}
+          >
+            <Calendar size={12} />
+            {customLabel}
+          </button>
         </div>
       </div>
 
-      {/* List */}
       <div className="px-4 py-4 space-y-4">
         {loading ? (
           <div className="space-y-3">
@@ -227,165 +345,303 @@ export default function CleaningsPoolPage() {
               {t.general.retry}
             </button>
           </div>
-        ) : visible.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="text-center py-16">
-            <div className="text-5xl mb-4">🧹</div>
-            <p className="font-semibold text-ink">{t.pool.empty}</p>
-            <p className="text-sm text-ink-muted mt-1">{t.pool.emptySub}</p>
+            <div className="text-5xl mb-4">📋</div>
+            <p className="font-semibold text-ink">{t.mine.empty}</p>
           </div>
         ) : (
-          grouped.map(([day, items]) => (
-            <div key={day}>
-              <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
-                {formatDayHeader(day, locale)}
-              </p>
-              <div className="space-y-3">
-                {items.map((turnover) => (
-                  <TurnoverCard
-                    key={turnover.id}
-                    turnover={turnover}
-                    t={t}
-                    mode="pool"
-                    userId={user?.id}
-                    onClaim={() => handleClaim(turnover.id)}
-                    claiming={claimingId === turnover.id}
-                  />
+          <>
+            {futureGrouped.length > 0 && (
+              <div className="space-y-4">
+                {futureGrouped.map(([day, list]) => (
+                  <div key={day}>
+                    <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
+                      {formatDayHeader(day, locale)}
+                    </p>
+                    <div className="space-y-3">
+                      {list.map((tv) => (
+                        <TurnoverCard
+                          key={tv.id}
+                          turnover={tv}
+                          t={t}
+                          mode="mine"
+                          userId={user?.id}
+                          onDrop={() => setDropConfirm(tv)}
+                          onStart={() => handleStart(tv.id)}
+                          onDone={() => {
+                            console.log('DONE TAPPED', tv.id, 'currentDoneTarget:', !!doneTarget);
+                            setDoneTarget(tv);
+                          }}
+                          dropping={droppingId === tv.id}
+                          starting={startingId === tv.id}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-          ))
+            )}
+
+            {pastGrouped.length > 0 && (
+              <div className="space-y-4 pt-4 border-t border-surface-border">
+                <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider px-1">
+                  {t.mine.past}
+                </p>
+                {pastGrouped.map(([day, list]) => (
+                  <div key={day}>
+                    <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
+                      {formatDayHeader(day, locale)}
+                    </p>
+                    <div className="space-y-3">
+                      {list.map((tv) => (
+                        <TurnoverCard
+                          key={tv.id}
+                          turnover={tv}
+                          t={t}
+                          mode="mine"
+                          userId={user?.id}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Filter sheet */}
-      {filterOpen && (
+      {customPickerOpen && (
+        <CustomRangePicker
+          initial={activeRange}
+          initialPropertyIds={propertyFilter}
+          allProperties={allProperties}
+          onClose={() => setCustomPickerOpen(false)}
+          onApply={applyCustomRange}
+          t={t}
+        />
+      )}
+
+      {dropConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-          onClick={() => setFilterOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDropConfirm(null)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-white rounded-t-3xl shadow-xl p-5 pb-safe max-h-[80vh] flex flex-col animate-[slideUp_.2s_ease-out]"
+            className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-5"
           >
-            <div className="w-12 h-1 rounded-full bg-surface-border mx-auto mb-4" />
-
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg text-ink">{t.pool.filterBtn}</h2>
+            <h2 className="font-bold text-ink mb-1">{t.mine.dropConfirmTitle}</h2>
+            <p className="text-sm text-ink-muted mb-4">{t.mine.dropConfirmBody}</p>
+            <p className="text-sm font-semibold text-ink bg-surface rounded-lg p-3 mb-4 truncate">
+              {dropConfirm.property?.name ?? dropConfirm.toBooking?.accommodationName ?? '—'}
+            </p>
+            <div className="flex gap-2">
               <button
-                onClick={() => setFilterOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center"
+                onClick={() => setDropConfirm(null)}
+                className="flex-1 px-4 py-2.5 bg-white border border-surface-border text-ink rounded-xl text-sm font-semibold hover:bg-surface-sunken transition"
               >
-                <X size={18} />
+                {t.mine.dropConfirmNo}
               </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
-              {allProps.map((p) => {
-                const checked = selectedPropIds.has(p.id);
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePropFilter(p.id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition ${
-                      checked ? 'bg-accent-soft' : 'hover:bg-surface-sunken'
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                        checked
-                          ? 'bg-ink border-ink text-white'
-                          : 'border-surface-border'
-                      }`}
-                    >
-                      {checked && <Check size={12} strokeWidth={3} />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-ink truncate">{p.name}</p>
-                      {p.address && (
-                        <p className="text-xs text-ink-muted truncate">{p.address}</p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 flex gap-2">
-              {selectedPropIds.size > 0 && (
-                <button
-                  onClick={clearFilter}
-                  className="px-4 py-2.5 bg-white border border-surface-border text-ink rounded-xl text-sm font-semibold hover:bg-surface-sunken transition"
-                >
-                  {t.pool.clearFilter}
-                </button>
-              )}
               <button
-                onClick={saveFilterAsDefault}
-                disabled={savedState === 'saving'}
-                className="flex-1 px-4 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-60"
+                onClick={() => handleDrop(dropConfirm.id)}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition"
               >
-                {savedState === 'saving'
-                  ? t.general.saving
-                  : savedState === 'saved'
-                  ? t.pool.saved
-                  : t.pool.saveFilter}
+                {t.mine.dropConfirmYes}
               </button>
             </div>
           </div>
-
-          <style jsx>{`
-            @keyframes slideUp {
-              from { transform: translateY(100%); }
-              to { transform: translateY(0); }
-            }
-          `}</style>
         </div>
+      )}
+
+      {doneTarget && (
+        <TurnoverMarkDoneSheet
+          turnover={doneTarget}
+          t={t}
+          onClose={() => setDoneTarget(null)}
+          onSuccess={handleDoneSuccess}
+        />
       )}
     </div>
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Custom range picker bottom sheet ─────────────────────────
 
-/** Today's date as YYYY-MM-DD in local time (Prague). */
-function todayLocalDate(): string {
-  const d = new Date();
-  return formatLocalDate(d);
-}
+function CustomRangePicker({
+  initial,
+  initialPropertyIds,
+  allProperties,
+  onClose,
+  onApply,
+  t,
+}: {
+  initial: DateRange;
+  initialPropertyIds: string[];
+  allProperties: Property[];
+  onClose: () => void;
+  onApply: (from: string, to: string, propertyIds: string[]) => void;
+  t: typeof translations.en;
+}) {
+  const initialFrom = toInputDate(initial.from);
+  const initialTo = toInputDate(new Date(initial.to.getTime() - 1));
 
-function formatLocalDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(initialPropertyIds),
+  );
 
-/**
- * Compute the day-group a turnover belongs to with carry-forward semantics:
- *   - If the natural date (availableFrom or dueBy) is in the past → today
- *   - Otherwise → the natural date itself
- */
-function getGroupDate(turnover: Turnover, todayStr: string): string {
-  const candidateIso = turnover.availableFrom ?? turnover.dueBy;
-  if (!candidateIso) return todayStr;
+  const valid = from && to && from <= to;
 
-  const candidateDate = new Date(candidateIso);
-  const candidateStr = formatLocalDate(candidateDate);
+  function toggleProperty(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
 
-  return candidateStr < todayStr ? todayStr : candidateStr;
-}
+  function pickAll() {
+    setSelected(new Set(allProperties.map((p) => p.id)));
+  }
 
-function formatDayHeader(day: string, locale: Locale): string {
-  const date = new Date(day + 'T12:00:00');
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dayDate = new Date(date);
-  dayDate.setHours(0, 0, 0, 0);
+  function pickNone() {
+    setSelected(new Set());
+  }
 
-  const diff = (dayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md bg-white rounded-t-3xl shadow-xl p-5 pb-safe animate-[slideUp_.2s_ease-out] max-h-[90vh] overflow-y-auto"
+      >
+        <div className="w-12 h-1 rounded-full bg-surface-border mx-auto mb-4" />
 
-  const t = translations[locale];
-  if (diff === 0) return t.mine.today;
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-bold text-lg text-ink">{t.mine.customPickerTitle}</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-  return date.toLocaleDateString(
-    locale === 'en' ? 'en-GB' : locale === 'cs' ? 'cs-CZ' : locale === 'ru' ? 'ru-RU' : 'uk-UA',
-    { weekday: 'long', day: 'numeric', month: 'long' },
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
+              {t.mine.customFrom}
+            </label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-surface-border bg-surface text-ink text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
+              {t.mine.customTo}
+            </label>
+            <input
+              type="date"
+              value={to}
+              min={from}
+              onChange={(e) => setTo(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-surface-border bg-surface text-ink text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition"
+            />
+          </div>
+
+          {allProperties.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
+                  {t.mine.customProperties}
+                </label>
+                <div className="flex gap-3 text-xs">
+                  <button
+                    onClick={pickAll}
+                    className="text-accent font-medium hover:underline"
+                  >
+                    {t.mine.customPropertiesAll}
+                  </button>
+                  <button
+                    onClick={pickNone}
+                    className="text-ink-muted font-medium hover:underline"
+                  >
+                    {t.mine.customPropertiesNone}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-ink-muted mb-2">
+                {t.mine.customPropertiesHelp}
+              </p>
+              <ul className="space-y-1 max-h-48 overflow-y-auto -mr-1 pr-1">
+                {allProperties.map((p) => {
+                  const checked = selected.has(p.id);
+                  return (
+                    <li key={p.id}>
+                      <button
+                        onClick={() => toggleProperty(p.id)}
+                        className={cn(
+                          'w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-lg border transition text-sm',
+                          checked
+                            ? 'bg-accent/5 border-accent/30'
+                            : 'bg-white border-surface-border hover:bg-surface-sunken',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                            checked
+                              ? 'bg-accent border-accent text-white'
+                              : 'border-surface-border bg-white',
+                          )}
+                        >
+                          {checked && <Check size={10} strokeWidth={3} />}
+                        </span>
+                        <span className="truncate text-ink">{p.name}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-3 bg-white border border-surface-border text-ink rounded-xl text-sm font-semibold hover:bg-surface-sunken transition"
+            >
+              {t.general.cancel}
+            </button>
+            <button
+              onClick={() => onApply(from, to, Array.from(selected))}
+              disabled={!valid}
+              className="flex-1 px-4 py-3 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t.mine.customApply}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
   );
 }

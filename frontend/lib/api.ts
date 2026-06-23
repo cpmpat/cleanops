@@ -532,12 +532,6 @@ export interface TurnoverClaimResponse {
   assignment: TurnoverAssignment;
 }
 
-export interface TurnoverStats {
-  cdmUserId: string | null;
-  doneThisMonth: number;
-  assignedNotDone: number;
-}
-
 // ─── Turnovers API ────────────────────────────────────────────────────────────
 
 export const turnovers = {
@@ -572,9 +566,6 @@ export const turnovers = {
     const q = params.toString();
     return get<Turnover[]>(`/turnovers/mine${q ? `?${q}` : ''}`);
   },
-
-  /** Per-cleaner stats for the pool header (id + month-to-date counts). */
-  myStats: () => get<TurnoverStats>('/turnovers/me/stats'),
 
   claim: (turnoverId: string) =>
     post<TurnoverClaimResponse>(`/turnovers/${turnoverId}/claim`),

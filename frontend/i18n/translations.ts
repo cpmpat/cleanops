@@ -77,11 +77,6 @@ const _translationsBase = {
       saved: 'Saved ✓',
       clearFilter: 'Clear',
       slotsRemaining: (left: number, total: number) => `${total - left} of ${total} claimed`,
-      stats: {
-        id: 'ID',
-        doneThisMonth: 'Done this month',
-        assignedNotDone: 'Assigned, not done',
-      },
     },
     mine: {
       title: 'My cleanings',
@@ -409,11 +404,6 @@ const _translationsBase = {
       saved: 'Uloženo ✓',
       clearFilter: 'Vymazat',
       slotsRemaining: (left: number, total: number) => `${total - left} z ${total} obsazeno`,
-      stats: {
-        id: 'ID',
-        doneThisMonth: 'Úklidy tento měsíc',
-        assignedNotDone: 'Přiřazeno, nehotovo',
-      },
     },
     mine: {
       title: 'Moje úklidy',
@@ -673,11 +663,6 @@ const _translationsBase = {
       saved: 'Сохранено ✓',
       clearFilter: 'Очистить',
       slotsRemaining: (left: number, total: number) => `${total - left} из ${total} занято`,
-      stats: {
-        id: 'ID',
-        doneThisMonth: 'Уборок за месяц',
-        assignedNotDone: 'Назначено, не сделано',
-      },
     },
     mine: {
       title: 'Мои уборки',
@@ -934,11 +919,6 @@ const _translationsBase = {
       saved: 'Збережено ✓',
       clearFilter: 'Очистити',
       slotsRemaining: (left: number, total: number) => `${total - left} з ${total} зайнято`,
-      stats: {
-        id: 'ID',
-        doneThisMonth: 'Прибирань за місяць',
-        assignedNotDone: 'Призначено, не виконано',
-      },
     },
     mine: {
       title: 'Мої прибирання',
