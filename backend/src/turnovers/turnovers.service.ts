@@ -312,6 +312,45 @@ export class TurnoversService {
     });
   }
 
+  /**
+   * Per-cleaner dashboard stats for the pool header:
+   *  - cdmUserId       — the cleaner's GCP staff id (display only)
+   *  - doneThisMonth   — assignments this cleaner completed in the current
+   *                      Prague calendar month
+   *  - assignedNotDone — assignments still actively held (ASSIGNED or STARTED)
+   */
+  async getMyStats(tenantId: string, userId: string) {
+    const { start, end } = pragueMonthRange(new Date());
+
+    const [doneThisMonth, assignedNotDone, me] = await Promise.all([
+      this.prisma.turnoverAssignment.count({
+        where: {
+          userId,
+          status: AssignmentStatus.COMPLETED,
+          completedAt: { gte: start, lt: end },
+          turnover: { tenantId },
+        },
+      }),
+      this.prisma.turnoverAssignment.count({
+        where: {
+          userId,
+          status: { in: ACTIVE_STATUSES },
+          turnover: { tenantId, supersededById: null },
+        },
+      }),
+      this.prisma.user.findFirst({
+        where: { id: userId, tenantId },
+        select: { cdmUserId: true },
+      }),
+    ]);
+
+    return {
+      cdmUserId: me?.cdmUserId ?? null,
+      doneThisMonth,
+      assignedNotDone,
+    };
+  }
+
   // ─── MUTATIONS ─────────────────────────────────────────────
 
   async update(tenantId: string, turnoverId: string, dto: UpdateTurnoverDto) {
@@ -920,4 +959,52 @@ export class TurnoversService {
 
     return { released: true, affectedUserIds: affected, turnover: fresh };
   }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * First instant of the current month and first instant of next month, anchored
+ * to Europe/Prague wall-clock time (DST-safe). Used to scope "this month"
+ * counters so the window ticks over at Prague midnight, not UTC midnight.
+ */
+function pragueMonthRange(now: Date): { start: Date; end: Date } {
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Prague',
+    year: 'numeric',
+    month: 'numeric',
+  });
+  const parts = f.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === 'year')!.value);
+  const m = Number(parts.find((p) => p.type === 'month')!.value);
+  const start = pragueMidnightUtc(y, m, 1);
+  const end = pragueMidnightUtc(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, 1);
+  return { start, end };
+}
+
+/** The UTC instant corresponding to 00:00 Europe/Prague on the given Y/M/D. */
+function pragueMidnightUtc(year: number, month1to12: number, day: number): Date {
+  const guess = new Date(Date.UTC(year, month1to12 - 1, day, 0, 0, 0));
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Prague',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = dtf.formatToParts(guess);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  const asUTC = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second'),
+  );
+  const offset = asUTC - guess.getTime();
+  return new Date(guess.getTime() - offset);
 }
