@@ -104,6 +104,12 @@ const _translationsBase = {
       customPropertiesAll: 'Select all',
       customPropertiesNone: 'Clear',
       customPropertiesHelp: 'Leave empty to include all properties.',
+      stats: {
+        id: 'ID',
+        doneThisMonth: 'Done this month',
+        assignedNotDone: 'Assigned, not done',
+        todayRatio: 'Today',
+      },
     },
     doneFlow: {
       title: 'Finish cleaning',
@@ -431,6 +437,12 @@ const _translationsBase = {
       customPropertiesAll: 'Vybrat vše',
       customPropertiesNone: 'Zrušit',
       customPropertiesHelp: 'Pokud nevyberete nic, zobrazí se všechny nemovitosti.',
+      stats: {
+        id: 'ID',
+        doneThisMonth: 'Hotovo tento měsíc',
+        assignedNotDone: 'Přiřazeno, nehotovo',
+        todayRatio: 'Dnes',
+      },
     },
     doneFlow: {
       title: 'Dokončit úklid',
@@ -690,6 +702,12 @@ const _translationsBase = {
       customPropertiesAll: 'Выбрать всё',
       customPropertiesNone: 'Очистить',
       customPropertiesHelp: 'Если ничего не выбрано — показываются все объекты.',
+      stats: {
+        id: 'ID',
+        doneThisMonth: 'Сделано за месяц',
+        assignedNotDone: 'Назначено, не сделано',
+        todayRatio: 'Сегодня',
+      },
     },
     doneFlow: {
       title: 'Завершить уборку',
@@ -935,6 +953,12 @@ const _translationsBase = {
       customPropertiesAll: 'Обрати всі',
       customPropertiesNone: 'Очистити',
       customPropertiesHelp: "Якщо нічого не обрати — показуються всі об'єкти.",
+      stats: {
+        id: 'ID',
+        doneThisMonth: 'Зроблено за місяць',
+        assignedNotDone: 'Призначено, не виконано',
+        todayRatio: 'Сьогодні',
+      },
       drop: 'Повернути',
       dropDisabled: 'Пізно повертати',
       dropConfirmTitle: 'Повернути прибирання?',

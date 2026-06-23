@@ -312,6 +312,90 @@ export class TurnoversService {
     });
   }
 
+  /**
+   * Personal stats for the cleaner's "Mine" header.
+   *  - cdmUserId        — their human-facing staff id (users table)
+   *  - doneThisMonth    — assignments THIS cleaner completed this Prague calendar month
+   *  - assignedNotDone  — assignments they're actively holding (ASSIGNED/STARTED), any date
+   *  - todayDone / todayAssigned — today's ratio. "Today" mirrors the Mine carry-forward
+   *    view: anything due today OR overdue-and-still-active floats into Today, plus whatever
+   *    they completed today. denominator = (active due-by-today) + (done today); numerator = done today.
+   *
+   * Counts go through TurnoverAssignment (the per-cleaner source of truth — a turnover only
+   * flips to COMPLETED once every active assignment is done) and exclude superseded /
+   * cancelled / skipped turnovers, consistent with the rest of this service.
+   */
+  async getMyStats(tenantId: string, userId: string) {
+    const now = new Date();
+    const { start: monthStart, end: monthEnd } = pragueMonthRange(now);
+    const { start: dayStart, end: dayEnd } = pragueDayRange(now);
+
+    // "Due today or overdue" = carry-forward date (availableFrom ?? dueBy ?? createdAt)
+    // before the end of today (Prague). Mirrors the frontend grouping precedence so the
+    // count matches what the cleaner sees floated under the Today header.
+    const dueByTodayOr = [
+      { availableFrom: { lt: dayEnd } },
+      { availableFrom: null, dueBy: { lt: dayEnd } },
+      { availableFrom: null, dueBy: null, createdAt: { lt: dayEnd } },
+    ];
+
+    const liveTurnover = {
+      tenantId,
+      supersededById: null,
+      status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
+    };
+
+    const [doneThisMonth, assignedNotDone, todayDone, activeDueToday, me] =
+      await Promise.all([
+        // Completed by THIS cleaner, this Prague calendar month
+        this.prisma.turnoverAssignment.count({
+          where: {
+            userId,
+            status: AssignmentStatus.COMPLETED,
+            completedAt: { gte: monthStart, lt: monthEnd },
+            turnover: { tenantId, supersededById: null },
+          },
+        }),
+        // Actively held but unfinished (ASSIGNED / STARTED), any date
+        this.prisma.turnoverAssignment.count({
+          where: {
+            userId,
+            status: { in: ACTIVE_STATUSES },
+            turnover: { tenantId, supersededById: null },
+          },
+        }),
+        // Numerator — completed by this cleaner TODAY (Prague day)
+        this.prisma.turnoverAssignment.count({
+          where: {
+            userId,
+            status: AssignmentStatus.COMPLETED,
+            completedAt: { gte: dayStart, lt: dayEnd },
+            turnover: { tenantId, supersededById: null },
+          },
+        }),
+        // Still-active assignments due today or overdue (floated into Today)
+        this.prisma.turnoverAssignment.count({
+          where: {
+            userId,
+            status: { in: ACTIVE_STATUSES },
+            turnover: { ...liveTurnover, OR: dueByTodayOr },
+          },
+        }),
+        this.prisma.user.findFirst({
+          where: { id: userId, tenantId },
+          select: { cdmUserId: true },
+        }),
+      ]);
+
+    return {
+      cdmUserId: me?.cdmUserId ?? null,
+      doneThisMonth,
+      assignedNotDone,
+      todayDone,
+      todayAssigned: todayDone + activeDueToday,
+    };
+  }
+
   // ─── MUTATIONS ─────────────────────────────────────────────
 
   async update(tenantId: string, turnoverId: string, dto: UpdateTurnoverDto) {
@@ -920,4 +1004,63 @@ export class TurnoversService {
 
     return { released: true, affectedUserIds: affected, turnover: fresh };
   }
+}
+
+// ─── Prague-time date helpers (DST-safe) ──────────────────────────
+// All compute UTC instants for Prague wall-clock boundaries, so month/day
+// windows tick over at Prague midnight rather than UTC midnight.
+
+function pragueMonthRange(now: Date): { start: Date; end: Date } {
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Prague',
+    year: 'numeric',
+    month: 'numeric',
+  });
+  const parts = f.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === 'year')!.value);
+  const m = Number(parts.find((p) => p.type === 'month')!.value);
+  const start = pragueMidnightUtc(y, m, 1);
+  const end = pragueMidnightUtc(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, 1);
+  return { start, end };
+}
+
+function pragueDayRange(now: Date): { start: Date; end: Date } {
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Prague',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  });
+  const parts = f.formatToParts(now);
+  const y = Number(parts.find((p) => p.type === 'year')!.value);
+  const m = Number(parts.find((p) => p.type === 'month')!.value);
+  const d = Number(parts.find((p) => p.type === 'day')!.value);
+  // Date.UTC normalizes day overflow (d + 1 past month end rolls into next month).
+  return { start: pragueMidnightUtc(y, m, d), end: pragueMidnightUtc(y, m, d + 1) };
+}
+
+function pragueMidnightUtc(year: number, month1to12: number, day: number): Date {
+  const guess = new Date(Date.UTC(year, month1to12 - 1, day, 0, 0, 0));
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Prague',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = dtf.formatToParts(guess);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  const asUTC = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second'),
+  );
+  const offset = asUTC - guess.getTime();
+  return new Date(guess.getTime() - offset);
 }

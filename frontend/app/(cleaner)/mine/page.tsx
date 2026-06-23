@@ -7,6 +7,7 @@ import {
   ApiError,
   type Turnover,
   type Property,
+  type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
 import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
@@ -136,6 +137,7 @@ export default function MinePage() {
   const [startingId, setStartingId] = useState<string | null>(null);
   const [dropConfirm, setDropConfirm] = useState<Turnover | null>(null);
   const [doneTarget, setDoneTarget] = useState<Turnover | null>(null);
+  const [stats, setStats] = useState<TurnoverStats | null>(null);
 
   useEffect(() => {
     propertiesApi
@@ -170,14 +172,36 @@ export default function MinePage() {
     }
   }, [activeRange, propertyFilter, rangeKey, t.general.error]);
 
+  // Stats are independent of the range selector and must never break the page:
+  // a failed fetch just leaves the segment hidden (the render is guarded with `stats &&`).
+  const loadStats = useCallback(() => {
+    turnoversApi
+      .myStats()
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
   useSocket({
-    'event:updated': () => load(),
-    'event:cancelled': () => load(),
-    'assignment:released': () => load(),
+    'event:updated': () => {
+      load();
+      loadStats();
+    },
+    'event:cancelled': () => {
+      load();
+      loadStats();
+    },
+    'assignment:released': () => {
+      load();
+      loadStats();
+    },
   });
 
   const { futureGrouped, pastGrouped } = useMemo(() => {
@@ -221,6 +245,7 @@ export default function MinePage() {
     try {
       await turnoversApi.drop(turnoverId);
       setItems((p) => p.filter((tv) => tv.id !== turnoverId));
+      loadStats();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
@@ -246,6 +271,7 @@ export default function MinePage() {
   function handleDoneSuccess(updated: Turnover) {
     setItems((p) => p.map((tv) => (tv.id === updated.id ? updated : tv)));
     setDoneTarget(null);
+    loadStats();
   }
 
   function pickPreset(key: Exclude<RangeKey, 'custom'>) {
@@ -326,6 +352,49 @@ export default function MinePage() {
             {customLabel}
           </button>
         </div>
+
+        {/* Cleaner stats — blends into the dark header, but stands out as data */}
+        {stats && (
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <div className="flex items-end justify-between gap-3 mb-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                  {t.mine.stats.id}
+                </p>
+                <p className="text-sm font-mono font-semibold text-white/90 truncate mt-0.5">
+                  {stats.cdmUserId ?? '—'}
+                </p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                  {t.mine.stats.todayRatio}
+                </p>
+                <p className="text-2xl font-bold leading-none mt-0.5 tabular-nums">
+                  <span className="text-accent">{stats.todayDone}</span>
+                  <span className="text-white/40">/{stats.todayAssigned}</span>
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-white/10 px-3 py-2.5">
+                <p className="text-xl font-bold leading-none text-white tabular-nums">
+                  {stats.doneThisMonth}
+                </p>
+                <p className="text-[11px] text-white/50 mt-1.5 leading-tight">
+                  {t.mine.stats.doneThisMonth}
+                </p>
+              </div>
+              <div className="rounded-xl bg-white/10 px-3 py-2.5">
+                <p className="text-xl font-bold leading-none text-white tabular-nums">
+                  {stats.assignedNotDone}
+                </p>
+                <p className="text-[11px] text-white/50 mt-1.5 leading-tight">
+                  {t.mine.stats.assignedNotDone}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-4 py-4 space-y-4">

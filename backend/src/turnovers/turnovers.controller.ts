@@ -57,6 +57,12 @@ export class TurnoversController {
     return this.service.getMine(req.tenantId!, req.userId!, { from, to, propertyIds: ids });
   }
 
+  @Get('me/stats')
+  @ApiOperation({ summary: 'Personal cleaning stats for the current user' })
+  getMyStats(@Req() req: TenantRequest) {
+    return this.service.getMyStats(req.tenantId!, req.userId!);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get turnover by ID' })
   findById(@Req() req: TenantRequest, @Param('id') id: string) {
