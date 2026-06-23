@@ -27,7 +27,7 @@ export class PmsSyncJob {
    * Pulls new/updated bookings from Avantio for all active tenants.
    * Skips the run if the previous one is still in progress.
    */
-  @Cron('*/5 * * * *')
+  @Cron('*/30 * * * *')
   async syncAllTenants() {
     if (this.isSyncing) {
       this.logger.warn('PMS sync already in progress — skipping this run');
