@@ -260,17 +260,50 @@ export default function CalendarPage() {
           </button>
         </div>
       ) : (
-        <div>
-          {visibleProperties.map((prop) => (
-            <UnitRow
-              key={prop.id}
-              property={prop}
-              bookings={byProperty.get(prop.id) ?? []}
-              days={days}
-              localeTag={localeTag}
-              t={t}
-            />
-          ))}
+        <div className="relative">
+          {/* Day lanes — one continuous grid behind every unit row so a bar edge
+              or changeover can be read straight up to the date without tracing a
+              finger. Today gets an amber lane + line; weekends get a soft tint. */}
+          <div
+            className="pointer-events-none absolute inset-0 grid grid-cols-10 px-3"
+            aria-hidden="true"
+          >
+            {days.map((d, i) => {
+              const isTodayCol = startOfLocalDay(d).getTime() === todayStart;
+              const isWeekendCol = d.getDay() === 0 || d.getDay() === 6;
+              return (
+                <div
+                  key={i}
+                  className={`relative border-r border-surface-border ${
+                    i === days.length - 1 ? 'border-r-0' : ''
+                  } ${
+                    isTodayCol
+                      ? 'bg-amber-700/10'
+                      : isWeekendCol
+                        ? 'bg-black/[0.04]'
+                        : ''
+                  }`}
+                >
+                  {isTodayCol && (
+                    <span className="absolute inset-y-0 left-0 w-0.5 bg-amber-700" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="relative z-10">
+            {visibleProperties.map((prop) => (
+              <UnitRow
+                key={prop.id}
+                property={prop}
+                bookings={byProperty.get(prop.id) ?? []}
+                days={days}
+                localeTag={localeTag}
+                t={t}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -416,14 +449,6 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
         role="img"
         aria-label={`Bookings timeline for ${property.name}`}
       >
-        {days.map((_, i) => (
-          <div
-            key={i}
-            className={`border-r border-dashed border-surface-border/60 ${
-              i === days.length - 1 ? 'border-r-0' : ''
-            }`}
-          />
-        ))}
         {placedBars.map((bar, idx) => {
           const SEAM = 8; // px — horizontal width of the diagonal changeover cut
           const clipPath =
