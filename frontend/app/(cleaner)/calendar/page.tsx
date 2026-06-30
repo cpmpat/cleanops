@@ -373,6 +373,34 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
     .map((b) => computeBarPlacement(b, days))
     .filter((bar): bar is NonNullable<typeof bar> => bar !== null);
 
+  // Same-day turnovers: a stay whose check-out day is another stay's check-in
+  // day in this unit (and the reverse). The two bookings share that day-column,
+  // so trim each to the day's midpoint; the JSX then draws a diagonal changeover
+  // seam between them so the cleaner sees "guest out + guest in, same day".
+  const pctPerDay = 100 / days.length;
+  const dayKey = (iso: string) => startOfLocalDay(new Date(iso)).getTime();
+  const placedBars = bars.map((bar) => {
+    const outDay = bar.booking.checkOutTime ? dayKey(bar.booking.checkOutTime) : null;
+    const inDay = dayKey(bar.booking.checkInTime);
+    const turnoverOut =
+      outDay !== null &&
+      bookings.some((o) => o.id !== bar.booking.id && dayKey(o.checkInTime) === outDay);
+    const turnoverIn = bookings.some(
+      (o) =>
+        o.id !== bar.booking.id &&
+        o.checkOutTime != null &&
+        dayKey(o.checkOutTime) === inDay,
+    );
+    let leftPct = bar.leftPct;
+    let widthPct = bar.widthPct;
+    if (turnoverOut) widthPct -= pctPerDay / 2;
+    if (turnoverIn) {
+      leftPct += pctPerDay / 2;
+      widthPct -= pctPerDay / 2;
+    }
+    return { ...bar, leftPct, widthPct, turnoverIn, turnoverOut };
+  });
+
   return (
     <div className="px-3 py-3 border-b border-surface-border">
       <p className="text-sm font-semibold text-ink px-1">{property.name}</p>
@@ -396,16 +424,35 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
             }`}
           />
         ))}
-        {bars.map((bar, idx) => (
-          <div
-            key={`${bar.booking.id}-${idx}`}
-            className="absolute top-1 bottom-1 bg-[#FFC645] text-ink rounded text-[10px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
-            style={{ left: `${bar.leftPct}%`, width: `${bar.widthPct}%` }}
-            title={`${bar.booking.guestFirstName ?? t.calendar.guestPlaceholder} · ${bar.booking.bookingRef}`}
-          >
-            {bar.booking.guestFirstName ?? t.calendar.guestPlaceholder}
-          </div>
-        ))}
+        {placedBars.map((bar, idx) => {
+          const SEAM = 8; // px — horizontal width of the diagonal changeover cut
+          const clipPath =
+            bar.turnoverIn || bar.turnoverOut
+              ? `polygon(${bar.turnoverIn ? `${SEAM}px` : '0'} 0, 100% 0, ${
+                  bar.turnoverOut ? `calc(100% - ${SEAM}px)` : '100%'
+                } 100%, 0% 100%)`
+              : undefined;
+          return (
+            <div
+              key={`${bar.booking.id}-${idx}`}
+              className="absolute top-1 bottom-1 bg-[#FFC645] text-ink rounded text-[10px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
+              style={{
+                left: `${bar.leftPct}%`,
+                width: `${bar.widthPct}%`,
+                clipPath,
+                ...(bar.turnoverOut
+                  ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
+                  : {}),
+                ...(bar.turnoverIn
+                  ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }
+                  : {}),
+              }}
+              title={`${bar.booking.guestFirstName ?? t.calendar.guestPlaceholder} · ${bar.booking.bookingRef}`}
+            >
+              {bar.booking.guestFirstName ?? t.calendar.guestPlaceholder}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
