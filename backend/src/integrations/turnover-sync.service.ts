@@ -74,7 +74,12 @@ export class TurnoverSyncService {
     if (t1 && t2) {
       await this.mergeAcrossCancellation(t1, t2, tx);
     } else if (t1 && !t2) {
-      await this.supersede(t1.id, { toBookingId: null, dueBy: null }, tx);
+      // Becomes a trailing slot: nobody is arriving, so no owner stay.
+      await this.supersede(
+        t1.id,
+        { toBookingId: null, dueBy: null, isOwnerStay: false },
+        tx,
+      );
     } else if (!t1 && t2) {
       await this.supersede(t2.id, { fromBookingId: null, availableFrom: null }, tx);
     } else {
@@ -82,13 +87,32 @@ export class TurnoverSyncService {
     }
   }
 
+  /**
+   * @param oldPropertyId  The property the booking was attached to BEFORE this
+   *   update. Pass it whenever the caller may have moved the booking between
+   *   units — a unit change invalidates the chains at BOTH properties, and the
+   *   position comparison below is only meaningful within a single property.
+   */
   async onBookingModified(
     bookingId: string,
     oldCheckInTime: Date,
     tx: Tx,
+    oldPropertyId?: string,
   ): Promise<void> {
     const booking = await tx.booking.findUnique({ where: { id: bookingId } });
     if (!booking || booking.status === 'CANCELLED') return;
+
+    // Unit changed in the PMS: unwind the old property's chain (which stitches
+    // the old neighbours back together) and slot the booking into the new one.
+    if (oldPropertyId && oldPropertyId !== booking.propertyId) {
+      this.logger.debug(
+        `onBookingModified: booking ${bookingId} moved property ` +
+        `${oldPropertyId} -> ${booking.propertyId}, re-threading both chains`,
+      );
+      await this.onBookingCancelled(booking.id, tx);
+      await this.onBookingInserted(booking.id, tx);
+      return;
+    }
 
     const oldPrev = await this.findPrev(booking.propertyId, oldCheckInTime, booking.id, tx);
     const oldNext = await this.findNext(booking.propertyId, oldCheckInTime, booking.id, tx);
@@ -178,6 +202,7 @@ export class TurnoverSyncService {
       prevToK = await this.supersede(existing.id, {
         toBookingId: K.id,
         dueBy: K.checkInTime,
+        isOwnerStay: K.isOwnerStay,
       }, tx);
     } else {
       prevToK = await this.createTurnover({
@@ -215,6 +240,7 @@ export class TurnoverSyncService {
       await this.supersede(trailing.id, {
         toBookingId: K.id,
         dueBy: K.checkInTime,
+        isOwnerStay: K.isOwnerStay,
       }, tx);
     } else {
       await this.createTurnover({
@@ -314,6 +340,8 @@ export class TurnoverSyncService {
     const merged = await this.supersede(t1.id, {
       toBookingId: t2.toBookingId,
       dueBy: t2.dueBy,
+      // The merged slot now serves T2's arrival, so it inherits T2's flag.
+      isOwnerStay: t2.isOwnerStay,
     }, tx);
 
     // T2 is no longer a separate cleaning slot. Mark SKIPPED for audit and
@@ -322,6 +350,7 @@ export class TurnoverSyncService {
       where: { id: t2.id },
       data: {
         status: 'SKIPPED',
+        skipReason: 'MERGED_ON_CANCELLATION',
         cancelledAt: new Date(),
         supersededById: merged.id,
       },
@@ -336,8 +365,11 @@ export class TurnoverSyncService {
    * Create a new active turnover. Always followed by enforceUniqueActive
    * to guard against orphaned active duplicates from race conditions or
    * earlier bugs.
+   *
+   * Public because TurnoverReconcileService rebuilds chains through the same
+   * primitives. Not part of the HTTP surface — do not call from controllers.
    */
-  private async createTurnover(
+  async createTurnover(
     data: {
       tenantId: string;
       propertyId: string;
@@ -359,13 +391,22 @@ export class TurnoverSyncService {
     return fresh;
   }
 
-  private async supersede(
+  /**
+   * Retire `oldId` and return a fresh active row carrying `changes`, with all
+   * assignments, status and notes moved across. This is the only sanctioned way
+   * to change an active turnover's endpoints — never update in place, because a
+   * turnover may already represent started or completed human work.
+   *
+   * Public for TurnoverReconcileService. Not part of the HTTP surface.
+   */
+  async supersede(
     oldId: string,
     changes: Partial<{
       fromBookingId: string | null;
       toBookingId: string | null;
       availableFrom: Date | null;
       dueBy: Date | null;
+      isOwnerStay: boolean;
     }>,
     tx: Tx,
   ): Promise<Turnover> {
@@ -397,7 +438,9 @@ export class TurnoverSyncService {
         managerNote: old.managerNote,
         cleanerNote: old.cleanerNote,
         supplyNote: old.supplyNote,
-        isOwnerStay: old.isOwnerStay,
+        skipReason: old.skipReason,
+        isOwnerStay:
+          'isOwnerStay' in changes ? changes.isOwnerStay! : old.isOwnerStay,
       },
     });
 
