@@ -365,6 +365,15 @@ export class AvantioAdapter implements PmsAdapter {
   }
 
   /**
+   * Public wrapper over the list endpoint: every booking ID Avantio has touched
+   * since `since`. The backfill script diffs this against our bookings table to
+   * find what we missed — it needs the IDs without paying for every detail.
+   */
+  async listBookingIdsUpdatedSince(since: Date, config: PmsTenantConfig): Promise<string[]> {
+    return this.collectBookingIds(since, this.createClient(config));
+  }
+
+  /**
    * Fetch a single booking's full raw data from GET /bookings/{id}.
    * This is the only endpoint that reliably returns `accommodation`.
    */
