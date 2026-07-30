@@ -5,12 +5,20 @@ import {
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
-import { BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
+import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
 
 export interface SyncResult {
   accommodations: { synced: number; created: number; updated: number };
   bookings: { created: number; updated: number; cancelled: number };
+}
+
+/** Outcome of processing one PMS booking, per pmsBookingId. */
+export interface BookingSyncOutcome {
+  pmsBookingId: string;
+  result: 'created' | 'updated' | 'cancelled' | 'skipped' | 'error';
+  /** Why it was skipped, or what changed, in one line. */
+  detail?: string;
 }
 
 export interface PlanningFilters {
@@ -25,6 +33,14 @@ export interface PlanningFilters {
 export class BookingSyncService {
   private readonly logger = new Logger(BookingSyncService.name);
 
+  /**
+   * Set only inside runWithoutNotifications(). Process-local by design: it is
+   * a field on a singleton, so it would suppress notifications for concurrent
+   * HTTP traffic too. That is why the guard below refuses to engage unless the
+   * process was started as a script.
+   */
+  private notificationsSuppressed = false;
+
   constructor(
     private prisma: PrismaService,
     private avantioAdapter: AvantioAdapter,
@@ -35,6 +51,30 @@ export class BookingSyncService {
   // ──────────────────────────────────────────────────────────────────
   // TURNOVER SYNC (Phase 2 — feature-flagged dual-write)
   // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Run `fn` with notification creation disabled.
+   *
+   * A backfill of a few thousand historical bookings would otherwise generate a
+   * NEW_ASSIGNMENT row per auto-assigned cleaning and push all of them at the
+   * cleaning staff. Refuses to run in the API process, where the flag would
+   * leak across concurrent requests.
+   */
+  async runWithoutNotifications<T>(fn: () => Promise<T>): Promise<T> {
+    if (process.env.CLEANOPS_SCRIPT_MODE !== 'true') {
+      throw new Error(
+        'runWithoutNotifications() is only allowed in script processes ' +
+        '(CLEANOPS_SCRIPT_MODE=true). In a server process it would suppress ' +
+        'notifications for concurrent requests.',
+      );
+    }
+    this.notificationsSuppressed = true;
+    try {
+      return await fn();
+    } finally {
+      this.notificationsSuppressed = false;
+    }
+  }
 
   /**
    * Whether to write to the new Turnover model alongside Cleaning.
@@ -114,7 +154,7 @@ export class BookingSyncService {
     // Bulk reconcile previous-guest-checkout column on all cleanings for this tenant.
     // Catches edge cases from cancellations, mid-period inserts, etc.
     try {
-      const updated = await this.reconcilePreviousGuestCheckOut(tenantId);
+      const updated = await this.reconcilePreviousGuestCheckOut(tenantId, 60);
       if (updated > 0) {
         this.logger.log(`[${tenant.name}] Reconciled previousGuestCheckOutTime on ${updated} cleanings`);
       }
@@ -134,8 +174,19 @@ export class BookingSyncService {
    * Idempotent; only touches rows whose computed value differs from the
    * stored one. Returns the number of rows actually updated.
    */
-  private async reconcilePreviousGuestCheckOut(tenantId: string): Promise<number> {
-    const result = await this.prisma.$executeRaw`
+  async reconcilePreviousGuestCheckOut(
+    tenantId: string,
+    sinceDays: number | null = 60,
+  ): Promise<number> {
+    // The 30-minute sync only needs the recent tail; scanning every cleaning
+    // the tenant has ever had gets slower forever. A backfill that touches old
+    // bookings passes null to force the full pass.
+    const window =
+      sinceDays === null
+        ? Prisma.empty
+        : Prisma.sql`AND c."checkInTime" >= now() - make_interval(days => ${sinceDays})`;
+
+    const result = await this.prisma.$executeRaw(Prisma.sql`
       WITH computed AS (
         SELECT c.id,
           (SELECT b."checkOutTime" FROM "bookings" b
@@ -148,13 +199,14 @@ export class BookingSyncService {
           ) AS prev
         FROM "cleanings" c
         WHERE c."tenantId" = ${tenantId}
+        ${window}
       )
       UPDATE "cleanings" c
       SET "previousGuestCheckOutTime" = computed.prev
       FROM computed
       WHERE c.id = computed.id
         AND c."previousGuestCheckOutTime" IS DISTINCT FROM computed.prev
-    `;
+    `);
     return Number(result) || 0;
   }
 
@@ -535,18 +587,23 @@ export class BookingSyncService {
         existing.numAdults !== booking.numAdults ||
         existing.numChildren !== booking.numChildren ||
         existing.accommodationName !== property.name ||
+        // A unit change in the PMS used to be invisible here, which left the
+        // booking (and its whole turnover chain) attached to the old property.
+        existing.propertyId !== property.id ||
         existing.isOwnerStay !== incomingOwnerFlag;
 
       if (hasChanges) {
         const now = new Date();
         const checkIn = new Date(booking.checkInTime);
         const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
-        const oldCheckInTime = existing.checkInTime; // capture for turnover sync
+        const oldCheckInTime = existing.checkInTime;   // capture for turnover sync
+        const oldPropertyId = existing.propertyId;    // ditto — unit moves
 
         await this.prisma.$transaction(async (tx) => {
           await tx.booking.update({
             where: { id: existing.id },
             data: {
+              propertyId: property.id,
               checkInTime: checkIn,
               checkOutTime: checkOut,
               accommodationName: property.name,
@@ -564,6 +621,7 @@ export class BookingSyncService {
             await tx.cleaning.update({
               where: { id: existing.cleaning.id },
               data: {
+                propertyId: property.id,
                 bookingRef: booking.bookingRef,
                 checkInTime: checkIn,
                 checkOutTime: checkOut,
@@ -584,7 +642,9 @@ export class BookingSyncService {
         // Turnover dual-write: re-thread chain if position changed, or just
         // update anchors if booking is still in the same slot
         await this.safelyRunTurnoverSync('onBookingModified', async (tx) => {
-          await this.turnoverSync.onBookingModified(existing.id, oldCheckInTime, tx);
+          await this.turnoverSync.onBookingModified(
+            existing.id, oldCheckInTime, tx, oldPropertyId,
+          );
         });
 
         // Notify assigned cleaners
@@ -943,12 +1003,246 @@ export class BookingSyncService {
     return this.syncAccommodations(tenantId, this.getAdapter(tenant.pmsProvider || 'avantio'), config);
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // ID-DRIVEN BACKFILL  (scripts/backfill-bookings.ts)
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Everything below is for filling gaps: bookings Avantio has that we missed,
+  // usually because a sync run failed or the process restarted mid-window.
+  //
+  // Two hard rules separate this from syncTenant():
+  //   1. It NEVER writes tenant.pmsLastSyncAt. The cron uses that column as its
+  //      `since`, so a backfill that advanced it would make the cron skip a
+  //      window it never actually covered.
+  //   2. It reuses processBooking() rather than reimplementing the upsert, so
+  //      the timezone handling, status mapping and turnover dual-write stay in
+  //      exactly one place.
+
+  /** Resolve a tenant's PMS credentials and adapter, or throw. */
+  async getTenantSyncContext(tenantId: string): Promise<{
+    tenant: { id: string; name: string };
+    config: PmsTenantConfig;
+    adapter: AvantioAdapter;
+  }> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
+    if (!tenant.pmsApiBaseUrl || !tenant.pmsApiKey) {
+      throw new Error(
+        `Tenant ${tenant.name} has no PMS credentials (pmsApiBaseUrl / pmsApiKey). ` +
+        `Per-tenant config is deliberate — do not fall back to global env vars.`,
+      );
+    }
+    return {
+      tenant: { id: tenant.id, name: tenant.name },
+      config: { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey },
+      adapter: this.getAdapter(tenant.pmsProvider || 'avantio'),
+    };
+  }
+
+  /**
+   * Of `candidateIds` (Avantio booking IDs), return the ones with no Booking
+   * row for this tenant. This is the gap the backfill is meant to close.
+   */
+  async findMissingPmsBookingIds(
+    tenantId: string,
+    candidateIds: string[],
+  ): Promise<string[]> {
+    const known = new Set<string>();
+    const CHUNK = 1000;
+    for (let i = 0; i < candidateIds.length; i += CHUNK) {
+      const chunk = candidateIds.slice(i, i + CHUNK);
+      const rows = await this.prisma.booking.findMany({
+        where: { tenantId, pmsBookingId: { in: chunk } },
+        select: { pmsBookingId: true },
+      });
+      for (const r of rows) if (r.pmsBookingId) known.add(r.pmsBookingId);
+    }
+    return candidateIds.filter((id) => !known.has(id));
+  }
+
+  /**
+   * Fetch full booking detail for each ID. Network-bound, so it runs
+   * `concurrency` at a time; the DB work that follows stays sequential because
+   * two bookings at the same property would otherwise race on the same
+   * turnover chain.
+   */
+  private async fetchDetails(
+    ids: string[],
+    adapter: AvantioAdapter,
+    config: PmsTenantConfig,
+    concurrency: number,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<Array<{ pmsBookingId: string; booking?: PmsBooking; error?: string }>> {
+    const out: Array<{ pmsBookingId: string; booking?: PmsBooking; error?: string }> = [];
+
+    for (let i = 0; i < ids.length; i += concurrency) {
+      const batch = ids.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        batch.map((id) => adapter.getBooking(id, config)),
+      );
+      settled.forEach((r, idx) => {
+        const pmsBookingId = batch[idx];
+        if (r.status === 'fulfilled') out.push({ pmsBookingId, booking: r.value });
+        else out.push({ pmsBookingId, error: (r.reason as Error)?.message ?? 'fetch failed' });
+      });
+      onProgress?.(Math.min(i + concurrency, ids.length), ids.length);
+    }
+
+    return out;
+  }
+
+  /**
+   * Read-only dry run: what would `syncBookingsByPmsIds` do?
+   *
+   * Mirrors processBooking's decisions without writing. It deliberately does
+   * NOT call resolveProperty(), because that method creates properties as a
+   * side effect.
+   */
+  async previewBookingsByPmsIds(
+    tenantId: string,
+    pmsBookingIds: string[],
+    opts: { concurrency?: number; onProgress?: (done: number, total: number) => void } = {},
+  ): Promise<BookingSyncOutcome[]> {
+    const { adapter, config } = await this.getTenantSyncContext(tenantId);
+    const fetched = await this.fetchDetails(
+      pmsBookingIds, adapter, config, opts.concurrency ?? 5, opts.onProgress,
+    );
+
+    const outcomes: BookingSyncOutcome[] = [];
+
+    for (const f of fetched) {
+      if (!f.booking) {
+        outcomes.push({ pmsBookingId: f.pmsBookingId, result: 'error', detail: f.error });
+        continue;
+      }
+      const b = f.booking;
+
+      const existing = await this.prisma.booking.findFirst({
+        where: { tenantId, pmsBookingId: b.pmsBookingId },
+      });
+
+      if (b.status === 'cancelled') {
+        if (!existing) {
+          outcomes.push({
+            pmsBookingId: b.pmsBookingId,
+            result: 'skipped',
+            detail: 'cancelled in Avantio and absent locally — nothing to record',
+          });
+        } else if (existing.status === BookingStatus.CANCELLED) {
+          outcomes.push({
+            pmsBookingId: b.pmsBookingId, result: 'skipped',
+            detail: 'already CANCELLED locally',
+          });
+        } else {
+          outcomes.push({
+            pmsBookingId: b.pmsBookingId, result: 'cancelled',
+            detail: `would mark ${existing.bookingRef} CANCELLED (cleaning kept)`,
+          });
+        }
+        continue;
+      }
+
+      const property = b.pmsPropertyId
+        ? await this.prisma.property.findFirst({
+            where: { tenantId, pmsPropertyId: b.pmsPropertyId },
+          })
+        : null;
+      const propertyNote = property
+        ? ''
+        : ` (accommodation ${b.pmsPropertyId ?? '?'} not local — would be fetched from Avantio or stubbed)`;
+
+      if (!existing) {
+        outcomes.push({
+          pmsBookingId: b.pmsBookingId,
+          result: 'created',
+          detail:
+            `would create booking ${b.bookingRef} + cleaning at ` +
+            `${property?.name ?? b.pmsPropertyId} , check-in ${b.checkInTime}` +
+            propertyNote,
+        });
+        continue;
+      }
+
+      const diffs: string[] = [];
+      if (existing.checkInTime.toISOString() !== new Date(b.checkInTime).toISOString()) {
+        diffs.push(`checkIn ${existing.checkInTime.toISOString()} -> ${new Date(b.checkInTime).toISOString()}`);
+      }
+      if (b.checkOutTime && existing.checkOutTime?.toISOString() !== new Date(b.checkOutTime).toISOString()) {
+        diffs.push(`checkOut ${existing.checkOutTime?.toISOString() ?? 'null'} -> ${new Date(b.checkOutTime).toISOString()}`);
+      }
+      if (existing.numAdults !== b.numAdults) diffs.push(`adults ${existing.numAdults} -> ${b.numAdults}`);
+      if (existing.numChildren !== b.numChildren) diffs.push(`children ${existing.numChildren} -> ${b.numChildren}`);
+      if (property && existing.accommodationName !== property.name) {
+        diffs.push(`accommodation "${existing.accommodationName}" -> "${property.name}"`);
+      }
+      if (property && existing.propertyId !== property.id) diffs.push('property moved');
+      if (existing.isOwnerStay !== (b.isOwnerStay ?? false)) {
+        diffs.push(`isOwnerStay ${existing.isOwnerStay} -> ${b.isOwnerStay ?? false}`);
+      }
+
+      outcomes.push(
+        diffs.length
+          ? { pmsBookingId: b.pmsBookingId, result: 'updated', detail: diffs.join('; ') + propertyNote }
+          : { pmsBookingId: b.pmsBookingId, result: 'skipped', detail: 'already in sync' },
+      );
+    }
+
+    return outcomes;
+  }
+
+  /**
+   * Sync a specific set of Avantio booking IDs into this tenant.
+   * Wrap the call in runWithoutNotifications() for a historical backfill.
+   */
+  async syncBookingsByPmsIds(
+    tenantId: string,
+    pmsBookingIds: string[],
+    opts: {
+      concurrency?: number;
+      onFetchProgress?: (done: number, total: number) => void;
+      onProcessed?: (outcome: BookingSyncOutcome, index: number, total: number) => void;
+    } = {},
+  ): Promise<BookingSyncOutcome[]> {
+    const { adapter, config } = await this.getTenantSyncContext(tenantId);
+    const fetched = await this.fetchDetails(
+      pmsBookingIds, adapter, config, opts.concurrency ?? 5, opts.onFetchProgress,
+    );
+
+    const outcomes: BookingSyncOutcome[] = [];
+
+    for (let i = 0; i < fetched.length; i++) {
+      const f = fetched[i];
+      let outcome: BookingSyncOutcome;
+
+      if (!f.booking) {
+        outcome = { pmsBookingId: f.pmsBookingId, result: 'error', detail: f.error };
+      } else {
+        try {
+          const result = await this.processBooking(tenantId, f.booking, adapter, config);
+          outcome = { pmsBookingId: f.pmsBookingId, result };
+        } catch (err) {
+          outcome = {
+            pmsBookingId: f.pmsBookingId,
+            result: 'error',
+            detail: (err as Error).message,
+          };
+        }
+      }
+
+      outcomes.push(outcome);
+      opts.onProcessed?.(outcome, i + 1, fetched.length);
+    }
+
+    return outcomes;
+  }
+
   // ─── Helpers ───
 
   private async createNotification(
     tenantId: string, userId: string, type: string,
     title: string, body: string, eventId: string,
   ) {
+    if (this.notificationsSuppressed) return;
     await this.prisma.notification.create({
       data: {
         tenantId, userId,

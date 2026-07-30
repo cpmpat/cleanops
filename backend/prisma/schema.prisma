@@ -798,6 +798,11 @@ model Turnover {
   supplyNote       String?
   isOwnerStay      Boolean         @default(false)
 
+  // Why this turnover was SKIPPED. Lets the reconciler tell a system-merged
+  // slot (safe to re-thread) apart from a deliberate human skip (never touch).
+  // Values: 'MERGED_ON_CANCELLATION' | 'MANAGER_SKIPPED'
+  skipReason       String?
+
   supersededById   String?         
   supersededBy     Turnover?       @relation("TurnoverSupersession", fields: [supersededById], references: [id])
   supersedes       Turnover[]       @relation("TurnoverSupersession")
@@ -816,6 +821,7 @@ model Turnover {
   @@index([tenantId, status])
   @@index([toBookingId])
   @@index([fromBookingId])
+  @@index([supersededById])
   @@map("turnovers")
 }
 

@@ -4,12 +4,23 @@ import { StorageModule } from '../storage/storage.module';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { BookingSyncService } from './booking-sync.service';
 import { TurnoverSyncService } from './turnover-sync.service';
+import { TurnoverReconcileService } from './turnover-reconcile.service';
 import { IntegrationsController } from './integrations.controller';
 
 @Module({
   imports: [AuthModule, StorageModule],
   controllers: [IntegrationsController],
-  providers: [AvantioAdapter, BookingSyncService, TurnoverSyncService],
-  exports: [BookingSyncService, AvantioAdapter, TurnoverSyncService],
+  providers: [
+    AvantioAdapter,
+    BookingSyncService,
+    TurnoverSyncService,
+    TurnoverReconcileService,
+  ],
+  exports: [
+    BookingSyncService,
+    AvantioAdapter,
+    TurnoverSyncService,
+    TurnoverReconcileService,
+  ],
 })
 export class IntegrationsModule {}
