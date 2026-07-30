@@ -12,8 +12,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "sync": "ts-node scripts/sync-avantio-to-postgres.ts",
-    "sync:dry": "DRY_RUN=true ts-node scripts/sync-avantio-to-postgres.ts"
+    "reconcile:turnovers": "ts-node -P tsconfig.scripts.json scripts/reconcile-turnovers.ts",
+    "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
