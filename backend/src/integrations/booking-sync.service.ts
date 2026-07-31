@@ -184,7 +184,9 @@ export class BookingSyncService {
     const window =
       sinceDays === null
         ? Prisma.empty
-        : Prisma.sql`AND c."checkInTime" >= now() - make_interval(days => ${sinceDays})`;
+        // ::int is required. Prisma binds a JS number as int8, and Postgres has
+        // no make_interval(days => bigint) overload — it fails with 42883.
+        : Prisma.sql`AND c."checkInTime" >= now() - make_interval(days => ${sinceDays}::int)`;
 
     const result = await this.prisma.$executeRaw(Prisma.sql`
       WITH computed AS (
