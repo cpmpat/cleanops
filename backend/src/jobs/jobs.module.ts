@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma.service';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { BookingSyncService } from '../integrations/booking-sync.service';
+import { APP_TIME_ZONE } from '../common/time';
 
 // ─── PMS Sync Job ───
 @Injectable()
@@ -27,7 +28,7 @@ export class PmsSyncJob {
    * Pulls new/updated bookings from Avantio for all active tenants.
    * Skips the run if the previous one is still in progress.
    */
-  @Cron('*/30 * * * *')
+  @Cron('*/30 * * * *', { timeZone: APP_TIME_ZONE })
   async syncAllTenants() {
     if (this.isSyncing) {
       this.logger.warn('PMS sync already in progress — skipping this run');
@@ -76,7 +77,7 @@ export class OverdueCheckJob {
    * (check-in time approaching, cleaning not done).
    * Creates OVERDUE notifications for managers.
    */
-  @Cron('*/15 * * * *')
+  @Cron('*/15 * * * *', { timeZone: APP_TIME_ZONE })
   async checkOverdue() {
     // Find events where check-in is within 60 minutes and status is not COMPLETED
     const threshold = new Date(Date.now() + 60 * 60 * 1000);
@@ -143,7 +144,9 @@ export class MorningSummaryJob {
    * Runs at 06:00 every day.
    * Sends email summary of today's cleaning schedule to all active cleaners.
    */
-  @Cron('0 6 * * *')
+  // 06:00 Prague. Without the timeZone option this fired at 06:00 UTC,
+  // i.e. 08:00 local in summer — two hours after the intended send.
+  @Cron('0 6 * * *', { timeZone: APP_TIME_ZONE })
   async sendMorningSummaries() {
     this.logger.log('Sending morning summaries...');
 

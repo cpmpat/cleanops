@@ -18,7 +18,7 @@ export default function NewRepairPage() {
     // Default to one week from now
     const d = new Date();
     d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
+    return d.toLocaleDateString('sv-SE');
   });
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [primaryUserId, setPrimaryUserId] = useState<string>('');
