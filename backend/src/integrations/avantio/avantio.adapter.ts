@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import {
   PmsAdapter, PmsBooking, PmsAccommodation, PmsTenantConfig,
 } from '../../common/interfaces/pms-adapter.interface';
+import { timeInAppZone } from '../../common/time';
 
 /**
  * Avantio PMS Adapter
@@ -530,10 +531,15 @@ export class AvantioAdapter implements PmsAdapter {
     return new Date(probeUtc - offsetMs).toISOString();
   }
 
+  /**
+   * Avantio stores times as property-local wall clock, so an ISO instant has to
+   * be rendered in the property's timezone. Reading getUTCHours() here sent
+   * 13:00Z to Avantio as "13:00" when the manager meant 15:00 Prague — two
+   * hours off in summer, one in winter.
+   */
   private toTimeString(input: string): string {
     if (input.includes('T')) {
-      const d = new Date(input);
-      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+      return timeInAppZone(input);
     }
     return input;
   }

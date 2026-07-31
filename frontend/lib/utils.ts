@@ -17,8 +17,20 @@ export function formatDate(iso: string, locale = 'en'): string {
   } catch { return iso; }
 }
 
+/**
+ * Today as YYYY-MM-DD in the *viewer's* timezone.
+ *
+ * toISOString() returns the UTC date, so between midnight and 02:00 Prague this
+ * used to report yesterday — "today's cleanings" was wrong for the first hours
+ * of every day. `sv-SE` formats as ISO without manual padding.
+ */
 export function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toLocaleDateString('sv-SE');
+}
+
+/** Local YYYY-MM-DD for any date — the day-key equivalent of todayISO(). */
+export function dayKeyISO(d: Date): string {
+  return d.toLocaleDateString('sv-SE');
 }
 
 export function channelColor(channel: string): string {

@@ -24,7 +24,7 @@ export default function SchedulePage() {
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - d.getDay() + 1); // Monday
-    return d.toISOString().split('T')[0];
+    return d.toLocaleDateString('sv-SE');
   });
 
   const [events, setEvents] = useState<CleaningEvent[]>([]);
@@ -37,7 +37,7 @@ export default function SchedulePage() {
   const weekEnd = (() => {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + 6);
-    return d.toISOString().split('T')[0];
+    return d.toLocaleDateString('sv-SE');
   })();
 
   const load = useCallback(async () => {
@@ -60,19 +60,19 @@ export default function SchedulePage() {
   function shiftWeek(direction: 1 | -1) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + direction * 7);
-    setWeekStart(d.toISOString().split('T')[0]);
+    setWeekStart(d.toLocaleDateString('sv-SE'));
   }
 
   function goToThisWeek() {
     const d = new Date();
     d.setDate(d.getDate() - d.getDay() + 1);
-    setWeekStart(d.toISOString().split('T')[0]);
+    setWeekStart(d.toLocaleDateString('sv-SE'));
   }
 
   const isThisWeek = weekStart === (() => {
     const d = new Date();
     d.setDate(d.getDate() - d.getDay() + 1);
-    return d.toISOString().split('T')[0];
+    return d.toLocaleDateString('sv-SE');
   })();
 
   // Format week label

@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
+import { todayInAppZone } from '../common/time';
 import { CleaningsService } from './cleanings.service';
 import { IncidentPriority } from '@prisma/client';
 
@@ -31,7 +32,7 @@ export class CleaningsController {
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
     return this.service.findByDate(
       req.tenantId!,
-      date || new Date().toISOString().split('T')[0],
+      date || todayInAppZone(),
       userId,
     );
   }
@@ -64,7 +65,7 @@ export class CleaningsController {
   getStats(@Req() req: TenantRequest, @Query('date') date: string) {
     return this.service.getStats(
       req.tenantId!,
-      date || new Date().toISOString().split('T')[0],
+      date || todayInAppZone(),
     );
   }
 

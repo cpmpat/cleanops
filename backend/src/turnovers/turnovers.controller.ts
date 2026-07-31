@@ -7,6 +7,7 @@ import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { TurnoversService } from './turnovers.service';
 import { IncidentPriority } from '@prisma/client';
+import { todayInAppZone } from '../common/time';
 
 @ApiTags('Turnovers')
 @ApiBearerAuth()
@@ -31,7 +32,7 @@ export class TurnoversController {
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
     return this.service.findByDate(
       req.tenantId!,
-      date || new Date().toISOString().split('T')[0],
+      date || todayInAppZone(),
       userId,
     );
   }
@@ -96,6 +97,45 @@ export class TurnoversController {
   }
 
   // ─── Cleaner mutations ────────────────────────────────
+
+  // ─── Manager assignment ───────────────────────────────
+
+  @Post(':id/assign')
+  @UseGuards(RolesGuard)
+  @Roles('MANAGER')
+  @ApiOperation({
+    summary: 'Assign a cleaner to a turnover (manager)',
+    description:
+      'Body: { userId: string, isPrimary?: boolean }. Fails if the turnover is ' +
+      'already at maxCleaners, is completed, or that cleaner is already on it. ' +
+      'Notifies the cleaner and writes an audit event.',
+  })
+  assign(
+    @Req() req: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: { userId: string; isPrimary?: boolean },
+  ) {
+    return this.service.assign(
+      req.tenantId!, req.userId!, id, body.userId, body.isPrimary,
+    );
+  }
+
+  @Post(':id/unassign')
+  @UseGuards(RolesGuard)
+  @Roles('MANAGER')
+  @ApiOperation({
+    summary: 'Remove a cleaner from a turnover (manager)',
+    description:
+      'Body: { userId: string }. The assignment is marked REASSIGNED, not ' +
+      'deleted. If nobody is left the turnover returns to the pool.',
+  })
+  unassign(
+    @Req() req: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: { userId: string },
+  ) {
+    return this.service.unassign(req.tenantId!, req.userId!, id, body.userId);
+  }
 
   @Post(':id/claim')
   @Roles('CLEANER')

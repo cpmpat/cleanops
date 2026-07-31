@@ -24,7 +24,7 @@ interface UpdateTurnoverDto {
 interface MarkDoneDto {
   allGood: boolean;
   note?: string;
-  photoUrls?: string[];   // accepted but not persisted (no TurnoverPhoto model yet)
+  photoUrls?: string[];   // persisted as TurnoverPhoto rows
   priority?: IncidentPriority;
 }
 
@@ -466,6 +466,211 @@ export class TurnoversService {
    * Cleaner claims a turnover from the pool.
    * Atomic via Serializable isolation — concurrent claimers can't both win.
    */
+  // ==========================================================================
+  // Manager assignment
+  //
+  // Until now the only route onto a turnover was a cleaner claiming it from the
+  // pool, so a manager could not hand a specific unit to a specific person —
+  // the capability existed only on the Cleaning model being retired. Both
+  // methods write audit events, because "where did this job go" was expensive
+  // to answer exactly once and should never be again.
+  // ==========================================================================
+
+  /** Assign a cleaner to a turnover. Manager action. */
+  async assign(
+    tenantId: string,
+    actorId: string,
+    turnoverId: string,
+    userId: string,
+    isPrimary?: boolean,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      const turnover = await tx.turnover.findFirst({
+        where: { id: turnoverId, tenantId },
+        include: {
+          assignments: { where: { status: { in: ACTIVE_STATUSES } } },
+          toBooking: { select: { bookingRef: true, accommodationName: true } },
+          fromBooking: { select: { bookingRef: true, accommodationName: true } },
+        },
+      });
+      if (!turnover) throw new NotFoundException('Turnover not found');
+      if (turnover.status === TurnoverStatus.COMPLETED) {
+        throw new BadRequestException('Turnover is already completed');
+      }
+      if (turnover.status === TurnoverStatus.CANCELLED) {
+        throw new BadRequestException('Turnover is cancelled');
+      }
+
+      const user = await tx.user.findFirst({
+        where: { id: userId, tenantId, isActive: true },
+        select: { id: true, name: true },
+      });
+      if (!user) throw new NotFoundException('User not found or inactive');
+
+      if (turnover.assignments.some((a) => a.userId === userId)) {
+        throw new BadRequestException('Already assigned to this turnover');
+      }
+      if (turnover.assignments.length >= turnover.maxCleaners) {
+        throw new BadRequestException(
+          `Turnover already has ${turnover.maxCleaners} cleaner(s); raise maxCleaners first`,
+        );
+      }
+
+      const primary = isPrimary ?? turnover.assignments.length === 0;
+      const newCount = turnover.assignments.length + 1;
+
+      await tx.turnoverAssignment.create({
+        data: {
+          turnoverId,
+          userId,
+          assignedById: actorId,
+          isPrimary: primary,
+          status: AssignmentStatus.ASSIGNED,
+        },
+      });
+
+      if (newCount >= turnover.maxCleaners) {
+        await tx.turnover.update({
+          where: { id: turnoverId },
+          data: { status: TurnoverStatus.ASSIGNED },
+        });
+      }
+
+      const accommodationName =
+        turnover.toBooking?.accommodationName ??
+        turnover.fromBooking?.accommodationName ??
+        null;
+      const bookingRef =
+        turnover.toBooking?.bookingRef ?? turnover.fromBooking?.bookingRef ?? null;
+
+      await tx.notification.create({
+        data: {
+          tenantId,
+          userId,
+          type: 'NEW_ASSIGNMENT' as any,
+          channel: 'IN_APP',
+          title: 'New cleaning assigned',
+          body: `A manager assigned you ${accommodationName ?? 'a cleaning'}.`,
+          payload: { turnoverId },
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.ASSIGNMENT_LIFECYCLE,
+          action: 'turnover.assigned_by_manager',
+          actorId,
+          targetType: 'Turnover',
+          targetId: turnoverId,
+          metadata: {
+            assignedUserId: userId,
+            assignedUserName: user.name,
+            accommodationName,
+            bookingRef,
+            isPrimary: primary,
+            filledEvent: newCount >= turnover.maxCleaners,
+          } as any,
+        },
+      });
+    });
+
+    const fresh = await this.findById(tenantId, turnoverId);
+    this.gateway.notifyEventUpdated(tenantId, fresh as any);
+    return fresh;
+  }
+
+  /**
+   * Remove a cleaner from a turnover. Manager action.
+   *
+   * The assignment is marked REASSIGNED rather than deleted — the same thing
+   * `drop` does — so the history of who held it survives.
+   */
+  async unassign(
+    tenantId: string,
+    actorId: string,
+    turnoverId: string,
+    userId: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      const turnover = await tx.turnover.findFirst({
+        where: { id: turnoverId, tenantId },
+        include: {
+          assignments: { where: { status: { in: ACTIVE_STATUSES } } },
+          toBooking: { select: { bookingRef: true, accommodationName: true } },
+          fromBooking: { select: { bookingRef: true, accommodationName: true } },
+        },
+      });
+      if (!turnover) throw new NotFoundException('Turnover not found');
+
+      const mine = turnover.assignments.find((a) => a.userId === userId);
+      if (!mine) {
+        throw new BadRequestException('That cleaner is not assigned to this turnover');
+      }
+      if (turnover.status === TurnoverStatus.COMPLETED) {
+        throw new BadRequestException(
+          'Turnover is completed — unassigning would erase finished work',
+        );
+      }
+
+      await tx.turnoverAssignment.update({
+        where: { id: mine.id },
+        data: { status: AssignmentStatus.REASSIGNED },
+      });
+
+      const remaining = turnover.assignments.filter((a) => a.id !== mine.id);
+      if (remaining.length === 0) {
+        await tx.turnover.update({
+          where: { id: turnoverId },
+          data: { status: TurnoverStatus.PENDING, startedAt: null },
+        });
+      } else if (mine.isPrimary) {
+        // Never leave a multi-cleaner turnover without a primary.
+        await tx.turnoverAssignment.update({
+          where: { id: remaining[0].id },
+          data: { isPrimary: true },
+        });
+      }
+
+      const accommodationName =
+        turnover.toBooking?.accommodationName ??
+        turnover.fromBooking?.accommodationName ??
+        null;
+
+      await tx.notification.create({
+        data: {
+          tenantId,
+          userId,
+          type: 'REASSIGNMENT' as any,
+          channel: 'IN_APP',
+          title: 'Cleaning reassigned',
+          body: `A manager removed you from ${accommodationName ?? 'a cleaning'}.`,
+          payload: { turnoverId },
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.ASSIGNMENT_LIFECYCLE,
+          action: 'turnover.unassigned_by_manager',
+          actorId,
+          targetType: 'Turnover',
+          targetId: turnoverId,
+          metadata: {
+            removedUserId: userId,
+            accommodationName,
+            returnedToPool: remaining.length === 0,
+          } as any,
+        },
+      });
+    });
+
+    const fresh = await this.findById(tenantId, turnoverId);
+    this.gateway.notifyEventUpdated(tenantId, fresh as any);
+    return fresh;
+  }
+
   async claim(tenantId: string, userId: string, turnoverId: string) {
     let result;
     try {
@@ -805,7 +1010,17 @@ export class TurnoversService {
             data: { cleanerNote: dto.note },
           });
         }
-        // photoUrls intentionally NOT persisted — no TurnoverPhoto model yet (TODO)
+        // Photo evidence. Attached to the assignment that submitted it, so a
+        // two-cleaner turnover keeps track of who photographed what.
+        if (dto.photoUrls?.length) {
+          await tx.turnoverPhoto.createMany({
+            data: dto.photoUrls.map((url) => ({
+              turnoverId,
+              turnoverAssignmentId: mine.id,
+              url,
+            })),
+          });
+        }
 
         const stillActive = turnover.assignments.filter(
           (a) => a.id !== mine.id && ACTIVE_STATUSES.includes(a.status),

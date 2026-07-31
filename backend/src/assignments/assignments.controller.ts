@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
+import { todayInAppZone } from '../common/time';
 import { AssignmentsService } from './assignments.service';
 
 @ApiTags('Assignments')
@@ -19,7 +20,7 @@ export class AssignmentsController {
   getMyAssignments(@Req() req: TenantRequest, @Query('date') date: string) {
     return this.service.getMyAssignments(
       req.userId!,
-      date || new Date().toISOString().split('T')[0],
+      date || todayInAppZone(),
     );
   }
 

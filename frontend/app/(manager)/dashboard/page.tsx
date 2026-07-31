@@ -52,7 +52,7 @@ export default function DashboardPage() {
   function shiftDate(days: number) {
     const d = new Date(date);
     d.setDate(d.getDate() + days);
-    setDate(d.toISOString().split('T')[0]);
+    setDate(d.toLocaleDateString('sv-SE'));
   }
 
   const isToday = date === todayISO();

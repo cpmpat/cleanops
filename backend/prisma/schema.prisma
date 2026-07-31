@@ -815,6 +815,7 @@ model Turnover {
   fromBooking      Booking?        @relation("TurnoverFromBooking", fields: [fromBookingId], references: [id])
   toBooking        Booking?        @relation("TurnoverToBooking",   fields: [toBookingId],   references: [id])
   assignments      TurnoverAssignment[]
+  photos           TurnoverPhoto[]
 
   @@index([tenantId, propertyId, availableFrom])
   @@index([tenantId, status, dueBy])
@@ -842,9 +843,27 @@ model TurnoverAssignment {
   turnover         Turnover          @relation(fields: [turnoverId],   references: [id], onDelete: Cascade)
   user             User              @relation("AssignedTurnover",    fields: [userId],       references: [id])
   assignedBy       User?             @relation("TurnoverAssignedBy",  fields: [assignedById], references: [id])
+  photos           TurnoverPhoto[]
 
   @@index([turnoverId])
   @@index([userId])
   @@index([userId, status])
   @@map("turnover_assignments")
+}
+
+/// Photo evidence attached to a turnover, uploaded straight to GCS via a signed
+/// URL; only the public URL is stored. Mirrors CleaningPhoto, which it replaces.
+model TurnoverPhoto {
+  id                    String              @id @default(uuid())
+  turnoverId            String
+  turnoverAssignmentId  String?
+  url                   String
+  caption               String?
+  uploadedAt            DateTime            @default(now())
+
+  turnover              Turnover            @relation(fields: [turnoverId], references: [id], onDelete: Cascade)
+  turnoverAssignment    TurnoverAssignment? @relation(fields: [turnoverAssignmentId], references: [id])
+
+  @@index([turnoverId])
+  @@map("turnover_photos")
 }
