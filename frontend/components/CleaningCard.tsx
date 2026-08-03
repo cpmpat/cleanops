@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { MapPin, Users, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame, Crown } from 'lucide-react';
-import { formatTime } from '@/lib/utils';
+import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
 
@@ -168,7 +168,7 @@ export function CleaningCard({
         <div className="flex items-center gap-3 text-xs text-ink-muted flex-wrap">
           <span className="flex items-center gap-1">
             <Users size={12} />
-            {event.numAdults + event.numChildren}
+            {formatOccupancy(event.numAdults, event.numChildren)}
           </span>
           <span className="flex items-center gap-1">
             <LogIn size={12} className="text-ink-faint" />

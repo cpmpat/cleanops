@@ -40,3 +40,19 @@ export function channelColor(channel: string): string {
   };
   return map[channel] ?? map.OTHER;
 }
+
+/**
+ * Party size for the cards, as "adults+children" — e.g. 2 adults and 2 children
+ * render as "2+2".
+ *
+ * A single total hides the composition the cleaner is actually preparing for:
+ * "4" reads the same whether it is four adults or two adults and two kids, and
+ * those are different bed, towel and amenity setups. The "+" only appears when
+ * there are children, so the common all-adult booking still reads as one clean
+ * number.
+ */
+export function formatOccupancy(numAdults?: number | null, numChildren?: number | null): string {
+  const adults = numAdults ?? 0;
+  const children = numChildren ?? 0;
+  return children > 0 ? `${adults}+${children}` : `${adults}`;
+}

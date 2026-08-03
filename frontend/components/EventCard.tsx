@@ -1,5 +1,5 @@
 'use client';
-import { formatTime } from '@/lib/utils';
+import { formatTime, formatOccupancy } from '@/lib/utils';
 import { StatusBadge, TypeBadge, ChannelDot } from './StatusBadge';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -57,7 +57,7 @@ export function EventCard({ event, t, onClick, isManager, compact }: EventCardPr
           {/* Guests */}
           <span className="flex items-center gap-1">
             <Users size={12} />
-            {event.numAdults + event.numChildren}
+            {formatOccupancy(event.numAdults, event.numChildren)}
           </span>
 
           {/* Channel dot */}

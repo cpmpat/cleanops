@@ -14,6 +14,7 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "reconcile:turnovers": "ts-node -P tsconfig.scripts.json scripts/reconcile-turnovers.ts",
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
+    "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },
   "dependencies": {

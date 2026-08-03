@@ -39,3 +39,10 @@ coverage/
 
 # Local archive folders (we created these during cleanup)
 CleanOps_archive_*
+
+# maintenance script artifacts
+backend/missing-ids.txt
+backend/backfill-*.json
+backend/backfill-done.txt
+backend/backfill-failed-*.txt
+backend/reconcile-*.json

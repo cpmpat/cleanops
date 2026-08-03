@@ -4,7 +4,7 @@ import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
   LogIn, LogOut, Flame, Crown, Clock, Play,
 } from 'lucide-react';
-import { formatTime } from '@/lib/utils';
+import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
 
@@ -152,8 +152,9 @@ export function TurnoverCard({
   const bookingRef =
     toBooking?.bookingRef ?? fromBooking?.bookingRef ?? null;
 
-  const guestCount =
-    (toBooking?.numAdults ?? 0) + (toBooking?.numChildren ?? 0);
+  // "adults+children" — see formatOccupancy. Reads the INCOMING booking:
+  // this is the party the unit is being prepared for.
+  const guestCount = formatOccupancy(toBooking?.numAdults, toBooking?.numChildren);
 
   const nights = calcNights(toBooking?.checkInTime, toBooking?.checkOutTime);
 
