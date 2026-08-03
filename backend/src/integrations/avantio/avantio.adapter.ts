@@ -48,7 +48,7 @@ interface AvantioAccommodationRaw {
   _links?: Record<string, string>;
 }
 
-interface AvantioBookingRaw {
+export interface AvantioBookingRaw {
   id: string;
   reference: string;
   agentReference?: string;
@@ -59,7 +59,17 @@ interface AvantioBookingRaw {
   updatedAt: string;
   // Only present when fetched via GET /bookings/{id} — never in list responses.
   accommodation?: { id: string; userId?: string };
-  occupancy: { adults: number; children: any[] };
+  occupancy?: {
+    adults?: number;
+    /**
+     * NOT one entry per child. Each element is an age GROUP: `amount` is how
+     * many children are in it, `age` is the bracket Avantio/the channel
+     * reports for that group. `[{ amount: 3, age: 12 }]` is THREE children.
+     */
+    children?: Array<{ amount?: number; age?: number }>;
+    /** Present in the API, not yet surfaced in the product. */
+    infants?: number;
+  };
   customer?: {
     name?: string;
     surnames?: string[];
@@ -75,6 +85,44 @@ interface AvantioBookingRaw {
   comments?: { customer?: string; company?: string };
   extras?: Array<{ info?: { name?: string; category?: { code?: string } } }>;
   tags?: string[];
+}
+
+/**
+ * Derive head counts from an Avantio `occupancy` object.
+ *
+ * The subtle part is `children`. It is an array of age GROUPS, each with an
+ * `amount`, not an array of individual children — so the count is the sum of
+ * `amount`, never `children.length`. Using `.length` undercounts every booking
+ * where a group holds more than one child, which is the common case:
+ * `{ adults: 2, children: [{ amount: 2, age: 12 }] }` is a party of 4, but
+ * `.length` reports 1 child and the card renders "3".
+ *
+ * Exported so scripts recompute occupancy exactly the way the sync does.
+ */
+export function parseOccupancy(
+  occupancy: AvantioBookingRaw['occupancy'],
+): { numAdults: number; numChildren: number } {
+  // `?? 1`, not `|| 1`: only a MISSING value falls back to 1. A raw `adults: 0`
+  // is reported as 0 — it is what Avantio holds, and inventing a guest to
+  // replace it hides bookings whose occupancy was never filled in. The old
+  // `|| 1` rewrote those zeros to 1 and made unknown occupancy indistinguishable
+  // from a real single-adult stay.
+  const numAdults =
+    typeof occupancy?.adults === 'number' && Number.isFinite(occupancy.adults)
+      ? occupancy.adults
+      : 1;
+
+  const numChildren = Array.isArray(occupancy?.children)
+    ? occupancy.children.reduce((sum, group) => {
+        // A group with no `amount` still describes at least one child.
+        const amount = typeof group?.amount === 'number' && Number.isFinite(group.amount)
+          ? group.amount
+          : 1;
+        return sum + Math.max(0, amount);
+      }, 0)
+    : 0;
+
+  return { numAdults, numChildren };
 }
 
 interface AvantioResponse<T> {
@@ -461,7 +509,7 @@ export class AvantioAdapter implements PmsAdapter {
       : undefined;
     const guestEmail = raw.customer?.contact?.emails?.[0]?.address || undefined;
     const channel = raw.salesChannel?.name || 'Other';
-    const numChildren = Array.isArray(raw.occupancy?.children) ? raw.occupancy.children.length : 0;
+    const { numAdults, numChildren } = parseOccupancy(raw.occupancy);
 
     return {
       pmsBookingId: String(raw.id),
@@ -469,7 +517,7 @@ export class AvantioAdapter implements PmsAdapter {
       checkInTime: checkInDateTime,
       checkOutTime: checkOutDateTime,
       pmsPropertyId: String(raw.accommodation.id),
-      numAdults: raw.occupancy?.adults || 1,
+      numAdults,
       numChildren,
       channel: this.normalizeChannel(channel),
       status: this.mapStatus(raw.status),
