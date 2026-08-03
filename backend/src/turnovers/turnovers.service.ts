@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
@@ -671,6 +672,86 @@ export class TurnoversService {
     return fresh;
   }
 
+  // ==========================================================================
+  // Supersession guard
+  // ==========================================================================
+
+  /**
+   * Reject a write aimed at a retired turnover.
+   *
+   * `TurnoverSyncService.supersede()` never edits a turnover in place — it
+   * retires the row and creates a replacement with a NEW id. Every read path
+   * filters `supersededById: null`, so a retired row is invisible in every
+   * list. The write paths did not, which meant a browser holding an id from
+   * before a reschedule could still act on the dead row: the claim succeeded,
+   * the assignment attached to a turnover no query returns, the cleaner never
+   * saw it in "Mine", and the live turnover stayed in the pool for someone
+   * else to take. Silent, and it loses a cleaning.
+   *
+   * Throws 409 rather than 404 so the client can tell "this moved, refresh"
+   * apart from "this never existed", and hands back the id that is live now.
+   */
+  private async assertNotSuperseded(
+    turnover: { id: string; supersededById: string | null },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (!turnover.supersededById) return;
+
+    const currentTurnoverId = await this.resolveLiveTurnoverId(turnover.id, tx);
+    this.logger.warn(
+      `Write rejected against superseded turnover ${turnover.id} ` +
+      `(live now: ${currentTurnoverId ?? 'unresolved'})`,
+    );
+
+    throw new ConflictException({
+      code: 'TURNOVER_SUPERSEDED',
+      message:
+        'This cleaning was rescheduled. Refresh to see the current version.',
+      turnoverId: turnover.id,
+      currentTurnoverId,
+    });
+  }
+
+  /**
+   * Follow `supersededById` to the row that is live now. Bounded and
+   * cycle-guarded — the reconciler treats CHAIN_CYCLE as a real (if rare)
+   * state, and this must not spin on one. Returns null when the chain cycles
+   * or outruns the hop limit; the caller still rejects the write, it just
+   * cannot say where the work moved to.
+   */
+  private async resolveLiveTurnoverId(
+    startId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string | null> {
+    const MAX_HOPS = 20;
+    const seen = new Set<string>([startId]);
+    let current = await tx.turnover.findUnique({
+      where: { id: startId },
+      select: { id: true, supersededById: true },
+    });
+
+    for (let hop = 0; hop < MAX_HOPS; hop++) {
+      if (!current) return null;
+      if (!current.supersededById) return current.id;
+      if (seen.has(current.supersededById)) {
+        this.logger.error(
+          `Supersession cycle detected at turnover ${current.id} -> ${current.supersededById}`,
+        );
+        return null;
+      }
+      seen.add(current.supersededById);
+      current = await tx.turnover.findUnique({
+        where: { id: current.supersededById },
+        select: { id: true, supersededById: true },
+      });
+    }
+
+    this.logger.error(
+      `Supersession chain from ${startId} exceeded ${MAX_HOPS} hops`,
+    );
+    return null;
+  }
+
   async claim(tenantId: string, userId: string, turnoverId: string) {
     let result;
     try {
@@ -690,6 +771,7 @@ export class TurnoversService {
           if (!turnover) {
             throw new NotFoundException('Turnover not found');
           }
+          await this.assertNotSuperseded(turnover, tx);
           if (turnover.status !== TurnoverStatus.PENDING) {
             throw new BadRequestException('Turnover is not in the pool');
           }
@@ -783,6 +865,7 @@ export class TurnoversService {
       });
 
       if (!turnover) throw new NotFoundException('Turnover not found');
+      await this.assertNotSuperseded(turnover, tx);
 
       // Only enforce cutoff if dueBy is set (trailing nulls have no deadline)
       if (turnover.dueBy) {
@@ -875,6 +958,7 @@ export class TurnoversService {
       });
 
       if (!turnover) throw new NotFoundException('Turnover not found');
+      await this.assertNotSuperseded(turnover, tx);
       if (turnover.status === TurnoverStatus.COMPLETED) {
         throw new BadRequestException('Turnover is already completed');
       }
@@ -984,6 +1068,7 @@ export class TurnoversService {
         });
 
         if (!turnover) throw new NotFoundException('Turnover not found');
+        await this.assertNotSuperseded(turnover, tx);
 
         const mine = turnover.assignments.find(
           (a) => a.userId === userId && ACTIVE_STATUSES.includes(a.status),
