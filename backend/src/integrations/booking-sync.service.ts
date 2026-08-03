@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import {
   PmsBooking, PmsAccommodation, PmsTenantConfig,
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
+import { CleanOpsGateway } from '../websocket/websocket.module';
 import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
 
@@ -46,6 +47,12 @@ export class BookingSyncService {
     private avantioAdapter: AvantioAdapter,
     private gcs: GcsService,
     private turnoverSync: TurnoverSyncService,
+    // Optional on purpose. The maintenance scripts boot a minimal Nest context
+    // (scripts/lib/script-context.ts) that has no WebsocketModule, and a
+    // required dependency would make every script fail to start. Absent here
+    // is also the behaviour we want: a backfill must not push a refresh at
+    // every open client.
+    @Optional() private readonly gateway?: CleanOpsGateway,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────
@@ -160,6 +167,30 @@ export class BookingSyncService {
       }
     } catch (e) {
       this.logger.warn(`[${tenant.name}] Reconcile failed: ${(e as Error).message}`);
+    }
+
+    // ── Tell every open client the schedule moved ──
+    //
+    // Human-driven changes already broadcast: TurnoversService.claim/drop/etc
+    // hold the gateway and emit, which is why the pool refreshes the instant
+    // another cleaner takes a job. PMS-driven changes did not, so a booking
+    // extended in Avantio silently moved a turnover to another day while every
+    // running app kept rendering the copy it fetched hours earlier. A cleaner
+    // saw a cleaning on the wrong day until she happened to reload.
+    //
+    // ONE emit per run, not per booking: a sync can touch hundreds of rows and
+    // the clients respond by refetching, so per-booking emission would be a
+    // self-inflicted thundering herd.
+    const changed =
+      bookingResult.created + bookingResult.updated + bookingResult.cancelled;
+    if (changed > 0) {
+      this.gateway?.emitToTenant(tenantId, 'event:updated', {
+        source: 'pms-sync',
+        created: bookingResult.created,
+        updated: bookingResult.updated,
+        cancelled: bookingResult.cancelled,
+        at: new Date().toISOString(),
+      });
     }
 
     return { accommodations: accomResult, bookings: bookingResult };

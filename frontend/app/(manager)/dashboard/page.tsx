@@ -40,6 +40,10 @@ export default function DashboardPage() {
   useSocket({
     'event:created': () => load(),
     'event:updated': (u: CleaningEvent) => {
+      // The PMS sync emits an aggregate payload ({ source: 'pms-sync', … })
+      // rather than a single event, because one run can change hundreds of
+      // rows. It carries no id, so patch-in-place cannot apply — reload.
+      if (!u?.id) { load(); return; }
       setEventList(prev => prev.map(e => e.id === u.id ? u : e));
       if (selected?.id === u.id) setSelected(u);
     },
