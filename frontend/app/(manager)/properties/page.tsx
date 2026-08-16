@@ -16,6 +16,8 @@ export default function PropertiesPage() {
   const [search, setSearch] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  /** Local edits for the standing note, keyed by property id. */
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     Promise.all([propsApi.list(), usersApi.list()])
@@ -26,6 +28,25 @@ export default function PropertiesPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  /**
+   * The standing note shown under the unit name on every cleaner card.
+   * Keep it to one short sentence — keys, a quirk, where the bins are.
+   */
+  async function handleSaveNote(propertyId: string, value: string) {
+    const current = props.find(p => p.id === propertyId)?.notes ?? '';
+    const next = value.trim();
+    if (next === current.trim()) return;
+
+    setSavingId(propertyId);
+    try {
+      await propsApi.update(propertyId, { notes: next || null } as any);
+      setProps(prev => prev.map(p => (p.id === propertyId ? { ...p, notes: next || null } : p)));
+      setSavedId(propertyId);
+      setTimeout(() => setSavedId(null), 2000);
+    } catch {}
+    finally { setSavingId(null); }
+  }
 
   async function handleSetDefaultCleaner(propertyId: string, cleanerId: string) {
     setSavingId(propertyId);
@@ -83,8 +104,9 @@ export default function PropertiesPage() {
       ) : (
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden divide-y divide-surface-border">
           {/* Header row */}
-          <div className="grid grid-cols-[1fr_200px_32px] gap-4 px-5 py-2.5 bg-surface-sunken">
+          <div className="grid grid-cols-[1fr_260px_200px_32px] gap-4 px-5 py-2.5 bg-surface-sunken">
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Unit</p>
+            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Note on the card</p>
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Default cleaner</p>
             <div />
           </div>
@@ -94,7 +116,7 @@ export default function PropertiesPage() {
             const isSaved = savedId === p.id;
 
             return (
-              <div key={p.id} className="grid grid-cols-[1fr_200px_32px] gap-4 items-center px-5 py-3.5 hover:bg-surface-sunken transition">
+              <div key={p.id} className="grid grid-cols-[1fr_260px_200px_32px] gap-4 items-center px-5 py-3.5 hover:bg-surface-sunken transition">
                 {/* Name + address */}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-ink truncate">{p.name}</p>
@@ -110,6 +132,18 @@ export default function PropertiesPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Standing note — lands under the unit name on the cleaner card */}
+                <input
+                  type="text"
+                  value={noteDrafts[p.id] ?? p.notes ?? ''}
+                  onChange={e => setNoteDrafts({ ...noteDrafts, [p.id]: e.target.value })}
+                  onBlur={e => handleSaveNote(p.id, e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  placeholder="Keys in the lockbox, code 4512."
+                  maxLength={160}
+                  className="w-full text-sm px-3 py-1.5 rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
+                />
 
                 {/* Default cleaner dropdown */}
                 <div className="relative">
