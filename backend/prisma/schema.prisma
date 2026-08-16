@@ -939,8 +939,9 @@ model NoteTarget {
   propertyId String?
 
   note     Note      @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  user     User?     @relation(fields: [userId], references: [id])
-  property Property? @relation(fields: [propertyId], references: [id])
+  // Cascade, ne výchozí SetNull: prázdný cíl by porušil CHECK „právě jeden cíl“.
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([noteId, userId])
   @@unique([noteId, propertyId])
@@ -960,7 +961,7 @@ model NoteAck {
   ackedAt     DateTime @default(now())
 
   note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([noteId, userId, version])
   @@index([userId])
