@@ -27,7 +27,12 @@ export function useSocket(
         transports: ['websocket'],
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionAttempts: 5,
+        // Cleaners keep this tab open for days. With a finite attempt count the
+        // socket gave up after ~5 seconds of a sleeping phone or a Wi-Fi→LTE
+        // switch and never came back — the tab then showed stale data forever.
+        reconnectionDelayMax: 30000,
+        reconnectionAttempts: Infinity,
+        randomizationFactor: 0.5,
       });
     }
 
@@ -48,6 +53,40 @@ export function useSocket(
 }
 
 // Convenience: disconnect on logout
+/**
+ * Re-run a loader whenever the tab could have missed something: socket
+ * reconnect, tab regaining focus, network coming back, plus a slow poll.
+ * Pair this with any screen whose data is pushed rather than requested.
+ */
+export function useRefreshOnReconnect(
+  refresh: () => void,
+  { intervalMs = 60000 }: { intervalMs?: number } = {},
+) {
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  useEffect(() => {
+    const run = () => refreshRef.current();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+
+    socket?.on('connect', run);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', run);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') run();
+    }, intervalMs);
+
+    return () => {
+      socket?.off('connect', run);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', run);
+      clearInterval(timer);
+    };
+  }, [intervalMs]);
+}
+
 export function disconnectSocket() {
   if (socket) {
     socket.disconnect();
