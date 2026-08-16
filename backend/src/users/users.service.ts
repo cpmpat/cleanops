@@ -7,6 +7,8 @@ interface CreateUserDto {
   name: string;
   role: UserRole;
   language?: Language;
+  /** International format, e.g. +420777123456 — source for the wa.me link. */
+  mobileNumber?: string;
 }
 
 interface UpdateUserDto {
@@ -14,6 +16,7 @@ interface UpdateUserDto {
   role?: UserRole;
   language?: Language;
   isActive?: boolean;
+  mobileNumber?: string | null;
 }
 
 @Injectable()
@@ -33,6 +36,7 @@ export class UsersService {
         name: dto.name,
         role: dto.role,
         language: dto.language || Language.en,
+        mobileNumber: normalisePhone(dto.mobileNumber),
       },
     });
   }
@@ -43,6 +47,7 @@ export class UsersService {
       select: {
         id: true, email: true, name: true, role: true,
         language: true, isActive: true, lastLoginAt: true, createdAt: true,
+        mobileNumber: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -67,7 +72,12 @@ export class UsersService {
     await this.findById(tenantId, userId);
     return this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data: {
+        ...dto,
+        ...(dto.mobileNumber !== undefined && {
+          mobileNumber: normalisePhone(dto.mobileNumber),
+        }),
+      },
     });
   }
 
@@ -142,4 +152,16 @@ export class UsersService {
       assignments: c.assignedCleanings,
     }));
   }
+}
+
+/**
+ * Store phone numbers in one shape so the wa.me link can be built by stripping
+ * a single character. Keeps a leading +, drops spaces, dashes and brackets.
+ * Empty input clears the column.
+ */
+function normalisePhone(value?: string | null): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const cleaned = value.replace(/[^\d+]/g, '');
+  return cleaned.length ? cleaned : null;
 }

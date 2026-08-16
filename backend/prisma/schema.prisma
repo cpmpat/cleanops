@@ -40,6 +40,7 @@ model Tenant {
   repairs             Repair[]
   repairMaterials     RepairMaterial[]
   turnovers           Turnover[]
+  notes               Note[]
 
   @@map("tenants")
 }
@@ -76,6 +77,8 @@ model User {
   lastSyncedAt    DateTime?
   disabledAt      DateTime?
 
+  mobileNumber     String?
+
   passwordHash     String?
   emailVerifiedAt  DateTime?
   magicLinkToken   String?   @unique
@@ -106,6 +109,10 @@ model User {
 
   assignedTurnovers          TurnoverAssignment[]  @relation("AssignedTurnover")
   createdTurnoverAssignments TurnoverAssignment[]  @relation("TurnoverAssignedBy")
+
+  authoredNotes              Note[]                @relation("NoteAuthor")
+  noteTargets                NoteTarget[]
+  noteAcks                   NoteAck[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -162,6 +169,7 @@ model Property {
   manualStreamEvents  ManualStreamEvent[]
   repairs             Repair[]
   turnovers           Turnover[]
+  noteTargets         NoteTarget[]
 
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
@@ -866,4 +874,95 @@ model TurnoverPhoto {
 
   @@index([turnoverId])
   @@map("turnover_photos")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manager messages ("Zpráva od manažera")
+//
+// A short broadcast a manager pushes to the cleaning team. It is NOT a note on
+// a single cleaning (that stays `Turnover.managerNote`) and NOT a standing fact
+// about a unit (that stays `Property.notes`). It has to be acknowledged.
+//
+// Targeting is exclusive: a message goes either to named people (STAFF) or to
+// properties (PROPERTY) — never both. Enforced by a CHECK constraint on
+// note_targets, not just by the UI.
+//
+// For PROPERTY messages the recipient set is resolved CONTINUOUSLY, not frozen
+// at send time: whoever holds an active turnover on that property, plus the
+// property's default cleaner, plus anyone who claims a turnover there while the
+// message is still valid.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum NoteTargetType {
+  STAFF
+  PROPERTY
+}
+
+model Note {
+  id         String         @id @default(uuid())
+  tenantId   String
+  authorId   String
+  targetType NoteTargetType
+
+  title      String
+  /// Czech is the source text and is always required. The other three are
+  /// optional translations; the reader falls back to Czech when missing.
+  bodyCs     String
+  bodyEn     String?
+  bodyRu     String?
+  bodyUk     String?
+
+  validFrom  DateTime       @default(now())
+  /// Mandatory. Without an end date messages pile up and get tapped away unread.
+  validUntil DateTime
+
+  /// Bumped whenever title/body changes — invalidates existing acknowledgements.
+  version    Int            @default(1)
+  isArchived Boolean        @default(false)
+
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id])
+  author  User         @relation("NoteAuthor", fields: [authorId], references: [id])
+  targets NoteTarget[]
+  acks    NoteAck[]
+
+  @@index([tenantId, isArchived, validUntil])
+  @@map("notes")
+}
+
+model NoteTarget {
+  id         String  @id @default(uuid())
+  noteId     String
+  userId     String?
+  propertyId String?
+
+  note     Note      @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id])
+  property Property? @relation(fields: [propertyId], references: [id])
+
+  @@unique([noteId, userId])
+  @@unique([noteId, propertyId])
+  @@index([userId])
+  @@index([propertyId])
+  @@map("note_targets")
+}
+
+model NoteAck {
+  id          String   @id @default(uuid())
+  noteId      String
+  userId      String
+  /// Version acknowledged. An edited message (version + 1) comes back.
+  version     Int
+  /// Which language the cleaner actually saw when confirming.
+  localeShown String?
+  ackedAt     DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([noteId, userId, version])
+  @@index([userId])
+  @@map("note_acks")
 }
