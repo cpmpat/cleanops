@@ -30,6 +30,23 @@ export class NotesController {
     return this.service.activeForUser(req.tenantId!, req.userId!);
   }
 
+  @Get('mine')
+  @ApiOperation({
+    summary: 'Every message addressed to me, confirmed or not',
+    description:
+      'Feeds the Notifikace screen. Confirmed messages stay in the list until ' +
+      'they expire — people come back to re-read them.',
+  })
+  mine(@Req() req: TenantRequest) {
+    return this.service.mineForUser(req.tenantId!, req.userId!);
+  }
+
+  @Get('count')
+  @ApiOperation({ summary: 'Number of messages I have not confirmed (tab badge)' })
+  count(@Req() req: TenantRequest) {
+    return this.service.unconfirmedCount(req.tenantId!, req.userId!);
+  }
+
   @Post(':id/ack')
   @ApiOperation({ summary: 'Confirm a message ("Rozumím")' })
   ack(

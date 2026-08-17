@@ -652,6 +652,13 @@ export const turnovers = {
   byDate: (date: string) =>
     get<Turnover[]>(`/turnovers?date=${date}`),
 
+  /**
+   * Unclaimed turnovers with a guest arriving today — the red tab badge.
+   * Same filter as the pool, so the number matches the flagged cards.
+   */
+  todayArrivalCount: () =>
+    get<{ count: number }>('/turnovers/pool/today-arrivals/count'),
+
   byDateRange: (from: string, to: string) =>
     get<Turnover[]>(`/turnovers?from=${from}&to=${to}`),
 
@@ -1338,6 +1345,13 @@ export interface ManagerNote {
   awaitingRecipients: boolean;
 }
 
+/** A message as the Notifikace screen sees it — confirmed ones included. */
+export interface MyNote extends ActiveNote {
+  acknowledged: boolean;
+  ackedAt: string | null;
+  properties: { id: string; name: string }[];
+}
+
 export interface CreateNoteInput {
   targetType: NoteTargetType;
   title: string;
@@ -1354,6 +1368,10 @@ export interface CreateNoteInput {
 export const notes = {
   /** Unconfirmed messages for the logged-in user. Safe to call often. */
   active: () => get<ActiveNote[]>('/notes/active'),
+  /** Everything addressed to me, confirmed or not — the Notifikace screen. */
+  mine: () => get<MyNote[]>('/notes/mine'),
+  /** Just the number, for the tab badge. */
+  count: () => get<{ count: number }>('/notes/count'),
   ack: (id: string, localeShown?: string) =>
     post<{ id: string }>(`/notes/${id}/ack`, { localeShown }),
 

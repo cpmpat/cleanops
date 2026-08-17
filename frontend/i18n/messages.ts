@@ -32,6 +32,21 @@ export interface MessageStrings {
     message: string;
     action: string;
   };
+  section: {
+    navLabel: string;
+    title: string;
+    waiting: (n: number) => string;
+    confirmedDivider: string;
+    confirmedChip: string;
+    confirmedAt: (date: string) => string;
+    emptyTitle: string;
+    emptyHint: string;
+    forTeam: (n: number) => string;
+    forProperty: (name: string) => string;
+  };
+  card: {
+    swapToday: string;
+  };
   manager: {
     navLabel: string;
     title: string;
@@ -110,6 +125,19 @@ const en: MessageStrings = {
     message: 'A new version of the app is available.',
     action: 'Reload',
   },
+  section: {
+    navLabel: 'Alerts',
+    title: 'Alerts',
+    waiting: (n) => `${n} waiting for confirmation`,
+    confirmedDivider: 'Confirmed',
+    confirmedChip: 'Confirmed',
+    confirmedAt: (date) => `confirmed ${date}`,
+    emptyTitle: 'No new messages',
+    emptyHint: 'When your manager sends something, it shows up here.',
+    forTeam: (n) => `For ${n} team members`,
+    forProperty: (name) => `For ${name}`,
+  },
+  card: { swapToday: 'Turnaround today' },
   manager: {
     navLabel: 'Messages',
     title: 'Messages',
@@ -188,6 +216,19 @@ const cs: MessageStrings = {
     message: 'Je k dispozici nová verze aplikace.',
     action: 'Obnovit',
   },
+  section: {
+    navLabel: 'Notifikace',
+    title: 'Notifikace',
+    waiting: (n) => `${n} ${n === 1 ? 'čeká' : n < 5 ? 'čekají' : 'čeká'} na potvrzení`,
+    confirmedDivider: 'Potvrzené',
+    confirmedChip: 'Potvrzeno',
+    confirmedAt: (date) => `potvrzeno ${date}`,
+    emptyTitle: 'Žádné nové zprávy',
+    emptyHint: 'Když manažer něco pošle, uvidíte to tady.',
+    forTeam: (n) => `Pro ${n} ${n === 1 ? 'člena' : n < 5 ? 'členy' : 'členů'} týmu`,
+    forProperty: (name) => `Pro objekt ${name}`,
+  },
+  card: { swapToday: 'Výměna dnes' },
   manager: {
     navLabel: 'Zprávy',
     title: 'Zprávy',
@@ -266,6 +307,19 @@ const ru: MessageStrings = {
     message: 'Доступна новая версия приложения.',
     action: 'Обновить',
   },
+  section: {
+    navLabel: 'Уведомления',
+    title: 'Уведомления',
+    waiting: (n) => `${n} ждёт подтверждения`,
+    confirmedDivider: 'Подтверждённые',
+    confirmedChip: 'Подтверждено',
+    confirmedAt: (date) => `подтверждено ${date}`,
+    emptyTitle: 'Новых сообщений нет',
+    emptyHint: 'Когда менеджер что-то отправит, вы увидите это здесь.',
+    forTeam: (n) => `Для ${n} сотрудников`,
+    forProperty: (name) => `Для объекта ${name}`,
+  },
+  card: { swapToday: 'Смена сегодня' },
   manager: {
     navLabel: 'Сообщения',
     title: 'Сообщения',
@@ -344,6 +398,19 @@ const uk: MessageStrings = {
     message: 'Доступна нова версія застосунку.',
     action: 'Оновити',
   },
+  section: {
+    navLabel: 'Сповіщення',
+    title: 'Сповіщення',
+    waiting: (n) => `${n} чекає на підтвердження`,
+    confirmedDivider: 'Підтверджені',
+    confirmedChip: 'Підтверджено',
+    confirmedAt: (date) => `підтверджено ${date}`,
+    emptyTitle: 'Немає нових повідомлень',
+    emptyHint: 'Коли менеджер щось надішле, ви побачите це тут.',
+    forTeam: (n) => `Для ${n} працівників`,
+    forProperty: (name) => `Для об'єкта ${name}`,
+  },
+  card: { swapToday: 'Заміна сьогодні' },
   manager: {
     navLabel: 'Повідомлення',
     title: 'Повідомлення',

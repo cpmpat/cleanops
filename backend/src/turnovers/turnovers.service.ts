@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { todayInAppZone, startOfDayInAppZone } from '../common/time';
 import {
   TurnoverStatus,
   AssignmentStatus,
@@ -230,7 +231,12 @@ export class TurnoversService {
    * preferences. No selection → empty list (forces cleaner to pick in Settings
    * first).
    */
-  async getPool(tenantId: string, userId?: string) {
+  /**
+   * The pool's `where`, shared by the list and the badge count so the two can
+   * never drift apart. Returns null when the cleaner has selected no
+   * properties — the pool is empty for them by design.
+   */
+  private async buildPoolWhere(tenantId: string, userId?: string) {
     // Rolling cutoff: midnight, N days ago, in server local time.
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - POOL_STALE_CUTOFF_DAYS);
@@ -252,9 +258,16 @@ export class TurnoversService {
       const prefs = (user?.preferences as any) ?? {};
       const propertyIds: string[] = prefs?.cleaningsPoolFilter?.propertyIds ?? [];
 
-      if (!propertyIds.length) return [];
+      if (!propertyIds.length) return null;
       where.propertyId = { in: propertyIds };
     }
+
+    return where;
+  }
+
+  async getPool(tenantId: string, userId?: string) {
+    const where = await this.buildPoolWhere(tenantId, userId);
+    if (!where) return [];
 
     return this.prisma.turnover.findMany({
       where,
@@ -264,6 +277,39 @@ export class TurnoversService {
         { availableFrom: 'asc' },
       ],
     });
+  }
+
+  /**
+   * How many pool turnovers have a guest arriving TODAY.
+   *
+   * This is the red badge on the Úklidy tab. It counts work that is unclaimed
+   * *and* has a hard deadline today — a flat someone checks into this
+   * afternoon. What matters is the arrival, not whether the previous guest
+   * left this morning or last week: either way the unit has to be ready before
+   * the new guest walks in, and nobody has taken it.
+   *
+   * Deliberately built on the same `where` as getPool(), property preferences
+   * included, so the number always equals the number of flagged cards she can
+   * actually see. A badge that counts something invisible is a badge people
+   * learn to ignore.
+   */
+  async getTodayArrivalPoolCount(tenantId: string, userId?: string) {
+    const where = await this.buildPoolWhere(tenantId, userId);
+    if (!where) return { count: 0 };
+
+    const today = todayInAppZone();
+    const count = await this.prisma.turnover.count({
+      where: {
+        ...where,
+        toBooking: {
+          checkInTime: {
+            gte: startOfDayInAppZone(today),
+            lt: startOfDayInAppZone(addDays(today, 1)),
+          },
+        },
+      },
+    });
+    return { count };
   }
 
   /**
@@ -1366,4 +1412,11 @@ function pragueMidnightUtc(year: number, month1to12: number, day: number): Date 
   );
   const offset = asUTC - guess.getTime();
   return new Date(guess.getTime() - offset);
+}
+
+/** YYYY-MM-DD shifted by whole days, staying in that string form. */
+function addDays(day: string, delta: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
 }
