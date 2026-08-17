@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { users as usersApi, type User } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { translations, type Locale } from '@/i18n/translations';
-import { UserPlus, Users, X } from 'lucide-react';
+import { UserPlus, Users, X, Phone } from 'lucide-react';
+import { useMessageStrings } from '@/i18n/messages';
 import { cn } from '@/lib/utils';
 import { todayISO } from '@/lib/utils';
 
@@ -12,8 +13,12 @@ export default function StaffPage() {
   const { locale } = useLocale();
   const t = translations[locale];
   const ts = t.staff;
+  const mStrings = useMessageStrings(locale);
 
   const [staff, setStaff] = useState<User[]>([]);
+  const [managers, setManagers] = useState<User[]>([]);
+  const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
+  const [phoneSavedId, setPhoneSavedId] = useState<string | null>(null);
   const [workload, setWorkload] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -28,12 +33,29 @@ export default function StaffPage() {
       usersApi.workload(todayISO()),
     ]).then(([all, wl]) => {
       setStaff(all.filter(u => u.role === 'CLEANER'));
+      setManagers(all.filter(u => u.role === 'MANAGER'));
       const wlMap: Record<string, number> = {};
       wl.forEach((u: any) => { wlMap[u.id] = u.assignmentCount ?? 0; });
       setWorkload(wlMap);
     }).catch(() => {})
     .finally(() => setLoading(false));
   }, []);
+
+  /**
+   * The number a cleaner reaches this manager on from a published message.
+   * Stored on the author, not in config — whoever writes the message is the
+   * one who gets the WhatsApp.
+   */
+  async function handleSavePhone(userId: string, value: string) {
+    const current = managers.find(u => u.id === userId)?.mobileNumber ?? '';
+    if (value.trim() === current.trim()) return;
+    try {
+      const updated = await usersApi.update(userId, { mobileNumber: value.trim() || null } as any);
+      setManagers(prev => prev.map(u => (u.id === userId ? { ...u, mobileNumber: updated.mobileNumber } : u)));
+      setPhoneSavedId(userId);
+      setTimeout(() => setPhoneSavedId(null), 2000);
+    } catch {}
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -100,6 +122,41 @@ export default function StaffPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* WhatsApp contact numbers — used by the message band in the app */}
+      {managers.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-sm font-bold text-ink flex items-center gap-2">
+            <Phone size={14} />
+            WhatsApp
+          </h2>
+          <p className="text-xs text-ink-muted mt-0.5 mb-3">
+            {mStrings.manager.phoneSectionHint}
+          </p>
+          <div className="bg-white rounded-2xl border border-surface-border overflow-hidden divide-y divide-surface-border">
+            {managers.map(mgr => (
+              <div key={mgr.id} className="flex items-center gap-4 px-5 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink text-sm">{mgr.name}</p>
+                  <p className="text-xs text-ink-muted truncate">{mgr.email}</p>
+                </div>
+                <input
+                  type="tel"
+                  value={phoneDrafts[mgr.id] ?? mgr.mobileNumber ?? ''}
+                  onChange={e => setPhoneDrafts({ ...phoneDrafts, [mgr.id]: e.target.value })}
+                  onBlur={e => handleSavePhone(mgr.id, e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  placeholder="+420777123456"
+                  className="w-48 text-sm px-3 py-1.5 rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+                <span className="w-5 text-emerald-500 text-sm">
+                  {phoneSavedId === mgr.id ? '✓' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

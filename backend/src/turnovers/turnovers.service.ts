@@ -67,6 +67,9 @@ const TURNOVER_INCLUDE = {
       address: true,
       locationLat: true,
       locationLng: true,
+      // Standing fact about the unit (keys, quirks) shown under the unit name
+      // on the cleaner's card. Not a task — that is `managerNote`.
+      notes: true,
     },
   },
   fromBooking: {

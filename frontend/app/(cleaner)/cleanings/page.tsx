@@ -10,6 +10,7 @@ import {
   type Property,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
+import { ManagerMessageBand } from '@/components/ManagerMessageBand';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
 import { LogOut, Filter, X, Check } from 'lucide-react';
@@ -166,6 +167,10 @@ export default function CleaningsPoolPage() {
             : t.pool.filterSelected(selectedPropIds.size)}
         </button>
       </div>
+
+      {/* Manager messages — sits between the header and the list, never
+          inside it, so it can't be mistaken for a cleaning. */}
+      <ManagerMessageBand locale={locale} />
 
       {/* List */}
       <div className="px-4 py-4 space-y-4">

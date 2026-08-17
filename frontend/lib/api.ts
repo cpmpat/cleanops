@@ -28,6 +28,8 @@ export interface User {
   language: string;
   tenantId: string;
   preferences?: UserPreferences;
+  /** International format (+420777123456). Source for the wa.me contact link. */
+  mobileNumber?: string | null;
 }
 
 export interface UserPreferences {
@@ -45,6 +47,8 @@ export interface Property {
   locationLng?: number;
   pmsPropertyId?: string;
   defaultCleanerId?: string;
+  /** Standing fact about the unit — keys, quirks. Shown under the unit name. */
+  notes?: string | null;
 }
 
 export interface Assignment {
@@ -1165,6 +1169,98 @@ export const uploads = {
     if (!res.ok) throw new ApiError(res.status, 'Upload failed');
     return res.json() as Promise<{ id: string; url: string }>;
   },
+};
+
+// ─── Manager messages ─────────────────────────────────────────────────────────
+
+export type NoteTargetType = 'STAFF' | 'PROPERTY';
+export type NoteLocale = 'cs' | 'en' | 'ru' | 'uk';
+
+export interface NoteAuthor {
+  id: string;
+  name: string;
+  email: string;
+  mobileNumber?: string | null;
+}
+
+/** What a cleaner sees: one body, already resolved to their language. */
+export interface ActiveNote {
+  id: string;
+  title: string;
+  body: string;
+  localeShown: NoteLocale;
+  availableLocales: NoteLocale[];
+  bodies: Record<NoteLocale, string | null>;
+  version: number;
+  targetType: NoteTargetType;
+  validUntil: string;
+  createdAt: string;
+  author: NoteAuthor;
+}
+
+/** What a manager sees: every language plus live delivery state. */
+export interface ManagerNote {
+  id: string;
+  title: string;
+  bodyCs: string;
+  bodyEn?: string | null;
+  bodyRu?: string | null;
+  bodyUk?: string | null;
+  targetType: NoteTargetType;
+  validFrom: string;
+  validUntil: string;
+  version: number;
+  isArchived: boolean;
+  createdAt: string;
+  author: NoteAuthor;
+  targets: {
+    id: string;
+    userId?: string | null;
+    propertyId?: string | null;
+    user?: { id: string; name: string; email: string } | null;
+    property?: { id: string; name: string } | null;
+  }[];
+  acks: {
+    id: string;
+    userId: string;
+    version: number;
+    ackedAt: string;
+    localeShown?: string | null;
+    user?: { id: string; name: string };
+  }[];
+  recipients: { id: string; name: string; email: string }[];
+  pending: { id: string; name: string; email: string }[];
+  recipientCount: number;
+  ackedCount: number;
+  /** PROPERTY message with nobody on those units yet — not delivered. */
+  awaitingRecipients: boolean;
+}
+
+export interface CreateNoteInput {
+  targetType: NoteTargetType;
+  title: string;
+  bodyCs: string;
+  bodyEn?: string;
+  bodyRu?: string;
+  bodyUk?: string;
+  validFrom?: string;
+  validUntil: string;
+  userIds?: string[];
+  propertyIds?: string[];
+}
+
+export const notes = {
+  /** Unconfirmed messages for the logged-in user. Safe to call often. */
+  active: () => get<ActiveNote[]>('/notes/active'),
+  ack: (id: string, localeShown?: string) =>
+    post<{ id: string }>(`/notes/${id}/ack`, { localeShown }),
+
+  list: (includeExpired = false) =>
+    get<ManagerNote[]>(`/notes${includeExpired ? '?includeExpired=true' : ''}`),
+  create: (data: CreateNoteInput) => post<ManagerNote>('/notes', data),
+  update: (id: string, data: Partial<CreateNoteInput>) =>
+    patch<ManagerNote>(`/notes/${id}`, data),
+  archive: (id: string) => patch<ManagerNote>(`/notes/${id}/archive`),
 };
 
 export { ApiError };

@@ -10,6 +10,7 @@ import {
   type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
+import { ManagerMessageBand } from '@/components/ManagerMessageBand';
 import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
@@ -396,6 +397,10 @@ export default function MinePage() {
           </div>
         )}
       </div>
+
+      {/* Same band as on the pool screen — an unconfirmed message must follow
+          the cleaner across screens, not hide on the one she left. */}
+      <ManagerMessageBand locale={locale} />
 
       <div className="px-4 py-4 space-y-4">
         {loading ? (

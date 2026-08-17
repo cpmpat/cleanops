@@ -202,6 +202,14 @@ export function TurnoverCard({
             <p className="font-semibold text-ink text-base leading-snug">
               {accommodationName}
             </p>
+            {/* Standing fact about the unit (keys, quirks) — plain black text at
+                confirmation-code size. Deliberately understated: it is not a
+                task, it is something true about this flat every single time. */}
+            {property?.notes && (
+              <p className="text-[10.5px] text-ink leading-relaxed mt-0.5">
+                {property.notes}
+              </p>
+            )}
             {bookingRef && (
               <p className="text-[11px] text-ink-faint font-mono mt-0.5 truncate">
                 {bookingRef}

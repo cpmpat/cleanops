@@ -7,10 +7,11 @@ import { translations, type Locale } from '@/i18n/translations';
 import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
-  AlertTriangle, Activity, Database, Wrench,
+  AlertTriangle, Activity, Database, Wrench, Mail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
+import { messageStrings } from '@/i18n/messages';
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'en', label: 'EN' },
@@ -52,6 +53,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/streams',    icon: Activity,        label: (t.nav as any).streams  ?? 'Streams' },
     { href: '/incidents',  icon: AlertTriangle,   label: t.nav.incidents },
     { href: '/repairs',    icon: Wrench,          label: (t.nav as any).repairs  ?? 'Repairs' },
+    { href: '/messages',   icon: Mail,            label: messageStrings[locale].manager.navLabel },
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
     { href: '/datasets',   icon: Database,        label: (t.nav as any).datasets ?? 'Datasets' },
