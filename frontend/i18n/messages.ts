@@ -68,6 +68,8 @@ export interface MessageStrings {
     noPhoneWarning: string;
     phoneSectionHint: string;
     selectedCount: (n: number) => string;
+    selectAll: string;
+    clearAll: string;
     helpTitle: string;
     helpHint: string;
     helpUpload: string;
@@ -144,6 +146,8 @@ const en: MessageStrings = {
     noPhoneWarning: 'You have no mobile number saved, so cleaners cannot reach you on WhatsApp. Add it under Staff.',
     phoneSectionHint: 'The number cleaners reach you on from a message you published. International format, e.g. +420777123456.',
     selectedCount: (n) => `${n} selected`,
+    selectAll: 'Select all',
+    clearAll: 'Clear',
     helpTitle: 'Manual (Help)',
     helpHint: 'Upload the exported HTML. It is split by language and cleaners see it on their next open — no release needed.',
     helpUpload: 'Upload manual',
@@ -220,6 +224,8 @@ const cs: MessageStrings = {
     noPhoneWarning: 'Nemáš uložené mobilní číslo, takže tě uklízečky nemůžou kontaktovat přes WhatsApp. Doplň ho v sekci Personál.',
     phoneSectionHint: 'Číslo, na které se ti uklízečky ozvou ze zprávy, kterou jsi odeslal. Mezinárodní tvar, např. +420777123456.',
     selectedCount: (n) => `${n} vybráno`,
+    selectAll: 'Vybrat vše',
+    clearAll: 'Zrušit výběr',
     helpTitle: 'Příručka (Nápověda)',
     helpHint: 'Nahraj vyexportované HTML. Rozdělí se po jazycích a uklízečky ho uvidí při dalším otevření — bez nasazení nové verze.',
     helpUpload: 'Nahrát příručku',
@@ -296,6 +302,8 @@ const ru: MessageStrings = {
     noPhoneWarning: 'У вас не сохранён номер телефона, поэтому с вами нельзя связаться в WhatsApp. Добавьте его в разделе «Персонал».',
     phoneSectionHint: 'Номер, по которому с вами свяжутся из отправленного сообщения. Международный формат, напр. +420777123456.',
     selectedCount: (n) => `${n} выбрано`,
+    selectAll: 'Выбрать всех',
+    clearAll: 'Снять выбор',
     helpTitle: 'Руководство (Справка)',
     helpHint: 'Загрузите экспортированный HTML. Он разделится по языкам, и уборщицы увидят его при следующем открытии — без выпуска новой версии.',
     helpUpload: 'Загрузить руководство',
@@ -372,6 +380,8 @@ const uk: MessageStrings = {
     noPhoneWarning: 'У вас не збережений номер телефону, тому з вами не можна звʼязатися у WhatsApp. Додайте його в розділі «Персонал».',
     phoneSectionHint: 'Номер, за яким з вами звʼяжуться з надісланого повідомлення. Міжнародний формат, напр. +420777123456.',
     selectedCount: (n) => `${n} вибрано`,
+    selectAll: 'Вибрати всіх',
+    clearAll: 'Зняти вибір',
     helpTitle: 'Посібник (Довідка)',
     helpHint: 'Завантажте експортований HTML. Він розділиться за мовами, і прибиральниці побачать його при наступному відкритті — без випуску нової версії.',
     helpUpload: 'Завантажити посібник',
