@@ -220,11 +220,16 @@ export class AuthService {
         throw new UnauthorizedException('Account is inactive');
       }
 
+      // Rebuild from the row we just read, not from the old token. Copying
+      // `payload.role` forward meant a permission change never took effect:
+      // the stale role was carried into every refreshed token, so a promoted
+      // manager kept being refused for up to 30 days — until the access token
+      // finally expired and they logged in again.
       const newPayload = {
-        sub: payload.sub,
-        tenantId: payload.tenantId,
-        role: payload.role,
-        email: payload.email,
+        sub: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        email: user.email,
       };
       const newAccessToken = this.jwt.sign(newPayload, { expiresIn: '30d' });
       const newRefreshToken = this.jwt.sign(newPayload, { expiresIn: '90d' });

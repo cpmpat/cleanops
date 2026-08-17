@@ -234,11 +234,29 @@ export default function MessagesPage() {
               <label className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
                 {targetType === 'STAFF' ? m.pickPeople : m.pickProperties}
               </label>
-              {selected.size > 0 && (
-                <span className="text-xs text-ink-muted">
-                  {m.selectedCount(selected.size)}
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {selected.size > 0 && (
+                  <span className="text-xs text-ink-muted">
+                    {m.selectedCount(selected.size)}
+                  </span>
+                )}
+                {/* Whole team in one tap — the common case for a broadcast.
+                    This is a snapshot: someone hired tomorrow is not on it. */}
+                <button
+                  onClick={() =>
+                    setSelected(
+                      selected.size === filteredPool.length
+                        ? new Set()
+                        : new Set(filteredPool.map((i: any) => i.id)),
+                    )
+                  }
+                  className="text-xs font-semibold text-accent hover:underline"
+                >
+                  {selected.size === filteredPool.length && filteredPool.length > 0
+                    ? m.clearAll
+                    : m.selectAll}
+                </button>
+              </div>
             </div>
             <div className="relative mb-2">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
