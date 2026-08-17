@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { BottomNav } from '@/components/BottomNav';
-import { notifications as notifApi, auth as authApi } from '@/lib/api';
+import { notifications as notifApi, auth as authApi, ensureFreshSession } from '@/lib/api';
+import { NewVersionPrompt } from '@/components/NewVersionPrompt';
 import { translations, type Locale } from '@/i18n/translations';
 
 export default function CleanerLayout({ children }: { children: React.ReactNode }) {
@@ -44,6 +45,21 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
     notifApi.unreadCount().then(r => setUnread(r.count)).catch(() => {});
   }, []);
 
+  // These tabs stay open for weeks and the access token lives 30 days. Renew it
+  // before it lapses, and again whenever the tab comes back to the foreground —
+  // otherwise the first symptom is every request quietly failing with a 401.
+  useEffect(() => {
+    const refresh = () => { ensureFreshSession().catch(() => {}); };
+    refresh();
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refresh);
+    };
+  }, []);
+
   const locale = (user?.language as Locale) ?? 'en';
   const t = translations[locale];
 
@@ -54,6 +70,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   return (
     <div className="min-h-screen bg-surface pb-20 no-bounce">
       {children}
+      <NewVersionPrompt locale={locale} />
       <BottomNav t={t} unreadCount={unread} />
     </div>
   );

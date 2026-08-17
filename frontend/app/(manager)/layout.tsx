@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
+import { NewVersionPrompt } from '@/components/NewVersionPrompt';
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'en', label: 'EN' },
@@ -70,6 +71,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface flex">
+      <NewVersionPrompt locale={locale} />
       <aside className="w-56 bg-ink flex-shrink-0 flex flex-col fixed h-full z-30">
 
         <div className="px-5 py-5 border-b border-white/10">

@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './auth';
+import { TOKEN_REFRESHED_EVENT } from './api';
 
 let socket: Socket | null = null;
 
@@ -50,6 +51,20 @@ export function useSocket(
       });
     };
   }, [token]);
+}
+
+/**
+ * A socket authenticates once, at handshake. After a silent token refresh the
+ * old token is still on the connection and the next reconnect would be
+ * rejected — so re-arm it and bounce the connection.
+ */
+if (typeof window !== 'undefined') {
+  window.addEventListener(TOKEN_REFRESHED_EVENT, (e: Event) => {
+    const token = (e as CustomEvent<string>).detail;
+    if (!socket || !token) return;
+    (socket.auth as Record<string, unknown>) = { token };
+    socket.disconnect().connect();
+  });
 }
 
 // Convenience: disconnect on logout

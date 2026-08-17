@@ -19,6 +19,19 @@ export interface MessageStrings {
   writtenInCzech: string;
   showIn: Record<Locale, string>;
   backToCzech: string;
+  help: {
+    title: string;
+    empty: string;
+    emptyHint: string;
+    loading: string;
+    fallbackNotice: string;
+    updated: (date: string) => string;
+    back: string;
+  };
+  newVersion: {
+    message: string;
+    action: string;
+  };
   manager: {
     navLabel: string;
     title: string;
@@ -55,6 +68,14 @@ export interface MessageStrings {
     noPhoneWarning: string;
     phoneSectionHint: string;
     selectedCount: (n: number) => string;
+    helpTitle: string;
+    helpHint: string;
+    helpUpload: string;
+    helpUploading: string;
+    helpImported: (locales: string) => string;
+    helpNone: string;
+    helpVersion: (version: number, date: string) => string;
+    helpSize: (kb: number) => string;
   };
 }
 
@@ -74,6 +95,19 @@ const en: MessageStrings = {
     uk: 'Показати українською',
   },
   backToCzech: 'Back to Czech',
+  help: {
+    title: 'Help',
+    empty: 'The manual has not been uploaded yet.',
+    emptyHint: 'Your manager uploads it in Settings.',
+    loading: 'Loading the manual…',
+    fallbackNotice: 'Not available in your language yet — showing the Czech original.',
+    updated: (date) => `Updated ${date}`,
+    back: 'Back',
+  },
+  newVersion: {
+    message: 'A new version of the app is available.',
+    action: 'Reload',
+  },
   manager: {
     navLabel: 'Messages',
     title: 'Messages',
@@ -110,6 +144,14 @@ const en: MessageStrings = {
     noPhoneWarning: 'You have no mobile number saved, so cleaners cannot reach you on WhatsApp. Add it under Staff.',
     phoneSectionHint: 'The number cleaners reach you on from a message you published. International format, e.g. +420777123456.',
     selectedCount: (n) => `${n} selected`,
+    helpTitle: 'Manual (Help)',
+    helpHint: 'Upload the exported HTML. It is split by language and cleaners see it on their next open — no release needed.',
+    helpUpload: 'Upload manual',
+    helpUploading: 'Uploading…',
+    helpImported: (locales) => `Imported: ${locales}`,
+    helpNone: 'No manual uploaded yet.',
+    helpVersion: (version, date) => `v${version} · ${date}`,
+    helpSize: (kb) => `${kb} kB`,
   },
 };
 
@@ -129,6 +171,19 @@ const cs: MessageStrings = {
     uk: 'Показати українською',
   },
   backToCzech: 'Zpět na češtinu',
+  help: {
+    title: 'Nápověda',
+    empty: 'Příručka zatím není nahraná.',
+    emptyHint: 'Nahrává ji manažer v Nastavení.',
+    loading: 'Načítám příručku…',
+    fallbackNotice: 'Ve tvém jazyce zatím není — ukazujeme český originál.',
+    updated: (date) => `Aktualizováno ${date}`,
+    back: 'Zpět',
+  },
+  newVersion: {
+    message: 'Je k dispozici nová verze aplikace.',
+    action: 'Obnovit',
+  },
   manager: {
     navLabel: 'Zprávy',
     title: 'Zprávy',
@@ -165,6 +220,14 @@ const cs: MessageStrings = {
     noPhoneWarning: 'Nemáš uložené mobilní číslo, takže tě uklízečky nemůžou kontaktovat přes WhatsApp. Doplň ho v sekci Personál.',
     phoneSectionHint: 'Číslo, na které se ti uklízečky ozvou ze zprávy, kterou jsi odeslal. Mezinárodní tvar, např. +420777123456.',
     selectedCount: (n) => `${n} vybráno`,
+    helpTitle: 'Příručka (Nápověda)',
+    helpHint: 'Nahraj vyexportované HTML. Rozdělí se po jazycích a uklízečky ho uvidí při dalším otevření — bez nasazení nové verze.',
+    helpUpload: 'Nahrát příručku',
+    helpUploading: 'Nahrávám…',
+    helpImported: (locales) => `Nahráno: ${locales}`,
+    helpNone: 'Příručka zatím není nahraná.',
+    helpVersion: (version, date) => `v${version} · ${date}`,
+    helpSize: (kb) => `${kb} kB`,
   },
 };
 
@@ -184,6 +247,19 @@ const ru: MessageStrings = {
     uk: 'Показати українською',
   },
   backToCzech: 'Вернуться к чешскому',
+  help: {
+    title: 'Справка',
+    empty: 'Руководство ещё не загружено.',
+    emptyHint: 'Его загружает менеджер в настройках.',
+    loading: 'Загружаю руководство…',
+    fallbackNotice: 'На вашем языке пока нет — показываем чешский оригинал.',
+    updated: (date) => `Обновлено ${date}`,
+    back: 'Назад',
+  },
+  newVersion: {
+    message: 'Доступна новая версия приложения.',
+    action: 'Обновить',
+  },
   manager: {
     navLabel: 'Сообщения',
     title: 'Сообщения',
@@ -220,6 +296,14 @@ const ru: MessageStrings = {
     noPhoneWarning: 'У вас не сохранён номер телефона, поэтому с вами нельзя связаться в WhatsApp. Добавьте его в разделе «Персонал».',
     phoneSectionHint: 'Номер, по которому с вами свяжутся из отправленного сообщения. Международный формат, напр. +420777123456.',
     selectedCount: (n) => `${n} выбрано`,
+    helpTitle: 'Руководство (Справка)',
+    helpHint: 'Загрузите экспортированный HTML. Он разделится по языкам, и уборщицы увидят его при следующем открытии — без выпуска новой версии.',
+    helpUpload: 'Загрузить руководство',
+    helpUploading: 'Загружаю…',
+    helpImported: (locales) => `Загружено: ${locales}`,
+    helpNone: 'Руководство ещё не загружено.',
+    helpVersion: (version, date) => `v${version} · ${date}`,
+    helpSize: (kb) => `${kb} кБ`,
   },
 };
 
@@ -239,6 +323,19 @@ const uk: MessageStrings = {
     uk: 'Показати українською',
   },
   backToCzech: 'Повернутися до чеської',
+  help: {
+    title: 'Довідка',
+    empty: 'Посібник ще не завантажено.',
+    emptyHint: 'Його завантажує менеджер у налаштуваннях.',
+    loading: 'Завантажую посібник…',
+    fallbackNotice: 'Вашою мовою поки немає — показуємо чеський оригінал.',
+    updated: (date) => `Оновлено ${date}`,
+    back: 'Назад',
+  },
+  newVersion: {
+    message: 'Доступна нова версія застосунку.',
+    action: 'Оновити',
+  },
   manager: {
     navLabel: 'Повідомлення',
     title: 'Повідомлення',
@@ -275,6 +372,14 @@ const uk: MessageStrings = {
     noPhoneWarning: 'У вас не збережений номер телефону, тому з вами не можна звʼязатися у WhatsApp. Додайте його в розділі «Персонал».',
     phoneSectionHint: 'Номер, за яким з вами звʼяжуться з надісланого повідомлення. Міжнародний формат, напр. +420777123456.',
     selectedCount: (n) => `${n} вибрано`,
+    helpTitle: 'Посібник (Довідка)',
+    helpHint: 'Завантажте експортований HTML. Він розділиться за мовами, і прибиральниці побачать його при наступному відкритті — без випуску нової версії.',
+    helpUpload: 'Завантажити посібник',
+    helpUploading: 'Завантажую…',
+    helpImported: (locales) => `Завантажено: ${locales}`,
+    helpNone: 'Посібник ще не завантажено.',
+    helpVersion: (version, date) => `v${version} · ${date}`,
+    helpSize: (kb) => `${kb} кБ`,
   },
 };
 

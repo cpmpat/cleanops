@@ -41,6 +41,7 @@ model Tenant {
   repairMaterials     RepairMaterial[]
   turnovers           Turnover[]
   notes               Note[]
+  helpDocs            HelpDoc[]
 
   @@map("tenants")
 }
@@ -111,6 +112,7 @@ model User {
   createdTurnoverAssignments TurnoverAssignment[]  @relation("TurnoverAssignedBy")
 
   authoredNotes              Note[]                @relation("NoteAuthor")
+  publishedHelpDocs          HelpDoc[]             @relation("HelpDocPublisher")
   noteTargets                NoteTarget[]
   noteAcks                   NoteAck[]
 
@@ -966,4 +968,38 @@ model NoteAck {
   @@unique([noteId, userId, version])
   @@index([userId])
   @@map("note_acks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-app manual ("Nápověda")
+//
+// One row per language. The content lives in the database rather than in the
+// repo so the manual can be updated without shipping a release — the manager
+// uploads the exported HTML and cleaners see it on their next open.
+//
+// `html` is a complete, self-contained document (its own <style>), because the
+// app renders it in an iframe. That isolation is the point: the manual's CSS
+// styles `body`, `h2`, `table` — injected into the page it would repaint the
+// whole app.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model HelpDoc {
+  id            String   @id @default(uuid())
+  tenantId      String
+  /// cs | en | ru | uk — Czech is the fallback for anything missing.
+  locale        String
+  title         String?
+  html          String
+  /// Bumped on every publish; drives the "new manual" dot in the app.
+  version       Int      @default(1)
+  publishedAt   DateTime @default(now())
+  publishedById String?
+  updatedAt     DateTime @updatedAt
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id])
+  publishedBy User?  @relation("HelpDocPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, locale])
+  @@index([tenantId])
+  @@map("help_docs")
 }
