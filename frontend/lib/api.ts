@@ -312,9 +312,87 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Silent session refresh.
+ *
+ * The access token lives 30 days, and a cleaner's tab lives longer than that —
+ * without this the tab would one day start failing every request with a silent
+ * 401 and nothing on screen would say why. The refresh token is in an httpOnly
+ * cookie, so this is the one call that must send credentials.
+ *
+ * Single-flight: ten parallel requests hitting 401 at once must produce one
+ * refresh, not ten.
+ */
+let refreshInFlight: Promise<string | null> | null = null;
+
+export const TOKEN_REFRESHED_EVENT = 'cleanops:token-refreshed';
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${BASE}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        const token: string | null = data?.accessToken ?? null;
+        if (token && typeof window !== 'undefined') {
+          localStorage.setItem('cleanops_token', token);
+          // The websocket authenticates at handshake time and holds the old
+          // token until told otherwise.
+          window.dispatchEvent(new CustomEvent(TOKEN_REFRESHED_EVENT, { detail: token }));
+        }
+        return token;
+      } catch {
+        return null;
+      }
+    })();
+    refreshInFlight.finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+/** Seconds left on the current access token, or null if we cannot tell. */
+function tokenLifetimeLeft(): number | null {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (!payload?.exp) return null;
+    return payload.exp - Math.floor(Date.now() / 1000);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh ahead of expiry rather than waiting for the first failed request.
+ * Call it on mount and when the tab regains focus.
+ */
+export async function ensureFreshSession(minDays = 7): Promise<void> {
+  const left = tokenLifetimeLeft();
+  if (left === null) return;
+  if (left > minDays * 24 * 60 * 60) return;
+  await refreshAccessToken();
+}
+
+function handleSessionExpired() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('cleanops_token');
+  localStorage.removeItem('cleanops_user');
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login';
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  allowRetry = true,
 ): Promise<T> {
   const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
@@ -325,6 +403,14 @@ async function request<T>(
       ...options.headers,
     },
   });
+
+  // Expired token: refresh once, replay once. Auth endpoints are exempt —
+  // refreshing in response to a failed login would be a loop.
+  if (res.status === 401 && allowRetry && !path.startsWith('/auth/')) {
+    const fresh = await refreshAccessToken();
+    if (fresh) return request<T>(path, options, false);
+    handleSessionExpired();
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
@@ -1261,6 +1347,54 @@ export const notes = {
   update: (id: string, data: Partial<CreateNoteInput>) =>
     patch<ManagerNote>(`/notes/${id}`, data),
   archive: (id: string) => patch<ManagerNote>(`/notes/${id}/archive`),
+};
+
+// ─── In-app manual ────────────────────────────────────────────────────────────
+
+export interface HelpDocMeta {
+  locale: string;
+  title?: string | null;
+  version: number;
+  publishedAt: string;
+  publishedBy?: { id: string; name: string; email: string } | null;
+  bytes?: number;
+}
+
+export interface HelpMeta {
+  exists: boolean;
+  locale: string | null;
+  version: number;
+  publishedAt: string | null;
+  availableLocales?: string[];
+}
+
+export interface HelpDoc {
+  locale: string;
+  requestedLocale: string;
+  /** True when the reader's language is missing and this is the Czech original. */
+  isFallback: boolean;
+  title?: string | null;
+  html: string;
+  version: number;
+  publishedAt: string;
+  availableLocales: string[];
+}
+
+export const help = {
+  /** Cheap — version only. Safe to call on every screen load. */
+  meta: () => get<HelpMeta>('/help/meta'),
+  get: (locale?: string) =>
+    get<HelpDoc>(`/help${locale ? `?locale=${locale}` : ''}`),
+
+  list: () => get<HelpDocMeta[]>('/help/docs'),
+  /** Upload the exported multi-language file; it is split per language. */
+  import: (html: string) =>
+    post<{ imported: string[]; docs: HelpDocMeta[] }>('/help/import', { html }),
+  publish: (locale: string, html: string, title?: string) =>
+    request<HelpDocMeta>(`/help/${locale}`, {
+      method: 'PUT',
+      body: JSON.stringify({ html, title }),
+    }),
 };
 
 export { ApiError };

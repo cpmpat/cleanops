@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { AuthGuard } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
@@ -37,8 +37,14 @@ class LoginDto {
 }
 
 class RefreshTokenDto {
+  /**
+   * Optional: the browser holds the refresh token in an httpOnly cookie and
+   * sends nothing in the body. Required here, the silent refresh would fail
+   * validation before the cookie fallback below ever ran.
+   */
+  @IsOptional()
   @IsString()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 const ACCESS_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;  // 30 days

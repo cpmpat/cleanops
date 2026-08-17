@@ -11,6 +11,7 @@ import {
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
 import { ManagerMessageBand } from '@/components/ManagerMessageBand';
+import { HelpLink } from '@/components/HelpLink';
 import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
@@ -315,13 +316,17 @@ export default function MinePage() {
           <div>
             <h1 className="text-xl font-bold mt-0.5">{t.mine.title}</h1>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1.5 text-white/60 hover:text-white transition text-xs py-1.5 px-2 rounded-lg hover:bg-white/10"
-          >
-            <LogOut size={14} />
-            {t.general.logout}
-          </button>
+          {/* Odhlásit + Nápověda pod ním */}
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 text-white/60 hover:text-white transition text-xs py-1.5 px-2 rounded-lg hover:bg-white/10"
+            >
+              <LogOut size={14} />
+              {t.general.logout}
+            </button>
+            <HelpLink locale={locale} />
+          </div>
         </div>
 
         {/* Range picker chips */}

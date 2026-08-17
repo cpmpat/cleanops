@@ -1,16 +1,18 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useEffect } from 'react';
-import { tenant as tenantApi, integrations } from '@/lib/api';
+import { tenant as tenantApi, integrations, help as helpApi, ApiError, type HelpDocMeta } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { translations, type Locale } from '@/i18n/translations';
-import { Settings, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Save } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Save, BookOpen, Upload } from 'lucide-react';
+import { useMessageStrings } from '@/i18n/messages';
 import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
   const { locale } = useLocale();
   const t = translations[locale];
   const ts = t.settings;
+  const m = useMessageStrings(locale).manager;
 
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -23,6 +25,12 @@ export default function SettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
+
+  // In-app manual
+  const [helpDocs, setHelpDocs] = useState<HelpDocMeta[]>([]);
+  const [helpUploading, setHelpUploading] = useState(false);
+  const [helpMessage, setHelpMessage] = useState('');
+  const [helpError, setHelpError] = useState('');
 
   useEffect(() => {
     tenantApi.get().then((data: any) => {
@@ -65,6 +73,31 @@ export default function SettingsPage() {
       setTimeout(() => setSyncDone(false), 5000);
     } catch {}
     finally { setSyncing(false); }
+  }
+
+  useEffect(() => {
+    helpApi.list().then(setHelpDocs).catch(() => {});
+  }, []);
+
+  /**
+   * The manual is authored outside the app and exported as one HTML file with
+   * a tab per language; the backend splits it into one document per language.
+   * Uploading is all it takes — no release, no deploy.
+   */
+  async function handleHelpUpload(file: File) {
+    setHelpUploading(true);
+    setHelpMessage('');
+    setHelpError('');
+    try {
+      const html = await file.text();
+      const result = await helpApi.import(html);
+      setHelpMessage(m.helpImported(result.imported.join(', ')));
+      setHelpDocs(await helpApi.list());
+    } catch (err) {
+      setHelpError(err instanceof ApiError ? err.message : t.general.error);
+    } finally {
+      setHelpUploading(false);
+    }
   }
 
   return (
@@ -187,6 +220,57 @@ export default function SettingsPage() {
             <p>Bookings: {syncResult.bookings?.created} new events, {syncResult.bookings?.updated} updated, {syncResult.bookings?.cancelled} cancelled</p>
           </div>
         )}
+      </div>
+
+      {/* In-app manual */}
+      <div className="bg-white rounded-2xl border border-surface-border p-5 mt-4">
+        <div className="flex items-center gap-2 mb-2">
+          <BookOpen size={16} className="text-ink-muted" />
+          <h2 className="font-semibold text-ink">{m.helpTitle}</h2>
+        </div>
+        <p className="text-sm text-ink-muted mb-4">{m.helpHint}</p>
+
+        <label className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition cursor-pointer disabled:opacity-50">
+          <Upload size={14} />
+          {helpUploading ? m.helpUploading : m.helpUpload}
+          <input
+            type="file"
+            accept=".html,text/html"
+            className="hidden"
+            disabled={helpUploading}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) handleHelpUpload(file);
+              e.target.value = '';
+            }}
+          />
+        </label>
+
+        {helpMessage && <p className="text-sm text-emerald-700 mt-3">{helpMessage}</p>}
+        {helpError && <p className="text-sm text-red-600 mt-3">{helpError}</p>}
+
+        <div className="mt-4">
+          {helpDocs.length === 0 ? (
+            <p className="text-sm text-ink-muted">{m.helpNone}</p>
+          ) : (
+            <div className="border border-surface-border rounded-xl divide-y divide-surface-border">
+              {helpDocs.map(doc => (
+                <div key={doc.locale} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                  <span className="font-semibold text-ink uppercase w-8">{doc.locale}</span>
+                  <span className="flex-1 min-w-0 truncate text-ink-muted">{doc.title ?? '—'}</span>
+                  <span className="text-xs text-ink-faint whitespace-nowrap">
+                    {m.helpVersion(doc.version, new Date(doc.publishedAt).toLocaleDateString())}
+                  </span>
+                  {doc.bytes != null && (
+                    <span className="text-xs text-ink-faint whitespace-nowrap">
+                      {m.helpSize(Math.round(doc.bytes / 1024))}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

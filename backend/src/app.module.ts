@@ -23,6 +23,7 @@ import { StreamsModule } from './streams/streams.module';
 import { RepairsModule } from './repairs/repairs.module';
 import { TurnoversModule } from './turnovers/turnovers.module';
 import { NotesModule } from './notes/notes.module';
+import { HelpModule } from './help/help.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { NotesModule } from './notes/notes.module';
     StorageModule,
     StreamsModule,
     NotesModule,
+    HelpModule,
   ],
 })
 export class AppModule implements NestModule {
