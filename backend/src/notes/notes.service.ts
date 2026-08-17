@@ -102,6 +102,56 @@ export class NotesService {
       .map((n) => this.present(n, user.language as NoteLocale));
   }
 
+  /**
+   * Everything currently addressed to this user — unconfirmed first, then what
+   * they have already confirmed, with the time they did it.
+   *
+   * The Notifikace screen is also where people go back to look something up
+   * ("what was that new safe code?"), which is why confirmed messages stay
+   * until they expire rather than vanishing the moment they are acknowledged.
+   */
+  async mineForUser(tenantId: string, userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { language: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const notes = await this.prisma.note.findMany({
+      where: await this.recipientWhere(tenantId, userId),
+      include: {
+        author: { select: AUTHOR_SELECT },
+        acks: { where: { userId } },
+        targets: {
+          select: { property: { select: { id: true, name: true } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return notes.map((n) => {
+      const ack = n.acks.find((a) => a.version === n.version);
+      return {
+        ...this.present(n, user.language as NoteLocale),
+        acknowledged: !!ack,
+        ackedAt: ack?.ackedAt ?? null,
+        /** Named units for PROPERTY messages — "why am I getting this". */
+        properties: n.targets.map((t) => t.property).filter(Boolean),
+      };
+    });
+  }
+
+  /** Just the number, for the tab badge. */
+  async unconfirmedCount(tenantId: string, userId: string) {
+    const notes = await this.prisma.note.findMany({
+      where: await this.recipientWhere(tenantId, userId),
+      select: { version: true, acks: { where: { userId }, select: { version: true } } },
+    });
+    return {
+      count: notes.filter((n) => !n.acks.some((a) => a.version === n.version)).length,
+    };
+  }
+
   /** "Rozumím". Idempotent — a double tap is not an error. */
   async acknowledge(
     tenantId: string,

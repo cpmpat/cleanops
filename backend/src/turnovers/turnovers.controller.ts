@@ -44,6 +44,19 @@ export class TurnoversController {
     return this.service.getPool(req.tenantId!, userId);
   }
 
+  @Get('pool/today-arrivals/count')
+  @ApiOperation({
+    summary: 'How many pool turnovers have a guest arriving today',
+    description:
+      'Powers the red badge on the Úklidy tab: unclaimed work with a deadline ' +
+      'today. Same filter as /pool, so the count always matches what the ' +
+      'cleaner sees.',
+  })
+  getTodayArrivalCount(@Req() req: TenantRequest) {
+    const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
+    return this.service.getTodayArrivalPoolCount(req.tenantId!, userId);
+  }
+
   @Get('mine')
   @ApiOperation({ summary: 'Get turnovers assigned to the current user' })
   getMine(

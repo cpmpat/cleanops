@@ -10,7 +10,6 @@ import {
   type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
-import { ManagerMessageBand } from '@/components/ManagerMessageBand';
 import { HelpLink } from '@/components/HelpLink';
 import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
@@ -403,10 +402,6 @@ export default function MinePage() {
         )}
       </div>
 
-      {/* Same band as on the pool screen — an unconfirmed message must follow
-          the cleaner across screens, not hide on the one she left. */}
-      <ManagerMessageBand locale={locale} />
-
       <div className="px-4 py-4 space-y-4">
         {loading ? (
           <div className="space-y-3">
@@ -444,6 +439,7 @@ export default function MinePage() {
                           key={tv.id}
                           turnover={tv}
                           t={t}
+                          locale={locale}
                           mode="mine"
                           userId={user?.id}
                           onDrop={() => setDropConfirm(tv)}
@@ -478,6 +474,7 @@ export default function MinePage() {
                           key={tv.id}
                           turnover={tv}
                           t={t}
+                          locale={locale}
                           mode="mine"
                           userId={user?.id}
                         />

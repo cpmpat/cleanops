@@ -1,9 +1,16 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { BottomNav } from '@/components/BottomNav';
-import { notifications as notifApi, auth as authApi, ensureFreshSession } from '@/lib/api';
+import {
+  notifications as notifApi,
+  auth as authApi,
+  notes as notesApi,
+  turnovers as turnoversApi,
+  ensureFreshSession,
+} from '@/lib/api';
+import { useSocket, useRefreshOnReconnect } from '@/lib/socket';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
 import { translations, type Locale } from '@/i18n/translations';
 
@@ -11,6 +18,8 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   const { user, loading, loadFromStorage, token, setAuth } = useAuth();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
+  const [unconfirmedNotes, setUnconfirmedNotes] = useState(0);
+  const [todayArrivals, setTodayArrivals] = useState(0);
 
   useEffect(() => { loadFromStorage(); }, []);
 
@@ -45,6 +54,22 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
     notifApi.unreadCount().then(r => setUnread(r.count)).catch(() => {});
   }, []);
 
+  // The two tab badges. Cheap count endpoints, not the full lists — this runs
+  // on every cleaner screen, including the ones that show neither.
+  const loadBadges = useCallback(() => {
+    notesApi.count().then(r => setUnconfirmedNotes(r.count)).catch(() => {});
+    turnoversApi.todayArrivalCount().then(r => setTodayArrivals(r.count)).catch(() => {});
+  }, []);
+
+  useEffect(() => { loadBadges(); }, [loadBadges]);
+  useSocket({
+    'note:changed': loadBadges,
+    'event:updated': loadBadges,
+    'event:cancelled': loadBadges,
+    'event:created': loadBadges,
+  });
+  useRefreshOnReconnect(loadBadges);
+
   // These tabs stay open for weeks and the access token lives 30 days. Renew it
   // before it lapses, and again whenever the tab comes back to the foreground —
   // otherwise the first symptom is every request quietly failing with a 401.
@@ -71,7 +96,12 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
     <div className="min-h-screen bg-surface pb-20 no-bounce">
       {children}
       <NewVersionPrompt locale={locale} />
-      <BottomNav t={t} unreadCount={unread} />
+      <BottomNav
+        t={t}
+        locale={locale}
+        unconfirmedNotes={unconfirmedNotes}
+        todayArrivals={todayArrivals}
+      />
     </div>
   );
 }

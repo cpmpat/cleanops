@@ -2,17 +2,19 @@
 import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
-  LogIn, LogOut, Flame, Crown, Clock, Play,
+  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight,
 } from 'lucide-react';
 import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
-import type { Translations } from '@/i18n/translations';
+import type { Translations, Locale } from '@/i18n/translations';
+import { useMessageStrings } from '@/i18n/messages';
 
 type CardMode = 'pool' | 'mine';
 
 interface TurnoverCardProps {
   turnover: Turnover;
   t: Translations;
+  locale?: Locale;
   mode: CardMode;
   userId?: string;
   onClaim?: () => void;
@@ -98,6 +100,7 @@ const PILL_CLASSES: Record<PillTone, string> = {
 export function TurnoverCard({
   turnover,
   t,
+  locale = 'cs',
   mode,
   userId,
   onClaim,
@@ -134,6 +137,15 @@ export function TurnoverCard({
     canDrop = canDrop && hoursUntilDue >= DROP_CUTOFF_HOURS;
   }
 
+  /**
+   * Guest arrives today and nobody has taken this yet — the work behind the red
+   * tab badge. Whether the previous guest left this morning or a week ago does
+   * not change the deadline: the flat has to be ready before the new one walks
+   * in.
+   */
+  const arrivesToday =
+    !!toBooking?.checkInTime && isToday(new Date(toBooking.checkInTime)) && !isCompleted;
+
   // Last minute: next guest arrives today AND turnover was created today
   const isLastMinute = (() => {
     if (!toBooking?.checkInTime || isCompleted) return false;
@@ -158,6 +170,7 @@ export function TurnoverCard({
 
   const nights = calcNights(toBooking?.checkInTime, toBooking?.checkOutTime);
 
+  const m = useMessageStrings(locale);
   const daysWaiting = calcDaysWaiting(turnover.availableFrom);
   const tone = pillTone(daysWaiting, turnover.dueBy);
 
@@ -168,18 +181,24 @@ export function TurnoverCard({
           ? 'border-amber-300 ring-2 ring-amber-100'
           : isLastMinute
           ? 'border-red-300 ring-2 ring-red-100'
+          : arrivesToday && mode === 'pool'
+          ? 'border-red-200 ring-2 ring-red-50'
           : 'border-surface-border'
       } ${isOverdue || isCompleted ? 'opacity-70' : ''}`}
     >
       <div
         className={`h-1 rounded-t-2xl ${
-          mode === 'mine' ? mineAccent(turnover) : statusAccent(turnover.status)
+          mode === 'mine'
+            ? mineAccent(turnover)
+            : arrivesToday
+            ? 'bg-red-600'
+            : statusAccent(turnover.status)
         }`}
       />
 
       <div className="p-4">
         {/* Top badges */}
-        {(turnover.isOwnerStay || isLastMinute) && (
+        {(turnover.isOwnerStay || isLastMinute || (arrivesToday && mode === 'pool')) && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {turnover.isOwnerStay && (
               <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-900 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 rounded-full px-2.5 py-1 shadow-sm">
@@ -191,6 +210,13 @@ export function TurnoverCard({
               <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
                 <Flame size={11} />
                 Last minute
+              </div>
+            )}
+            {/* Same-day arrival that is not last-minute: urgent, but not news. */}
+            {arrivesToday && !isLastMinute && mode === 'pool' && (
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
+                <ArrowLeftRight size={11} />
+                {m.card.swapToday}
               </div>
             )}
           </div>
@@ -338,7 +364,13 @@ export function TurnoverCard({
                 </span>
               </div>
             ) : (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-indigo-700 bg-indigo-50 border-indigo-200">
+              <div
+                className={`inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${
+                  arrivesToday
+                    ? 'text-red-700 bg-red-50 border-red-300 font-semibold'
+                    : 'text-indigo-700 bg-indigo-50 border-indigo-200'
+                }`}
+              >
                 <LogIn size={11} />
                 <span>
                   Next check-in{' '}

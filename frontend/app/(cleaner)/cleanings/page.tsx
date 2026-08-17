@@ -10,7 +10,6 @@ import {
   type Property,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
-import { ManagerMessageBand } from '@/components/ManagerMessageBand';
 import { HelpLink } from '@/components/HelpLink';
 import { translations, type Locale } from '@/i18n/translations';
 import { useSocket } from '@/lib/socket';
@@ -173,10 +172,6 @@ export default function CleaningsPoolPage() {
         </button>
       </div>
 
-      {/* Manager messages — sits between the header and the list, never
-          inside it, so it can't be mistaken for a cleaning. */}
-      <ManagerMessageBand locale={locale} />
-
       {/* List */}
       <div className="px-4 py-4 space-y-4">
         {loading ? (
@@ -213,6 +208,7 @@ export default function CleaningsPoolPage() {
                     key={turnover.id}
                     turnover={turnover}
                     t={t}
+                    locale={locale}
                     mode="pool"
                     userId={user?.id}
                     onClaim={() => handleClaim(turnover.id)}
