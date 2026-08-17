@@ -1,7 +1,7 @@
 'use client';
 import { create } from 'zustand';
 import type { User } from './api';
-import { auth } from './api';
+import { auth, ensureSessionMatchesRole } from './api';
 
 interface AuthState {
   user: User | null;
@@ -54,6 +54,9 @@ export const useAuth = create<AuthState>((set, get) => ({
       const user = await auth.me();
       set({ user, token, loading: false });
       localStorage.setItem('cleanops_user', JSON.stringify(user));
+      // The server just told us what this account is. If the token says
+      // something else, it predates a role change — swap it for a current one.
+      ensureSessionMatchesRole(user.role).catch(() => {});
     } catch {
       get().clearAuth();
     }

@@ -380,6 +380,22 @@ export async function ensureFreshSession(minDays = 7): Promise<void> {
   await refreshAccessToken();
 }
 
+/**
+ * Roles live inside the token, so a permission change only reaches the user
+ * when a new token is minted. /auth/me answers from the database — when the
+ * two disagree, the token is the stale one and a refresh settles it.
+ */
+export async function ensureSessionMatchesRole(serverRole: string): Promise<void> {
+  const token = getToken();
+  if (!token || !serverRole) return;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload?.role && payload.role !== serverRole) await refreshAccessToken();
+  } catch {
+    // Unreadable token — the next 401 handles it.
+  }
+}
+
 function handleSessionExpired() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem('cleanops_token');
