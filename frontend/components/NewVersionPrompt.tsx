@@ -26,7 +26,7 @@ export function NewVersionPrompt({ locale }: { locale: Locale }) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch('/api/build', { cache: 'no-store' });
+        const res = await fetch('/api/app-version', { cache: 'no-store' });
         const data = await res.json();
         if (!cancelled && data?.buildId && data.buildId !== BUILD_ID) setStale(true);
       } catch {
