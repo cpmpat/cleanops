@@ -8,6 +8,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma.service';
 import { CleanOpsGateway } from '../websocket/websocket.module';
+import { OFFICE_ROLES } from '../common/roles';
 
 /**
  * Conversations — the open channel on a turnover.
@@ -30,22 +31,6 @@ import { CleanOpsGateway } from '../websocket/websocket.module';
  *    of them.
  */
 
-/**
- * The office.
- *
- * These roles are members of every turnover chat from the moment it opens, may
- * invite anybody, may read any thread, and may start a direct chat. A cleaner
- * writing "to the front desk" should not have to guess who is on shift, so the
- * whole desk is in the room and whoever is free answers.
- */
-const OFFICE_ROLES = [
-  'MANAGER',
-  'ADMIN',
-  'OPERATION_MANAGER',
-  'FRONT_DESK_MANAGER',
-  'FRONT_DESK',
-  'ASSIST',
-] as const;
 /** Roles a cleaner is allowed to pull in. */
 const CLEANER_INVITABLE_ROLES = ['CLEANER'] as const;
 
@@ -346,6 +331,34 @@ export class ConversationsService {
   }
 
   /**
+   * Archive one thread by hand — the `e` key in Airchat.
+   *
+   * The nightly sweep does this on its own 30 days after the cleaning is
+   * finished; this is for the desk clearing a thread that is done sooner.
+   * Starring wins: a kept thread comes back out of the archive.
+   */
+  async archive(tenantId: string, actor: Actor, id: string, archived = true) {
+    if (!isOffice(actor.userRole)) {
+      throw new ForbiddenException('Only the office can archive a thread');
+    }
+    const chat = await this.prisma.conversation.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!chat) throw new NotFoundException('Conversation not found');
+
+    await this.prisma.conversation.update({
+      where: { id },
+      data: {
+        archivedAt: archived ? new Date() : null,
+        status: archived ? 'CLOSED' : 'OPEN',
+      },
+    });
+    this.notifyMembers(id);
+    return { archived };
+  }
+
+  /**
    * Nightly sweep: archive chats whose cleaning finished more than 30 days ago
    * and which nobody kept.
    *
@@ -449,6 +462,150 @@ export class ConversationsService {
 
     this.notifyMembers(id);
     return message;
+  }
+
+  // ─── Airchat console ───────────────────────────────────────────────────────
+
+  /**
+   * The desk's view: every thread in the tenant, bucketed into queues.
+   *
+   * The queue that matters is `waiting` — threads whose last message came from
+   * someone outside the office and has not been answered. Sorted by how long
+   * they have been waiting, so the oldest unanswered question is always at the
+   * top and the desk works downwards. Everything else here is an archive.
+   */
+  async officeQueues(
+    tenantId: string,
+    actor: Actor,
+    q: { queue?: string; sort?: string; search?: string } = {},
+  ) {
+    const queue = q.queue ?? 'waiting';
+    const archived = queue === 'archived';
+
+    const chats = await this.prisma.conversation.findMany({
+      where: {
+        tenantId,
+        ...(archived ? { archivedAt: { not: null } } : { archivedAt: null }),
+        ...(queue === 'turnover' ? { kind: 'TURNOVER' as const } : {}),
+        ...(queue === 'direct' ? { kind: 'DIRECT' as const } : {}),
+        ...(queue === 'starred'
+          ? { members: { some: { userId: actor.userId, starred: true } } }
+          : {}),
+        ...(queue === 'mine'
+          ? {
+              OR: [
+                { createdById: actor.userId },
+                { messages: { some: { authorId: actor.userId } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        turnover: {
+          select: {
+            id: true,
+            startedAt: true,
+            completedAt: true,
+            property: { select: { id: true, name: true } },
+            fromBooking: { select: { checkOutTime: true } },
+            toBooking: { select: { checkInTime: true, numAdults: true, numChildren: true } },
+          },
+        },
+        members: { select: MEMBER_SELECT },
+        // Enough history to work out who spoke last and when the wait started.
+        messages: {
+          where: { kind: 'TEXT' },
+          orderBy: { createdAt: 'desc' },
+          take: 25,
+          include: { author: { select: { id: true, name: true, email: true, role: true } } },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 300,
+    });
+
+    const me = actor.userId;
+    const decorated = chats.map((c) => {
+      const newestFirst = c.messages;
+      const last = newestFirst[0] ?? null;
+      const lastOfficeAt = newestFirst.find((msg) => isOffice(msg.author?.role))?.createdAt ?? null;
+
+      // The wait starts at the FIRST unanswered question, not the last one —
+      // somebody who has asked three times has been waiting since the first.
+      const unanswered = newestFirst
+        .filter((msg) => !isOffice(msg.author?.role))
+        .filter((msg) => !lastOfficeAt || msg.createdAt > lastOfficeAt);
+      const waitingSince = unanswered.length
+        ? unanswered[unanswered.length - 1].createdAt
+        : null;
+
+      const mine = c.members.find((mem) => mem.userId === me);
+      const unreadCount = newestFirst.filter(
+        (msg) =>
+          msg.authorId !== me &&
+          (!mine?.lastReadAt || msg.createdAt > mine.lastReadAt),
+      ).length;
+
+      return {
+        id: c.id,
+        kind: c.kind,
+        title: c.title,
+        status: c.status,
+        archivedAt: c.archivedAt,
+        lastMessageAt: c.lastMessageAt,
+        createdAt: c.createdAt,
+        turnover: c.turnover,
+        members: c.members,
+        lastMessage: last,
+        needsReply: !!waitingSince,
+        waitingSince,
+        unreadCount,
+        starred: !!mine?.starred,
+      };
+    });
+
+    const counts = {
+      waiting: decorated.filter((c) => c.needsReply).length,
+      unread: decorated.filter((c) => c.unreadCount > 0).length,
+      all: decorated.length,
+      mine: decorated.filter(
+        (c) => c.members.some((mem) => mem.userId === me) || c.lastMessage?.authorId === me,
+      ).length,
+      turnover: decorated.filter((c) => c.kind === 'TURNOVER').length,
+      direct: decorated.filter((c) => c.kind === 'DIRECT').length,
+      starred: decorated.filter((c) => c.starred).length,
+      archived: await this.prisma.conversation.count({
+        where: { tenantId, archivedAt: { not: null } },
+      }),
+    };
+
+    let items = decorated;
+    if (queue === 'waiting') items = items.filter((c) => c.needsReply);
+    if (queue === 'unread') items = items.filter((c) => c.unreadCount > 0);
+
+    if (q.search?.trim()) {
+      const needle = q.search.trim().toLowerCase();
+      items = items.filter((c) =>
+        [c.title, c.turnover?.property?.name, c.lastMessage?.body]
+          .filter(Boolean)
+          .some((v) => (v as string).toLowerCase().includes(needle)),
+      );
+    }
+
+    // Default order for the waiting queue is longest-waiting first; everywhere
+    // else the newest thread on top.
+    items.sort((a, b) => {
+      if (queue === 'waiting') {
+        const av = a.waitingSince ? new Date(a.waitingSince).getTime() : Infinity;
+        const bv = b.waitingSince ? new Date(b.waitingSince).getTime() : Infinity;
+        return q.sort === 'newest' ? bv - av : av - bv;
+      }
+      const av = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const bv = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return q.sort === 'oldest' ? av - bv : bv - av;
+    });
+
+    return { items, counts, queue };
   }
 
   // ─── Members ───────────────────────────────────────────────────────────────
@@ -598,4 +755,9 @@ export class ConversationsService {
       this.gateway.emitToUser(m.userId, 'conversation:changed', { conversationId });
     }
   }
+}
+
+/** Anyone on the desk. Their message counts as an answer. */
+function isOffice(role?: string | null): boolean {
+  return !!role && (OFFICE_ROLES as readonly string[]).includes(role);
 }

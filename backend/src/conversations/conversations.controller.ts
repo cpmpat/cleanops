@@ -1,8 +1,9 @@
 import {
-  Controller, Get, Post, Body, Param, UseGuards, Req,
+  Controller, Get, Post, Body, Param, Query, UseGuards, Req,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { AuthGuard } from '../common/guards/auth.guard';
+import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
+import { AIRCHAT_ROLES } from '../common/roles';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { ConversationsService } from './conversations.service';
 
@@ -58,6 +59,21 @@ export class ConversationsController {
   ) {
     return this.service.openDirect(
       req.tenantId!, { userId: req.userId!, userRole: req.userRole! }, dto ?? { userIds: [] },
+    );
+  }
+
+  @Get('office')
+  @Roles(...AIRCHAT_ROLES)
+  @UseGuards(RolesGuard)
+  @ApiOperation({
+    summary: 'Airchat console — every thread in the tenant, bucketed into queues',
+    description:
+      'queue: waiting | unread | all | mine | turnover | direct | starred | archived. ' +
+      'The waiting queue is sorted longest-waiting first.',
+  })
+  office(@Req() req: TenantRequest, @Query() query: any) {
+    return this.service.officeQueues(
+      req.tenantId!, { userId: req.userId!, userRole: req.userRole! }, query ?? {},
     );
   }
 
@@ -127,6 +143,21 @@ export class ConversationsController {
     @Body() dto: { starred: boolean },
   ) {
     return this.service.setStarred(req.tenantId!, req.userId!, id, !!dto?.starred);
+  }
+
+  @Post(':id/archive')
+  @Roles(...AIRCHAT_ROLES)
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Archive a thread by hand (or bring it back)' })
+  archive(
+    @Req() req: TenantRequest,
+    @Param('id') id: string,
+    @Body() dto: { archived?: boolean },
+  ) {
+    return this.service.archive(
+      req.tenantId!, { userId: req.userId!, userRole: req.userRole! }, id,
+      dto?.archived !== false,
+    );
   }
 
   @Post(':id/read')

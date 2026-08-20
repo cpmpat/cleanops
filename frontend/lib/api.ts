@@ -1562,7 +1562,46 @@ export interface ConversationCandidate extends ConversationPerson {
   canInvite: boolean;
 }
 
+/** One row in the Airchat console list. */
+export interface OfficeChatRow {
+  id: string;
+  kind: ChatKind;
+  title?: string | null;
+  status: ConversationStatus;
+  archivedAt?: string | null;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  turnover?: ConversationTurnoverRef | null;
+  members: ConversationMember[];
+  lastMessage?: ConversationMessage | null;
+  /** Last word came from outside the office and nobody answered. */
+  needsReply: boolean;
+  /** When the oldest unanswered question was asked. */
+  waitingSince?: string | null;
+  unreadCount: number;
+  starred: boolean;
+}
+
+export type OfficeQueue =
+  | 'waiting' | 'unread' | 'all' | 'mine'
+  | 'turnover' | 'direct' | 'starred' | 'archived';
+
+export interface OfficeQueuesResult {
+  items: OfficeChatRow[];
+  counts: Record<OfficeQueue, number>;
+  queue: OfficeQueue;
+}
+
 export const conversations = {
+  /** Airchat console. Office roles only. */
+  office: (params: { queue?: OfficeQueue; sort?: 'oldest' | 'newest'; search?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.queue) qs.set('queue', params.queue);
+    if (params.sort) qs.set('sort', params.sort);
+    if (params.search) qs.set('search', params.search);
+    const suffix = qs.toString();
+    return get<OfficeQueuesResult>(`/conversations/office${suffix ? `?${suffix}` : ''}`);
+  },
   list: () => get<Conversation[]>('/conversations'),
   count: () => get<{ count: number }>('/conversations/count'),
   /** Idempotent: returns the existing channel for this turnover if there is one. */
@@ -1582,7 +1621,13 @@ export const conversations = {
   addMembers: (id: string, userIds: string[]) =>
     post<Conversation>(`/conversations/${id}/members`, { userIds }),
   markRead: (id: string) => post<{ ok: true }>(`/conversations/${id}/read`, {}),
+  archive: (id: string, archived = true) =>
+    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
+  star: (id: string, starred: boolean) =>
+    post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
   /** Keep a thread through the 30-day archive sweep. */
+  archive: (id: string, archived = true) =>
+    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
   star: (id: string, starred: boolean) =>
     post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
 };
