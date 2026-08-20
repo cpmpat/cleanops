@@ -1621,15 +1621,12 @@ export const conversations = {
   addMembers: (id: string, userIds: string[]) =>
     post<Conversation>(`/conversations/${id}/members`, { userIds }),
   markRead: (id: string) => post<{ ok: true }>(`/conversations/${id}/read`, {}),
-  archive: (id: string, archived = true) =>
-    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
-  star: (id: string, starred: boolean) =>
-    post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
   /** Keep a thread through the 30-day archive sweep. */
-  archive: (id: string, archived = true) =>
-    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
   star: (id: string, starred: boolean) =>
     post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
+  /** Clear a thread by hand — the `e` key in Airchat. Office roles only. */
+  archive: (id: string, archived = true) =>
+    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
 };
 
 export { ApiError };

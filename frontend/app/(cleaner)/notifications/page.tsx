@@ -297,7 +297,7 @@ function ChangeCard({ update, locale }: { update: TurnoverUpdate; locale: Locale
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function systemText(body: string | null | undefined, m: any, _locale: Locale): string {
+function systemText(body: string | null | undefined, m: any, _locale: Locale): string {
   if (!body) return '';
   try {
     const data = JSON.parse(body);
