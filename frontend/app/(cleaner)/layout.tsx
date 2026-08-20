@@ -7,6 +7,7 @@ import {
   notifications as notifApi,
   auth as authApi,
   notes as notesApi,
+  conversations as conversationsApi,
   turnovers as turnoversApi,
   ensureFreshSession,
 } from '@/lib/api';
@@ -59,14 +60,27 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
 
   // The two tab badges. Cheap count endpoints, not the full lists — this runs
   // on every cleaner screen, including the ones that show neither.
-  const loadBadges = useCallback(() => {
-    notesApi.count().then(r => setUnconfirmedNotes(r.count)).catch(() => {});
+  const loadBadges = useCallback(async () => {
+    // One number on the Inbox tab: things waiting for this person, whatever
+    // kind they are. Splitting it across three counters would only move the
+    // arithmetic into her head.
+    const [notes, threads, changes] = await Promise.allSettled([
+      notesApi.count(),
+      conversationsApi.count(),
+      notifApi.turnoverUpdatesCount(),
+    ]);
+    setUnconfirmedNotes(
+      (notes.status === 'fulfilled' ? notes.value.count : 0) +
+      (threads.status === 'fulfilled' ? threads.value.count : 0) +
+      (changes.status === 'fulfilled' ? changes.value.count : 0),
+    );
     turnoversApi.todayArrivalCount().then(r => setTodayArrivals(r.count)).catch(() => {});
   }, []);
 
   useEffect(() => { loadBadges(); }, [loadBadges]);
   useSocket({
     'note:changed': loadBadges,
+    'conversation:changed': loadBadges,
     'event:updated': loadBadges,
     'event:cancelled': loadBadges,
     'event:created': loadBadges,

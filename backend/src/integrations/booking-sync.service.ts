@@ -963,10 +963,55 @@ export class BookingSyncService {
       });
     });
 
+    // Who is actually holding this work RIGHT NOW, under the turnover model.
+    // Read before the chain is re-stitched: onBookingCancelled supersedes rows
+    // and nulls the booking references, after which this lookup finds nothing.
+    //
+    // The block below this one notifies `cleaning.assignments` instead — the
+    // legacy model, which is empty for anything claimed through the pool. That
+    // is why cancellations have been silent in practice.
+    const affectedTurnovers = await this.prisma.turnover.findMany({
+      where: {
+        tenantId,
+        supersededById: null,
+        OR: [{ fromBookingId: existing.id }, { toBookingId: existing.id }],
+      },
+      select: {
+        id: true,
+        property: { select: { name: true } },
+        toBooking: { select: { checkInTime: true } },
+        assignments: {
+          where: { status: { in: ['ASSIGNED', 'STARTED'] } },
+          select: { userId: true },
+        },
+      },
+    });
+
     // Turnover dual-write: stitch the chain back together
     await this.safelyRunTurnoverSync('onBookingCancelled', async (tx) => {
       await this.turnoverSync.onBookingCancelled(existing.id, tx);
     });
+
+    for (const t of affectedTurnovers) {
+      const propertyName = t.property?.name ?? existing.accommodationName ?? '';
+      for (const a of t.assignments) {
+        await this.createNotification(
+          tenantId, a.userId, 'CANCELLATION',
+          'Booking cancelled',
+          `${propertyName} — the guest booking was cancelled. The cleaning is ` +
+          `still yours and still needs doing; there is no arrival deadline now.`,
+          t.id,
+          {
+            kind: 'BOOKING_CANCELLED',
+            turnoverId: t.id,
+            propertyName,
+            bookingRef: existing.bookingRef,
+            fromValue: t.toBooking?.checkInTime ?? null,
+            toValue: null,
+          },
+        );
+      }
+    }
 
     if (existing.cleaning?.assignments?.length) {
       for (const a of existing.cleaning.assignments) {
@@ -1274,6 +1319,7 @@ export class BookingSyncService {
   private async createNotification(
     tenantId: string, userId: string, type: string,
     title: string, body: string, eventId: string,
+    payload: Record<string, any> = {},
   ) {
     if (this.notificationsSuppressed) return;
     await this.prisma.notification.create({
@@ -1282,7 +1328,9 @@ export class BookingSyncService {
         type: type as any,
         channel: 'IN_APP',
         title, body,
-        payload: { eventId },
+        // The extra payload is what lets the app render "2 adults → 4 adults"
+        // instead of "a booking was modified".
+        payload: { eventId, ...payload },
       },
     });
   }

@@ -437,30 +437,91 @@ export default function MessagesPage() {
                     <p>{m.awaitingRecipients}</p>
                   </div>
                 ) : (
-                  <div className="mt-3 text-[12.5px]">
-                    <span
-                      className={cn(
-                        'font-semibold',
-                        n.ackedCount === n.recipientCount ? 'text-emerald-700' : 'text-ink',
-                      )}
-                    >
-                      {n.ackedCount === n.recipientCount
-                        ? m.allConfirmed
-                        : m.acked(n.ackedCount, n.recipientCount)}
-                    </span>
-                    {n.pending.length > 0 && (
-                      <span className="text-ink-muted">
-                        {' '}· {m.pendingLabel}{' '}
-                        {n.pending.map((p) => p.name).join(', ')}
-                      </span>
-                    )}
-                  </div>
+                  <RecipientList note={n} m={m} />
                 )}
               </div>
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Everyone the message reached, in one list.
+ *
+ * It used to be a count plus a comma-separated tail of names, which meant
+ * cross-referencing two things by eye. One list, sorted so the people who
+ * still owe you a confirmation are on top, and the state carried by the whole
+ * row rather than an icon at the end — at fifty cleaners the row tint is the
+ * only thing that survives a glance.
+ */
+function RecipientList({ note, m }: { note: ManagerNote; m: any }) {
+  const ackedAt = new Map<string, string>();
+  note.acks
+    .filter((a) => a.version === note.version)
+    .forEach((a) => ackedAt.set(a.userId, a.ackedAt));
+
+  // Pending first: that is the part that still needs chasing.
+  const rows = [...note.recipients].sort((a, b) => {
+    const aAck = ackedAt.has(a.id) ? 1 : 0;
+    const bAck = ackedAt.has(b.id) ? 1 : 0;
+    if (aAck !== bAck) return aAck - bAck;
+    return a.name.localeCompare(b.name);
+  });
+
+  const done = note.ackedCount;
+  const total = note.recipientCount || 1;
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-2 rounded-full bg-surface-sunken overflow-hidden">
+          <div
+            className="h-full bg-emerald-600 transition-all"
+            style={{ width: `${Math.round((done / total) * 100)}%` }}
+          />
+        </div>
+        <span className="text-[12.5px] font-bold whitespace-nowrap">
+          {done === note.recipientCount ? m.allConfirmed : m.acked(done, note.recipientCount)}
+        </span>
+      </div>
+
+      <div className="mt-2.5 border border-surface-border rounded-xl overflow-hidden divide-y divide-surface-border">
+        {rows.map((r) => {
+          const at = ackedAt.get(r.id);
+          return (
+            <div
+              key={r.id}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2',
+                at ? 'bg-emerald-50/60' : 'bg-white',
+              )}
+            >
+              <span className="w-6 h-6 rounded-full bg-ink text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                {(r.name?.[0] ?? '?').toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12.5px] font-semibold truncate">{r.name}</span>
+                <span className="block text-[10.5px] text-ink-faint truncate">{r.email}</span>
+              </span>
+              {at ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 whitespace-nowrap">
+                  <Check size={12} strokeWidth={3} />
+                  {new Date(at).toLocaleString(undefined, {
+                    day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit',
+                  })}
+                </span>
+              ) : (
+                <span className="text-[11px] text-ink-faint whitespace-nowrap">
+                  {m.pendingLabel.replace(':', '')}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   turnovers as turnoversApi,
@@ -10,6 +11,7 @@ import {
   type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
+import { conversations as conversationsApi } from '@/lib/api';
 import { HelpLink } from '@/components/HelpLink';
 import { TurnoverMarkDoneSheet } from '@/components/TurnoverMarkDoneSheet';
 import { translations, type Locale } from '@/i18n/translations';
@@ -119,6 +121,22 @@ function groupByDay(items: Turnover[], carryForward: boolean): [string, Turnover
 
 export default function MinePage() {
   const { user, logout } = useAuth();
+  const router = useRouter();
+
+  /**
+   * "Message the office" on a started cleaning. Idempotent on the server, so
+   * tapping it twice reopens the same channel instead of making a second one.
+   */
+  async function handleAskOffice(turnoverId: string) {
+    try {
+      const conversation = await conversationsApi.open(turnoverId);
+      router.push(`/conversations/${conversation.id}`);
+    } catch {
+      // The button only shows on started work, so a refusal here means the
+      // state moved underneath us — the list refresh will catch up.
+    }
+  }
+
   const locale = (user?.language as Locale) ?? 'en';
   const t = translations[locale];
 
@@ -441,6 +459,7 @@ export default function MinePage() {
                           t={t}
                           locale={locale}
                           mode="mine"
+                          onAskOffice={() => handleAskOffice(tv.id)}
                           userId={user?.id}
                           onDrop={() => setDropConfirm(tv)}
                           onStart={() => handleStart(tv.id)}
@@ -476,6 +495,7 @@ export default function MinePage() {
                           t={t}
                           locale={locale}
                           mode="mine"
+                          onAskOffice={() => handleAskOffice(tv.id)}
                           userId={user?.id}
                         />
                       ))}

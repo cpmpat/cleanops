@@ -46,6 +46,42 @@ export interface MessageStrings {
   };
   card: {
     swapToday: string;
+    askOffice: string;
+  };
+  inbox: {
+    title: string;
+    tabAnnouncements: string;
+    tabConversations: string;
+    tabChanges: string;
+    noAnnouncements: string;
+    noConversations: string;
+    noConversationsHint: string;
+    noChanges: string;
+    noChangesHint: string;
+    oneWay: string;
+  };
+  thread: {
+    participants: (n: number) => string;
+    add: string;
+    addTitle: string;
+    addHint: string;
+    cannotInvite: string;
+    placeholder: string;
+    send: string;
+    sending: string;
+    photo: string;
+    opened: (property: string) => string;
+    memberAdded: (actor: string, target: string) => string;
+    startFirst: string;
+    closed: string;
+  };
+  changes: {
+    cancelled: string;
+    guests: string;
+    stay: string;
+    modified: string;
+    openTurnover: string;
+    cancelledMeaning: string;
   };
   manager: {
     navLabel: string;
@@ -126,7 +162,7 @@ const en: MessageStrings = {
     action: 'Reload',
   },
   section: {
-    navLabel: 'Alerts',
+    navLabel: 'Inbox',
     title: 'Alerts',
     waiting: (n) => `${n} waiting for confirmation`,
     confirmedDivider: 'Confirmed',
@@ -137,7 +173,42 @@ const en: MessageStrings = {
     forTeam: (n) => `For ${n} team members`,
     forProperty: (name) => `For ${name}`,
   },
-  card: { swapToday: 'Turnaround today' },
+  card: { swapToday: 'Turnaround today', askOffice: 'Message the office' },
+  inbox: {
+    title: 'Inbox & Notifications',
+    tabAnnouncements: 'Announcements',
+    tabConversations: 'Conversations',
+    tabChanges: 'Changes',
+    noAnnouncements: 'Nothing to confirm.',
+    noConversations: 'No conversations yet.',
+    noConversationsHint: 'Start one from a cleaning you have already begun.',
+    noChanges: 'No changes.',
+    noChangesHint: 'Changes to cleanings you are holding show up here.',
+    oneWay: 'One-way announcement — you cannot reply',
+  },
+  thread: {
+    participants: (n) => `${n} people`,
+    add: 'Add',
+    addTitle: 'Add to the channel',
+    addHint: 'Everyone here works on cleanings.',
+    cannotInvite: 'You can only add other cleaners. A manager is already here and can add anyone.',
+    placeholder: 'Write a message…',
+    send: 'Send',
+    sending: 'Sending…',
+    photo: 'Photo',
+    opened: (property) => `Channel opened for ${property}`,
+    memberAdded: (actor, target) => `${actor} added ${target}`,
+    startFirst: 'Start the cleaning first',
+    closed: 'This conversation is closed.',
+  },
+  changes: {
+    cancelled: 'Booking cancelled',
+    guests: 'Guest count changed',
+    stay: 'Stay extended',
+    modified: 'Booking changed',
+    openTurnover: 'Open cleaning',
+    cancelledMeaning: 'The cleaning is still yours and still needs doing — there is just no arrival deadline now.',
+  },
   manager: {
     navLabel: 'Messages',
     title: 'Messages',
@@ -217,7 +288,7 @@ const cs: MessageStrings = {
     action: 'Obnovit',
   },
   section: {
-    navLabel: 'Notifikace',
+    navLabel: 'Inbox',
     title: 'Notifikace',
     waiting: (n) => `${n} ${n === 1 ? 'čeká' : n < 5 ? 'čekají' : 'čeká'} na potvrzení`,
     confirmedDivider: 'Potvrzené',
@@ -228,7 +299,42 @@ const cs: MessageStrings = {
     forTeam: (n) => `Pro ${n} ${n === 1 ? 'člena' : n < 5 ? 'členy' : 'členů'} týmu`,
     forProperty: (name) => `Pro objekt ${name}`,
   },
-  card: { swapToday: 'Výměna dnes' },
+  card: { swapToday: 'Výměna dnes', askOffice: 'Napsat na centrálu' },
+  inbox: {
+    title: 'Inbox & Notifications',
+    tabAnnouncements: 'Oznámení',
+    tabConversations: 'Konverzace',
+    tabChanges: 'Změny',
+    noAnnouncements: 'Nic k potvrzení.',
+    noConversations: 'Zatím žádné konverzace.',
+    noConversationsHint: 'Založíte ji u úklidu, který jste už zahájili.',
+    noChanges: 'Žádné změny.',
+    noChangesHint: 'Změny u úklidů, které máte vzaté, se ukážou tady.',
+    oneWay: 'Jednosměrné oznámení — odpovídat nelze',
+  },
+  thread: {
+    participants: (n) => `${n} ${n === 1 ? 'účastník' : n < 5 ? 'účastníci' : 'účastníků'}`,
+    add: 'Přidat',
+    addTitle: 'Přidat do kanálu',
+    addHint: 'Všichni tady dělají úklidy.',
+    cannotInvite: 'Můžete přidat jen další z úklidu. Manažer už v kanálu je a přidá kohokoli.',
+    placeholder: 'Napsat zprávu…',
+    send: 'Odeslat',
+    sending: 'Odesílám…',
+    photo: 'Fotka',
+    opened: (property) => `Kanál otevřen u ${property}`,
+    memberAdded: (actor, target) => `${actor} přidal(a) ${target}`,
+    startFirst: 'Nejdřív úklid zahajte',
+    closed: 'Tato konverzace je uzavřená.',
+  },
+  changes: {
+    cancelled: 'Rezervace zrušena',
+    guests: 'Změna počtu hostů',
+    stay: 'Pobyt prodloužen',
+    modified: 'Změna rezervace',
+    openTurnover: 'Otevřít úklid',
+    cancelledMeaning: 'Úklid zůstává váš a je pořád potřeba ho udělat — jen už na něj netlačí termín příjezdu.',
+  },
   manager: {
     navLabel: 'Zprávy',
     title: 'Zprávy',
@@ -308,7 +414,7 @@ const ru: MessageStrings = {
     action: 'Обновить',
   },
   section: {
-    navLabel: 'Уведомления',
+    navLabel: 'Inbox',
     title: 'Уведомления',
     waiting: (n) => `${n} ждёт подтверждения`,
     confirmedDivider: 'Подтверждённые',
@@ -319,7 +425,42 @@ const ru: MessageStrings = {
     forTeam: (n) => `Для ${n} сотрудников`,
     forProperty: (name) => `Для объекта ${name}`,
   },
-  card: { swapToday: 'Смена сегодня' },
+  card: { swapToday: 'Смена сегодня', askOffice: 'Написать в офис' },
+  inbox: {
+    title: 'Inbox & Notifications',
+    tabAnnouncements: 'Объявления',
+    tabConversations: 'Переписка',
+    tabChanges: 'Изменения',
+    noAnnouncements: 'Подтверждать нечего.',
+    noConversations: 'Переписок пока нет.',
+    noConversationsHint: 'Начните её у уборки, которую вы уже начали.',
+    noChanges: 'Изменений нет.',
+    noChangesHint: 'Изменения по вашим уборкам появятся здесь.',
+    oneWay: 'Одностороннее объявление — ответить нельзя',
+  },
+  thread: {
+    participants: (n) => `${n} участн.`,
+    add: 'Добавить',
+    addTitle: 'Добавить в канал',
+    addHint: 'Все здесь работают на уборках.',
+    cannotInvite: 'Вы можете добавить только уборщиц. Менеджер уже здесь и может добавить любого.',
+    placeholder: 'Написать сообщение…',
+    send: 'Отправить',
+    sending: 'Отправляю…',
+    photo: 'Фото',
+    opened: (property) => `Канал открыт для ${property}`,
+    memberAdded: (actor, target) => `${actor} добавил(а) ${target}`,
+    startFirst: 'Сначала начните уборку',
+    closed: 'Переписка закрыта.',
+  },
+  changes: {
+    cancelled: 'Бронь отменена',
+    guests: 'Изменилось число гостей',
+    stay: 'Проживание продлено',
+    modified: 'Бронь изменена',
+    openTurnover: 'Открыть уборку',
+    cancelledMeaning: 'Уборка остаётся за вами, и её нужно сделать — просто больше нет срока к приезду.',
+  },
   manager: {
     navLabel: 'Сообщения',
     title: 'Сообщения',
@@ -399,7 +540,7 @@ const uk: MessageStrings = {
     action: 'Оновити',
   },
   section: {
-    navLabel: 'Сповіщення',
+    navLabel: 'Inbox',
     title: 'Сповіщення',
     waiting: (n) => `${n} чекає на підтвердження`,
     confirmedDivider: 'Підтверджені',
@@ -410,7 +551,42 @@ const uk: MessageStrings = {
     forTeam: (n) => `Для ${n} працівників`,
     forProperty: (name) => `Для об'єкта ${name}`,
   },
-  card: { swapToday: 'Заміна сьогодні' },
+  card: { swapToday: 'Заміна сьогодні', askOffice: 'Написати в офіс' },
+  inbox: {
+    title: 'Inbox & Notifications',
+    tabAnnouncements: 'Оголошення',
+    tabConversations: 'Листування',
+    tabChanges: 'Зміни',
+    noAnnouncements: 'Немає що підтверджувати.',
+    noConversations: 'Листувань поки немає.',
+    noConversationsHint: 'Почніть його на прибиранні, яке ви вже розпочали.',
+    noChanges: 'Змін немає.',
+    noChangesHint: 'Зміни у ваших прибираннях зʼявляться тут.',
+    oneWay: 'Одностороннє оголошення — відповісти не можна',
+  },
+  thread: {
+    participants: (n) => `${n} учасн.`,
+    add: 'Додати',
+    addTitle: 'Додати до каналу',
+    addHint: 'Усі тут працюють на прибираннях.',
+    cannotInvite: 'Ви можете додати лише інших прибиральниць. Менеджер уже тут і може додати будь-кого.',
+    placeholder: 'Написати повідомлення…',
+    send: 'Надіслати',
+    sending: 'Надсилаю…',
+    photo: 'Фото',
+    opened: (property) => `Канал відкрито для ${property}`,
+    memberAdded: (actor, target) => `${actor} додав(ла) ${target}`,
+    startFirst: 'Спершу розпочніть прибирання',
+    closed: 'Це листування закрите.',
+  },
+  changes: {
+    cancelled: 'Бронювання скасовано',
+    guests: 'Змінилася кількість гостей',
+    stay: 'Перебування продовжено',
+    modified: 'Бронювання змінено',
+    openTurnover: 'Відкрити прибирання',
+    cancelledMeaning: 'Прибирання залишається за вами і його треба зробити — просто немає терміну до приїзду.',
+  },
   manager: {
     navLabel: 'Повідомлення',
     title: 'Повідомлення',

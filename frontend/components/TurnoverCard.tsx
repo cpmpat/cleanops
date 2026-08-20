@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
-  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight,
+  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare,
 } from 'lucide-react';
 import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
@@ -21,6 +21,8 @@ interface TurnoverCardProps {
   onDrop?: () => void;
   onStart?: () => void;
   onDone?: () => void;
+  /** Opens the channel on this turnover. Only offered once work has started. */
+  onAskOffice?: () => void;
   claiming?: boolean;
   starting?: boolean;
   dropping?: boolean;
@@ -107,6 +109,7 @@ export function TurnoverCard({
   onDrop,
   onStart,
   onDone,
+  onAskOffice,
   claiming,
   starting,
   dropping,
@@ -407,6 +410,18 @@ export function TurnoverCard({
             className="mt-4 w-full px-4 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
           >
             {claiming ? t.pool.claiming : t.pool.claim}
+          </button>
+        )}
+
+        {/* The channel opens only after "Start" — before that there is nothing
+            concrete to ask about, and the office would field guesses. */}
+        {mode === 'mine' && !isCompleted && myAssignment && turnover.startedAt && onAskOffice && (
+          <button
+            onClick={onAskOffice}
+            className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#eef2fa] border border-[#c8d4ea] text-[#243b6b] rounded-xl text-sm font-semibold hover:bg-[#e3eaf6] transition active:scale-[0.98]"
+          >
+            <MessageSquare size={14} />
+            {m.card.askOffice}
           </button>
         )}
 

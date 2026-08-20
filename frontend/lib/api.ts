@@ -1134,8 +1134,32 @@ export const tags = {
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
+/** A change to a cleaning somebody is already holding — the "Změny" tab. */
+export interface TurnoverUpdate {
+  id: string;
+  type: 'CANCELLATION' | 'BOOKING_MODIFIED';
+  title: string;
+  body: string;
+  readAt?: string | null;
+  createdAt: string;
+  payload?: {
+    kind?: 'BOOKING_CANCELLED' | 'GUESTS_CHANGED' | 'STAY_EXTENDED' | string;
+    turnoverId?: string;
+    propertyName?: string;
+    bookingRef?: string;
+    fromValue?: string | number | null;
+    toValue?: string | number | null;
+    [key: string]: any;
+  };
+}
+
 export const notifications = {
   list: () => get<Notification[]>('/notifications'),
+  /** Changes to my not-yet-finished cleanings. */
+  turnoverUpdates: (limit = 50) =>
+    get<TurnoverUpdate[]>(`/notifications/turnover-updates?limit=${limit}`),
+  turnoverUpdatesCount: () =>
+    get<{ count: number }>('/notifications/turnover-updates/count'),
   unreadCount: () => get<{ count: number }>('/notifications/unread/count'),
   markRead: (id: string) => patch(`/notifications/${id}/read`),
   markAllRead: () => patch('/notifications/read-all'),
@@ -1443,6 +1467,94 @@ export const help = {
       method: 'PUT',
       body: JSON.stringify({ html, title }),
     }),
+};
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+export type ConversationStatus = 'OPEN' | 'CLOSED';
+export type MessageKind = 'TEXT' | 'SYSTEM';
+
+export interface ConversationPerson {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+}
+
+export interface ConversationMember {
+  id: string;
+  userId: string;
+  addedAt: string;
+  lastReadAt?: string | null;
+  user: ConversationPerson;
+}
+
+export interface MessageAttachment {
+  id: string;
+  kind: 'IMAGE' | 'VIDEO';
+  /** Canonical GCS url — render it with <SignedImage />. */
+  url: string;
+  mimeType?: string | null;
+  bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  authorId?: string | null;
+  kind: MessageKind;
+  /** For SYSTEM messages this is JSON: { event, actor?, target?, property? }. */
+  body?: string | null;
+  createdAt: string;
+  author?: ConversationPerson | null;
+  attachments: MessageAttachment[];
+}
+
+export interface ConversationTurnoverRef {
+  id: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  property?: { id: string; name: string; pmsPropertyId?: string | null } | null;
+  fromBooking?: { checkOutTime?: string | null } | null;
+  toBooking?: { checkInTime?: string | null; numAdults?: number; numChildren?: number } | null;
+}
+
+export interface Conversation {
+  id: string;
+  turnoverId: string;
+  status: ConversationStatus;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  turnover: ConversationTurnoverRef;
+  members: ConversationMember[];
+  messages?: ConversationMessage[];
+  lastMessage?: ConversationMessage | null;
+  unreadCount?: number;
+}
+
+/** Everyone is returned; `canInvite` false means the sheet greys them out. */
+export interface ConversationCandidate extends ConversationPerson {
+  canInvite: boolean;
+}
+
+export const conversations = {
+  list: () => get<Conversation[]>('/conversations'),
+  count: () => get<{ count: number }>('/conversations/count'),
+  /** Idempotent: returns the existing channel for this turnover if there is one. */
+  open: (turnoverId: string) => post<Conversation>('/conversations', { turnoverId }),
+  get: (id: string) => get<Conversation>(`/conversations/${id}`),
+  post: (
+    id: string,
+    dto: {
+      body?: string;
+      attachments?: { url: string; mimeType?: string; bytes?: number; width?: number; height?: number }[];
+    },
+  ) => post<ConversationMessage>(`/conversations/${id}/messages`, dto),
+  candidates: (id: string) => get<ConversationCandidate[]>(`/conversations/${id}/candidates`),
+  addMembers: (id: string, userIds: string[]) =>
+    post<Conversation>(`/conversations/${id}/members`, { userIds }),
+  markRead: (id: string) => post<{ ok: true }>(`/conversations/${id}/read`, {}),
 };
 
 export { ApiError };
