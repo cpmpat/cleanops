@@ -14,7 +14,10 @@ import { CleanOpsGateway } from '../websocket/websocket.module';
  *
  * Rules that are not obvious from the schema:
  *
- *  · A cleaner may open a channel only on a turnover they hold and have
+ *  · Two kinds. A TURNOVER chat is opened by whoever is doing the work and is
+ *    part of that cleaning's record. A DIRECT chat is opened by the office
+ *    towards people and belongs to nothing else — only a manager can start one.
+ *  · A cleaner may open a turnover channel only on work they hold and have
  *    STARTED. Before that there is nothing concrete to discuss and the pool
  *    would fill with speculative threads.
  *  · Every manager is a member from the start. A cleaner opens a channel
@@ -154,6 +157,63 @@ export class ConversationsService {
     }
   }
 
+  /**
+   * A direct chat: the office writing to people, about nothing in particular.
+   *
+   * Only the office may start one. A cleaner who wants something has a specific
+   * cleaning in front of her, and that conversation belongs on the turnover
+   * where anyone looking at that flat later will find it.
+   */
+  async openDirect(
+    tenantId: string,
+    actor: Actor,
+    dto: { userIds: string[]; title?: string; body?: string },
+  ) {
+    if (!(OFFICE_ROLES as readonly string[]).includes(actor.userRole)) {
+      throw new ForbiddenException(
+        'Only a manager can start a direct chat. From a cleaning, open its own channel instead.',
+      );
+    }
+
+    const userIds = Array.from(new Set(dto.userIds ?? [])).filter(Boolean);
+    if (!userIds.length) throw new BadRequestException('Pick at least one person');
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (users.length !== userIds.length) {
+      throw new BadRequestException('Some people no longer exist');
+    }
+
+    const memberIds = Array.from(new Set([actor.userId, ...userIds]));
+
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        tenantId,
+        kind: 'DIRECT',
+        title: dto.title?.trim() || null,
+        createdById: actor.userId,
+        lastMessageAt: new Date(),
+        members: { create: memberIds.map((userId) => ({ userId })) },
+        messages: {
+          create: {
+            kind: 'SYSTEM',
+            body: JSON.stringify({ event: 'opened_direct', title: dto.title ?? null }),
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (dto.body?.trim()) {
+      await this.postMessage(tenantId, actor, conversation.id, { body: dto.body });
+    }
+
+    this.notifyMembers(conversation.id);
+    return this.get(tenantId, actor, conversation.id);
+  }
+
   // ─── Reading ───────────────────────────────────────────────────────────────
 
   async listForUser(tenantId: string, userId: string) {
@@ -286,6 +346,9 @@ export class ConversationsService {
     const stale = await this.prisma.conversation.findMany({
       where: {
         archivedAt: null,
+        // Only turnover chats age out: a direct chat has no piece of work whose
+        // completion could start the clock.
+        kind: 'TURNOVER',
         turnover: { completedAt: { lt: cutoff } },
         // One star from anyone keeps the thread alive for everyone in it —
         // splitting a thread per person would be worse than keeping it.

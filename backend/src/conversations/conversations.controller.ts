@@ -44,6 +44,23 @@ export class ConversationsController {
     );
   }
 
+  @Post('direct')
+  @ApiOperation({
+    summary: 'Start a direct chat with people (manager only)',
+    description:
+      'Not tied to a cleaning. A cleaner cannot start one — from a cleaning ' +
+      'she opens that turnover’s own channel, which keeps the exchange with ' +
+      'the work it is about.',
+  })
+  openDirect(
+    @Req() req: TenantRequest,
+    @Body() dto: { userIds: string[]; title?: string; body?: string },
+  ) {
+    return this.service.openDirect(
+      req.tenantId!, { userId: req.userId!, userRole: req.userRole! }, dto ?? { userIds: [] },
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'One conversation with its whole history' })
   get(@Req() req: TenantRequest, @Param('id') id: string) {

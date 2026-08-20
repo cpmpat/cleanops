@@ -22,8 +22,8 @@ export type StreamItemType =
   | 'CLEANING'
   /** The turnover model — what the cleaning pool actually runs on. */
   | 'TURNOVER'
-  /** A thread somebody opened on a turnover. */
-  | 'TURNOVER_CHAT'
+  /** A chat the office started with people; not tied to any cleaning. */
+  | 'DIRECT_CHAT'
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
@@ -41,8 +41,20 @@ export interface StreamItem {
   photoUrls?: string[];
   status?: string;
   priority?: string;
+  /**
+   * Set on TURNOVER items that have a chat. The exchange belongs to the
+   * cleaning, so it is a property of that record rather than a line of its
+   * own — one turnover, one entry, with a hint that there was talking.
+   */
+  chat?: {
+    id: string;
+    messageCount: number;
+    participantCount: number;
+    lastMessageAt: string | null;
+    lastMessage?: string | null;
+  };
   source: {
-    kind: 'booking' | 'cleaning' | 'turnover' | 'turnover_chat' | 'incident' | 'manual';
+    kind: 'booking' | 'cleaning' | 'turnover' | 'direct_chat' | 'incident' | 'manual';
     id: string;
   };
   authorName?: string;
@@ -109,12 +121,12 @@ export class StreamsService {
 
     const fetchSize = limit * OVERFETCH_PER_SOURCE;
 
-    const [reservations, cleanings, turnovers, chats, incidents, manuals] =
+    const [reservations, cleanings, turnovers, directChats, incidents, manuals] =
       await Promise.all([
         this.fetchReservations(tenantId, q.propertyId, cursor, from, to, fetchSize),
         this.fetchCleanings(tenantId, q.propertyId, cursor, from, to, fetchSize),
         this.fetchTurnovers(tenantId, q.propertyId, cursor, from, to, fetchSize),
-        this.fetchTurnoverChats(tenantId, q.propertyId, cursor, from, to, fetchSize),
+        this.fetchDirectChats(tenantId, cursor, from, to, fetchSize),
         this.fetchIncidents(tenantId, q.propertyId, cursor, from, to, fetchSize),
         this.fetchManualEvents(tenantId, q.propertyId, cursor, from, to, fetchSize),
       ]);
@@ -123,7 +135,7 @@ export class StreamsService {
       ...reservations,
       ...cleanings,
       ...turnovers,
-      ...chats,
+      ...directChats,
       ...incidents,
       ...manuals,
     ];
@@ -275,12 +287,29 @@ export class StreamsService {
           where: { status: { in: ['ASSIGNED', 'STARTED', 'COMPLETED'] } },
           select: { user: { select: { name: true } } },
         },
+        conversations: {
+          where: { kind: 'TURNOVER' },
+          select: {
+            id: true,
+            lastMessageAt: true,
+            _count: { select: { messages: true, members: true } },
+            messages: {
+              where: { kind: 'TEXT' },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { body: true, author: { select: { name: true } } },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: fetchSize,
     });
 
-    return rows.map((r) => ({
+    return rows.map((r) => {
+      const chat = r.conversations[0];
+      const lastChatMessage = chat?.messages?.[0];
+      return {
       id: `trn-${r.id}`,
       type: 'TURNOVER' as const,
       // The moment the work appeared, which is what a timeline is about.
@@ -295,21 +324,38 @@ export class StreamsService {
       status: r.status,
       source: { kind: 'turnover' as const, id: r.id },
       authorName: r.assignments[0]?.user?.name,
-    }));
+      chat: chat
+        ? {
+            id: chat.id,
+            // The system line that opens every channel is not a conversation.
+            messageCount: Math.max(0, chat._count.messages - 1),
+            participantCount: chat._count.members,
+            lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
+            lastMessage: lastChatMessage
+              ? `${lastChatMessage.author?.name ? `${lastChatMessage.author.name}: ` : ''}` +
+                `${(lastChatMessage.body ?? '📷').slice(0, 80)}`
+              : null,
+          }
+        : undefined,
+      };
+    });
   }
 
-  // ─── SOURCE 2c: Turnover chats → TURNOVER_CHAT items ─────
+  // ─── SOURCE 2c: Direct chats → DIRECT_CHAT items ─────────
 
-  private async fetchTurnoverChats(
+  /**
+   * Only the office-initiated chats. A chat about a cleaning is reported on the
+   * turnover itself (see `chat` above) — showing it twice would double-count
+   * the same event and split the story of one flat across two lines.
+   */
+  private async fetchDirectChats(
     tenantId: string,
-    propertyId: string | undefined,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
-    const where: any = { tenantId };
-    if (propertyId) where.turnover = { propertyId };
+    const where: any = { tenantId, kind: 'DIRECT' };
     if (cursor || from || to) {
       where.createdAt = {
         ...(cursor ? { lt: cursor } : {}),
@@ -321,9 +367,9 @@ export class StreamsService {
     const rows = await this.prisma.conversation.findMany({
       where,
       include: {
-        turnover: { select: { propertyId: true, property: { select: { id: true, name: true } } } },
         createdBy: { select: { name: true } },
-        _count: { select: { messages: true } },
+        members: { select: { user: { select: { name: true } } } },
+        _count: { select: { messages: true, members: true } },
         messages: {
           where: { kind: 'TEXT' },
           orderBy: { createdAt: 'desc' },
@@ -337,18 +383,19 @@ export class StreamsService {
 
     return rows.map((r) => {
       const last = r.messages[0];
+      const names = r.members.map((mem) => mem.user?.name).filter(Boolean);
       return {
         id: `cht-${r.id}`,
-        type: 'TURNOVER_CHAT' as const,
+        type: 'DIRECT_CHAT' as const,
         occurredAt: (r.lastMessageAt ?? r.createdAt).toISOString(),
-        propertyId: r.turnover?.propertyId ?? null,
-        propertyName: r.turnover?.property?.name ?? null,
-        title: `Chat: ${r.turnover?.property?.name ?? ''}`.trim(),
+        propertyId: null,
+        propertyName: null,
+        title: r.title ?? `Chat: ${names.slice(0, 3).join(', ')}`,
         subtitle: last
           ? `${last.author?.name ? `${last.author.name}: ` : ''}${(last.body ?? '📷').slice(0, 90)}`
-          : `${r._count.messages} messages`,
+          : `${names.length} účastníků`,
         status: r.archivedAt ? 'ARCHIVED' : r.status,
-        source: { kind: 'turnover_chat' as const, id: r.id },
+        source: { kind: 'direct_chat' as const, id: r.id },
         authorName: r.createdBy?.name,
       };
     });

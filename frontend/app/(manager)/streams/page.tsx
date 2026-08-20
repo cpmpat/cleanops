@@ -29,7 +29,7 @@ const TYPES: {
 }[] = [
   { key: 'RESERVATION',   label: 'Rezervace',  side: 'right', icon: <BedDouble size={12} />,      dot: 'bg-sky-500',     chip: 'text-sky-700 bg-sky-50 border-sky-200' },
   { key: 'TURNOVER',      label: 'Úklidy',     side: 'left',  icon: <Sparkles size={12} />,       dot: 'bg-amber-400',   chip: 'text-amber-800 bg-amber-50 border-amber-300' },
-  { key: 'TURNOVER_CHAT', label: 'Chaty',      side: 'left',  icon: <MessageSquare size={12} />,  dot: 'bg-[#243b6b]',   chip: 'text-[#243b6b] bg-[#eef2fa] border-[#c8d4ea]' },
+  { key: 'DIRECT_CHAT',   label: 'Přímé chaty', side: 'left', icon: <MessageSquare size={12} />,  dot: 'bg-[#243b6b]',   chip: 'text-[#243b6b] bg-[#eef2fa] border-[#c8d4ea]' },
   { key: 'INCIDENT',      label: 'Incidenty',  side: 'left',  icon: <AlertTriangle size={12} />,  dot: 'bg-red-500',     chip: 'text-red-700 bg-red-50 border-red-200' },
   { key: 'REPAIR',        label: 'Opravy',     side: 'left',  icon: <Wrench size={12} />,         dot: 'bg-violet-500',  chip: 'text-violet-700 bg-violet-50 border-violet-200' },
   { key: 'INSPECTION',    label: 'Kontroly',   side: 'left',  icon: <ClipboardCheck size={12} />, dot: 'bg-teal-500',    chip: 'text-teal-700 bg-teal-50 border-teal-200' },
@@ -315,6 +315,20 @@ function Card({
       {item.propertyName && (
         <p className="text-[10.5px] text-ink-faint mt-1">{item.propertyName}</p>
       )}
+
+      {/* A chat about this cleaning is part of this record, not a line of its
+          own — so it shows up here, as a hint that there was talking. */}
+      {item.chat && (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 mt-2 text-[10px] font-semibold',
+            'text-[#243b6b] bg-[#eef2fa] border border-[#c8d4ea] rounded-full px-2 py-0.5',
+          )}
+        >
+          <MessageSquare size={10} />
+          {item.chat.messageCount} zpráv · {item.chat.participantCount} účastníků
+        </span>
+      )}
     </button>
   );
 }
@@ -324,8 +338,11 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
   const href =
     item.type === 'INCIDENT' || item.type === 'REPAIR' || item.type === 'INSPECTION'
       ? `/incidents/${item.source.id}`
-      : item.type === 'TURNOVER_CHAT'
+      : item.type === 'DIRECT_CHAT'
       ? `/conversations/${item.source.id}`
+      : item.type === 'TURNOVER' && item.chat
+      // The turnover has no screen of its own, but its chat does.
+      ? `/conversations/${item.chat.id}`
       : null;
 
   return (
@@ -352,6 +369,14 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
           {item.status && <Row label="Stav" value={item.status} />}
           {item.priority && <Row label="Priorita" value={item.priority} />}
           {item.subtitle && <Row label="Detail" value={item.subtitle} />}
+          {item.chat && (
+            <Row
+              label="Chat"
+              value={`${item.chat.messageCount} zpráv · ${item.chat.participantCount} účastníků${
+                item.chat.lastMessage ? ` · ${item.chat.lastMessage}` : ''
+              }`}
+            />
+          )}
           {item.authorName && <Row label="Kdo" value={item.authorName} />}
           <Row label="ID záznamu" value={item.source.id} mono />
         </dl>

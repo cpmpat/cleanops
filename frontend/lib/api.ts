@@ -811,7 +811,7 @@ export type StreamItemType =
   | 'RESERVATION'
   | 'CLEANING'
   | 'TURNOVER'
-  | 'TURNOVER_CHAT'
+  | 'DIRECT_CHAT'
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
@@ -833,6 +833,15 @@ export interface StreamItem {
   priority?: string;
   source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual'; id: string };
   authorName?: string;
+  /** Present on TURNOVER items that have a chat — the exchange belongs to the
+   *  cleaning, so it is reported on it rather than as its own entry. */
+  chat?: {
+    id: string;
+    messageCount: number;
+    participantCount: number;
+    lastMessageAt: string | null;
+    lastMessage?: string | null;
+  };
 }
 
 export interface StreamFeed {
@@ -1474,6 +1483,11 @@ export const help = {
 // ─── Conversations ────────────────────────────────────────────────────────────
 
 export type ConversationStatus = 'OPEN' | 'CLOSED';
+/**
+ * TURNOVER — opened by whoever does the work, part of that cleaning's record.
+ * DIRECT   — opened by the office towards people, tied to nothing else.
+ */
+export type ChatKind = 'TURNOVER' | 'DIRECT';
 export type MessageKind = 'TEXT' | 'SYSTEM';
 
 export interface ConversationPerson {
@@ -1526,12 +1540,16 @@ export interface ConversationTurnoverRef {
 
 export interface Conversation {
   id: string;
-  turnoverId: string;
+  kind: ChatKind;
+  /** Null on direct chats. */
+  turnoverId?: string | null;
+  /** Subject line; direct chats only. */
+  title?: string | null;
   status: ConversationStatus;
   archivedAt?: string | null;
   lastMessageAt?: string | null;
   createdAt: string;
-  turnover: ConversationTurnoverRef;
+  turnover?: ConversationTurnoverRef | null;
   members: ConversationMember[];
   messages?: ConversationMessage[];
   lastMessage?: ConversationMessage | null;
@@ -1548,6 +1566,9 @@ export const conversations = {
   count: () => get<{ count: number }>('/conversations/count'),
   /** Idempotent: returns the existing channel for this turnover if there is one. */
   open: (turnoverId: string) => post<Conversation>('/conversations', { turnoverId }),
+  /** Manager only. A cleaner opens her turnover's channel instead. */
+  openDirect: (dto: { userIds: string[]; title?: string; body?: string }) =>
+    post<Conversation>('/conversations/direct', dto),
   get: (id: string) => get<Conversation>(`/conversations/${id}`),
   post: (
     id: string,

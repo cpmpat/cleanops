@@ -4,6 +4,7 @@ import { useLocale } from '@/lib/locale-context';
 import { useAuth } from '@/lib/auth';
 import {
   notes as notesApi,
+  conversations as conversationsApi,
   users as usersApi,
   properties as propsApi,
   ApiError,
@@ -15,6 +16,7 @@ import {
 import { translations } from '@/i18n/translations';
 import { useMessageStrings } from '@/i18n/messages';
 import { useSocket } from '@/lib/socket';
+import { useRouter } from 'next/navigation';
 import {
   Mail, Plus, X, Check, Search, AlertTriangle, Users, Building2, Clock,
 } from 'lucide-react';
@@ -38,6 +40,7 @@ const BODY_TABS = [
 export default function MessagesPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
+  const router = useRouter();
   const t = translations[locale];
   const m = useMessageStrings(locale).manager;
 
@@ -50,6 +53,8 @@ export default function MessagesPage() {
   const [error, setError] = useState('');
 
   // composer state
+  /** Announcement (one-way, confirmed) or a direct chat (two-way). */
+  const [mode, setMode] = useState<'ANNOUNCEMENT' | 'DIRECT'>('ANNOUNCEMENT');
   const [targetType, setTargetType] = useState<NoteTargetType>('STAFF');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
@@ -130,6 +135,19 @@ export default function MessagesPage() {
     setPublishing(true);
     setError('');
     try {
+      // A direct chat is a different object with different rules, so it gets
+      // its own call rather than a flag on the announcement.
+      if (mode === 'DIRECT') {
+        const chat = await conversationsApi.openDirect({
+          userIds: Array.from(selected),
+          title: title.trim() || undefined,
+          body: bodies.bodyCs.trim() || undefined,
+        });
+        resetComposer();
+        router.push(`/conversations/${chat.id}`);
+        return;
+      }
+
       await notesApi.create({
         targetType,
         title: title.trim(),
@@ -162,7 +180,9 @@ export default function MessagesPage() {
   }
 
   const canPublish =
-    !!title.trim() && !!bodies.bodyCs.trim() && selected.size > 0 && !!validUntil;
+    mode === 'DIRECT'
+      ? selected.size > 0 && (!!bodies.bodyCs.trim() || !!title.trim())
+      : !!title.trim() && !!bodies.bodyCs.trim() && selected.size > 0 && !!validUntil;
 
   return (
     <div className="p-6 max-w-4xl">
@@ -209,8 +229,34 @@ export default function MessagesPage() {
           </div>
           <p className="text-xs text-ink-muted mb-4">{m.targetHint}</p>
 
+          {/* What kind of message this is. It decides whether people can reply
+              and whether a confirmation is expected — not a detail, a different
+              kind of thing. */}
+          <div className="flex gap-2 mb-4">
+            {([
+              ['ANNOUNCEMENT', 'Oznámení', 'Jednosměrné, potvrzuje se'],
+              ['DIRECT', 'Přímý chat', 'Obousměrný, bez potvrzení'],
+            ] as const).map(([key, label, hint]) => (
+              <button
+                key={key}
+                onClick={() => { setMode(key); if (key === 'DIRECT') switchTarget('STAFF'); }}
+                className={cn(
+                  'flex-1 text-left border rounded-xl p-3 transition',
+                  mode === key
+                    ? 'border-2 border-[#243b6b] bg-[#eef2fa]'
+                    : 'border-surface-border hover:bg-surface-sunken',
+                )}
+              >
+                <span className={cn('block text-sm font-bold', mode === key ? 'text-[#1b2d54]' : 'text-ink-muted')}>
+                  {label}
+                </span>
+                <span className="block text-[11px] text-ink-muted mt-1">{hint}</span>
+              </button>
+            ))}
+          </div>
+
           {/* exclusive target switch */}
-          <div className="flex bg-surface-sunken rounded-xl p-1 mb-4">
+          <div className={cn('flex bg-surface-sunken rounded-xl p-1 mb-4', mode === 'DIRECT' && 'hidden')}>
             {(['STAFF', 'PROPERTY'] as NoteTargetType[]).map((tt) => (
               <button
                 key={tt}
@@ -345,8 +391,8 @@ export default function MessagesPage() {
             </p>
           </div>
 
-          {/* validity */}
-          <div className="mb-5">
+          {/* validity — announcements only; a chat does not expire */}
+          <div className={cn('mb-5', mode === 'DIRECT' && 'hidden')}>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted mb-1.5">
               {m.validUntilField}
             </label>
@@ -365,7 +411,7 @@ export default function MessagesPage() {
               disabled={!canPublish || publishing}
               className="px-5 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-40"
             >
-              {publishing ? m.publishing : m.publish}
+              {publishing ? m.publishing : mode === 'DIRECT' ? 'Otevřít chat' : m.publish}
             </button>
             <button
               onClick={resetComposer}

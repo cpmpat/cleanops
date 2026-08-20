@@ -130,7 +130,10 @@ export default function ConversationPage() {
         </Link>
         <div className="min-w-0">
           <h1 className="text-[14.5px] font-bold truncate">
-            {turnover?.property?.name ?? '—'}
+            {conversation.kind === 'DIRECT'
+              ? conversation.title ||
+                conversation.members.map((mem) => mem.user.name.split(' ')[0]).join(', ')
+              : turnover?.property?.name ?? '—'}
           </h1>
           <p className="text-[10px] text-white/50">
             {m.thread.participants(conversation.members.length)}
@@ -169,15 +172,16 @@ export default function ConversationPage() {
         </div>
       </div>
 
-      {/* Context — what this conversation is about */}
+      {/* Context — a turnover chat says which cleaning it is about. A direct
+          chat has no cleaning, so it shows only who is in it. */}
       <div className="bg-surface-sunken border-b border-surface-border px-3.5 py-2 flex items-center gap-2 flex-wrap">
-        {turnover?.fromBooking?.checkOutTime && (
+        {conversation.kind === 'TURNOVER' && turnover?.fromBooking?.checkOutTime && (
           <span className="inline-flex items-center gap-1.5 bg-white border border-surface-border rounded-full px-2.5 py-1 text-[10px] font-semibold text-ink-soft">
             <LogOut size={10} />
             {formatTime(turnover.fromBooking.checkOutTime)}
           </span>
         )}
-        {turnover?.toBooking?.checkInTime && (
+        {conversation.kind === 'TURNOVER' && turnover?.toBooking?.checkInTime && (
           <span className="inline-flex items-center gap-1.5 bg-white border border-surface-border rounded-full px-2.5 py-1 text-[10px] font-semibold text-ink-soft">
             <LogIn size={10} />
             {formatTime(turnover.toBooking.checkInTime)}

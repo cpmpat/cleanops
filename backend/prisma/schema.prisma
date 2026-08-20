@@ -1049,6 +1049,18 @@ enum ConversationStatus {
   CLOSED
 }
 
+/// Two different animals that happen to share a message list.
+///
+/// TURNOVER — opened by whoever is doing the work, always about one cleaning.
+///   It is part of that turnover's record, which is why the Stream shows it on
+///   the turnover rather than as a line of its own.
+/// DIRECT — opened by the office towards people. Not tied to a cleaning, so it
+///   stands alone and only a manager can start one.
+enum ChatKind {
+  TURNOVER
+  DIRECT
+}
+
 enum MessageKind {
   TEXT
   /// "X added Y", "cleaning finished" — written by the server, not a person.
@@ -1064,7 +1076,12 @@ enum AttachmentKind {
 model Conversation {
   id            String             @id @default(uuid())
   tenantId      String
-  turnoverId    String
+  kind          ChatKind           @default(TURNOVER)
+  /// Null for DIRECT chats — they belong to people, not to a cleaning.
+  turnoverId    String?
+  /// Subject line. Only DIRECT chats need one; a turnover chat is named by
+  /// the flat it is about.
+  title         String?
   createdById   String
   status        ConversationStatus @default(OPEN)
   /// Denormalised for ordering the list without touching every message.
@@ -1076,13 +1093,14 @@ model Conversation {
   updatedAt     DateTime           @updatedAt
 
   tenant    Tenant                @relation(fields: [tenantId], references: [id])
-  turnover  Turnover              @relation(fields: [turnoverId], references: [id], onDelete: Cascade)
+  turnover  Turnover?            @relation(fields: [turnoverId], references: [id], onDelete: Cascade)
   createdBy User                  @relation("ConversationCreator", fields: [createdById], references: [id])
   members   ConversationMember[]
   messages  ConversationMessage[]
 
   @@index([tenantId, lastMessageAt])
   @@index([turnoverId])
+  @@index([tenantId, kind])
   @@index([archivedAt])
   @@map("turnover_chats")
 }

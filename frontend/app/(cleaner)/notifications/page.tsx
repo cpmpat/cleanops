@@ -206,14 +206,16 @@ function ThreadRow({
           : 'border-surface-border'
       }`}
     >
-      <div className="w-9 h-9 rounded-full bg-[#243b6b] text-white flex items-center justify-center text-[12.5px] font-bold flex-shrink-0">
-        {initials(thread.turnover?.property?.name ?? '?')}
+      <div
+        className={`w-9 h-9 rounded-full text-white flex items-center justify-center text-[12.5px] font-bold flex-shrink-0 ${
+          thread.kind === 'DIRECT' ? 'bg-ink' : 'bg-[#243b6b]'
+        }`}
+      >
+        {initials(threadName(thread))}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <h3 className="text-[13px] font-bold truncate">
-            {thread.turnover?.property?.name ?? '—'}
-          </h3>
+          <h3 className="text-[13px] font-bold truncate">{threadName(thread)}</h3>
           <span className="ml-auto text-[10px] text-ink-faint flex-shrink-0">
             {thread.lastMessageAt ? shortStamp(thread.lastMessageAt, locale) : ''}
           </span>
@@ -305,6 +307,21 @@ export function systemText(body: string | null | undefined, m: any, _locale: Loc
   } catch {
     return body;
   }
+}
+
+/**
+ * A turnover chat is named by the flat it is about; a direct chat by its
+ * subject, or failing that by who is in it.
+ */
+function threadName(thread: Conversation): string {
+  if (thread.kind === 'DIRECT') {
+    return (
+      thread.title ||
+      thread.members.map((mem) => mem.user.name.split(' ')[0]).slice(0, 3).join(', ') ||
+      '—'
+    );
+  }
+  return thread.turnover?.property?.name ?? '—';
 }
 
 function initials(value: string): string {
