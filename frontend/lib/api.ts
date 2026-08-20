@@ -1,6 +1,20 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type Role = 'MANAGER' | 'CLEANER' | 'REPAIRMAN';
+/**
+ * Roles the backend can return. Only the first three are wired to permissions;
+ * the rest exist so accounts can be created and addressed by announcements
+ * before their scope is decided.
+ */
+export type Role =
+  | 'MANAGER'
+  | 'CLEANER'
+  | 'REPAIRMAN'
+  | 'ADMIN'
+  | 'FRONT_DESK_MANAGER'
+  | 'FRONT_DESK'
+  | 'ASSIST'
+  | 'TERENAK'
+  | 'AGENT';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;

@@ -26,7 +26,10 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   useEffect(() => {
     if (!loading) {
       if (!user) { router.replace('/login'); return; }
-      if (user.role === 'MANAGER') { router.replace('/dashboard'); return; }
+      if (user.role === 'MANAGER' || user.role === 'ADMIN') {
+        router.replace('/dashboard');
+        return;
+      }
     }
   }, [user, loading]);
 

@@ -48,10 +48,29 @@ model Tenant {
 
 // ─── USER ─────────────────────────────────────
 
+/// Roles the portal knows about.
+///
+/// Only MANAGER, CLEANER and REPAIRMAN are wired to permissions today; the
+/// rest exist so accounts can be created and addressed (a role is also an
+/// audience for announcements) before we decide what each one may open.
+/// Until then they behave like a user with no permissions — every endpoint
+/// guarded by @Roles() refuses them, which is the safe default.
+///
+/// ADMIN is the exception: it satisfies every @Roles() check, so an admin
+/// account cannot lock itself out of the app it administers.
 enum UserRole {
   MANAGER
   CLEANER
   REPAIRMAN
+
+  ADMIN
+  FRONT_DESK_MANAGER
+  FRONT_DESK
+  ASSIST
+  /// Field runner — moves between flats with linen, keys and small fixes.
+  /// Scope still to be defined.
+  TERENAK
+  AGENT
 }
 
 enum Language {

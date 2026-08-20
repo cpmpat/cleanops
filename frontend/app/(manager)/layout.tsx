@@ -41,7 +41,12 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     if (!loading) {
       if (!user) { router.replace('/login'); return; }
       if (user.role === 'REPAIRMAN') { router.replace('/my-repairs'); return; }
-      if (user.role !== 'MANAGER') { router.replace('/cleanings'); return; }
+      // ADMIN sees the manager app. The other new roles have no home of their
+      // own yet, so they land in the cleaner app until their scope is defined.
+      if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
+        router.replace('/cleanings');
+        return;
+      }
     }
   }, [user, loading]);
 
