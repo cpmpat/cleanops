@@ -16,6 +16,16 @@ export class NotificationsController {
     return this.service.getAll(req.userId!, limit, offset);
   }
 
+  @Get('turnover-updates')
+  getTurnoverUpdates(@Req() req: TenantRequest, @Query('limit') limit?: number) {
+    return this.service.getTurnoverUpdates(req.userId!, limit ? Number(limit) : undefined);
+  }
+
+  @Get('turnover-updates/count')
+  getTurnoverUpdatesCount(@Req() req: TenantRequest) {
+    return this.service.getTurnoverUpdatesCount(req.userId!);
+  }
+
   @Get('unread')
   getUnread(@Req() req: TenantRequest) {
     return this.service.getUnread(req.userId!);

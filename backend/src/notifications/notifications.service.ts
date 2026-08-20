@@ -61,6 +61,37 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Changes to the work I am holding — the "Změny" tab.
+   *
+   * Deliberately a narrow slice of the notification table: things that alter a
+   * cleaning someone already took. Assignment notifications are not here; those
+   * are answered by the cleaning appearing in "Mine".
+   */
+  async getTurnoverUpdates(userId: string, limit = 50) {
+    return this.prisma.notification.findMany({
+      where: {
+        userId,
+        channel: 'IN_APP',
+        type: { in: ['CANCELLATION', 'BOOKING_MODIFIED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  async getTurnoverUpdatesCount(userId: string): Promise<{ count: number }> {
+    const count = await this.prisma.notification.count({
+      where: {
+        userId,
+        channel: 'IN_APP',
+        readAt: null,
+        type: { in: ['CANCELLATION', 'BOOKING_MODIFIED'] },
+      },
+    });
+    return { count };
+  }
+
   async markRead(userId: string, notificationId: string) {
     return this.prisma.notification.updateMany({
       where: { id: notificationId, userId },

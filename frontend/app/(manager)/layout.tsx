@@ -7,12 +7,18 @@ import { translations, type Locale } from '@/i18n/translations';
 import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
-  AlertTriangle, Activity, Database, Wrench, Mail,
+  AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
+
+/**
+ * Office roles that are not managers. They may open Airchat and nothing else —
+ * the first real permission split in the app, deliberately narrow.
+ */
+const DESK_ONLY_ROLES = ['OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'ASSIST'];
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'en', label: 'EN' },
@@ -41,7 +47,18 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     if (!loading) {
       if (!user) { router.replace('/login'); return; }
       if (user.role === 'REPAIRMAN') { router.replace('/my-repairs'); return; }
-      if (user.role !== 'MANAGER') { router.replace('/cleanings'); return; }
+
+      // The desk gets in, but only as far as Airchat — that is their whole
+      // workplace for now. The rest of the manager app stays with MANAGER and
+      // ADMIN until each role's scope is decided.
+      if (DESK_ONLY_ROLES.includes(user.role)) {
+        if (!pathname?.startsWith('/airchat')) { router.replace('/airchat'); }
+        return;
+      }
+      if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
+        router.replace('/cleanings');
+        return;
+      }
     }
   }, [user, loading]);
 
@@ -54,12 +71,19 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/streams',    icon: Activity,        label: (t.nav as any).streams  ?? 'Streams' },
     { href: '/incidents',  icon: AlertTriangle,   label: t.nav.incidents },
     { href: '/repairs',    icon: Wrench,          label: (t.nav as any).repairs  ?? 'Repairs' },
+    { href: '/airchat',    icon: MessagesSquare,  label: 'Airchat' },
     { href: '/messages',   icon: Mail,            label: messageStrings[locale].manager.navLabel },
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
     { href: '/datasets',   icon: Database,        label: (t.nav as any).datasets ?? 'Datasets' },
     { href: '/settings',   icon: Settings,        label: t.nav.settings },
   ];
+
+  // Desk roles see one item. Showing them a menu they cannot open would just
+  // be a list of locked doors.
+  const visibleNav = DESK_ONLY_ROLES.includes(user?.role ?? '')
+    ? navItems.filter((i) => i.href === '/airchat')
+    : navItems;
 
   if (loading || !user) {
     return (
@@ -85,7 +109,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-          {navItems.map(({ href, icon: Icon, label }) => {
+          {visibleNav.map(({ href, icon: Icon, label }) => {
             const active = pathname === href || pathname?.startsWith(href + '/');
             return (
               <Link

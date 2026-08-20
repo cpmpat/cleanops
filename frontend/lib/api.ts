@@ -1,6 +1,21 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type Role = 'MANAGER' | 'CLEANER' | 'REPAIRMAN';
+/**
+ * Roles the backend can return. Only the first three are wired to permissions;
+ * the rest exist so accounts can be created and addressed by announcements
+ * before their scope is decided.
+ */
+export type Role =
+  | 'MANAGER'
+  | 'CLEANER'
+  | 'REPAIRMAN'
+  | 'ADMIN'
+  | 'OPERATION_MANAGER'
+  | 'FRONT_DESK_MANAGER'
+  | 'FRONT_DESK'
+  | 'ASSIST'
+  | 'TERENAK'
+  | 'AGENT';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;
@@ -796,6 +811,8 @@ export interface CalendarResponse {
 export type StreamItemType =
   | 'RESERVATION'
   | 'CLEANING'
+  | 'TURNOVER'
+  | 'DIRECT_CHAT'
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
@@ -817,6 +834,15 @@ export interface StreamItem {
   priority?: string;
   source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual'; id: string };
   authorName?: string;
+  /** Present on TURNOVER items that have a chat — the exchange belongs to the
+   *  cleaning, so it is reported on it rather than as its own entry. */
+  chat?: {
+    id: string;
+    messageCount: number;
+    participantCount: number;
+    lastMessageAt: string | null;
+    lastMessage?: string | null;
+  };
 }
 
 export interface StreamFeed {
@@ -1120,8 +1146,32 @@ export const tags = {
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
+/** A change to a cleaning somebody is already holding — the "Změny" tab. */
+export interface TurnoverUpdate {
+  id: string;
+  type: 'CANCELLATION' | 'BOOKING_MODIFIED';
+  title: string;
+  body: string;
+  readAt?: string | null;
+  createdAt: string;
+  payload?: {
+    kind?: 'BOOKING_CANCELLED' | 'GUESTS_CHANGED' | 'STAY_EXTENDED' | string;
+    turnoverId?: string;
+    propertyName?: string;
+    bookingRef?: string;
+    fromValue?: string | number | null;
+    toValue?: string | number | null;
+    [key: string]: any;
+  };
+}
+
 export const notifications = {
   list: () => get<Notification[]>('/notifications'),
+  /** Changes to my not-yet-finished cleanings. */
+  turnoverUpdates: (limit = 50) =>
+    get<TurnoverUpdate[]>(`/notifications/turnover-updates?limit=${limit}`),
+  turnoverUpdatesCount: () =>
+    get<{ count: number }>('/notifications/turnover-updates/count'),
   unreadCount: () => get<{ count: number }>('/notifications/unread/count'),
   markRead: (id: string) => patch(`/notifications/${id}/read`),
   markAllRead: () => patch('/notifications/read-all'),
@@ -1429,6 +1479,154 @@ export const help = {
       method: 'PUT',
       body: JSON.stringify({ html, title }),
     }),
+};
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+export type ConversationStatus = 'OPEN' | 'CLOSED';
+/**
+ * TURNOVER — opened by whoever does the work, part of that cleaning's record.
+ * DIRECT   — opened by the office towards people, tied to nothing else.
+ */
+export type ChatKind = 'TURNOVER' | 'DIRECT';
+export type MessageKind = 'TEXT' | 'SYSTEM';
+
+export interface ConversationPerson {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+}
+
+export interface ConversationMember {
+  id: string;
+  userId: string;
+  addedAt: string;
+  lastReadAt?: string | null;
+  /** This person keeps the thread through the 30-day archive sweep. */
+  starred?: boolean;
+  user: ConversationPerson;
+}
+
+export interface MessageAttachment {
+  id: string;
+  kind: 'IMAGE' | 'VIDEO';
+  /** Canonical GCS url — render it with <SignedImage />. */
+  url: string;
+  mimeType?: string | null;
+  bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  authorId?: string | null;
+  kind: MessageKind;
+  /** For SYSTEM messages this is JSON: { event, actor?, target?, property? }. */
+  body?: string | null;
+  createdAt: string;
+  author?: ConversationPerson | null;
+  attachments: MessageAttachment[];
+}
+
+export interface ConversationTurnoverRef {
+  id: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  property?: { id: string; name: string; pmsPropertyId?: string | null } | null;
+  fromBooking?: { checkOutTime?: string | null } | null;
+  toBooking?: { checkInTime?: string | null; numAdults?: number; numChildren?: number } | null;
+}
+
+export interface Conversation {
+  id: string;
+  kind: ChatKind;
+  /** Null on direct chats. */
+  turnoverId?: string | null;
+  /** Subject line; direct chats only. */
+  title?: string | null;
+  status: ConversationStatus;
+  archivedAt?: string | null;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  turnover?: ConversationTurnoverRef | null;
+  members: ConversationMember[];
+  messages?: ConversationMessage[];
+  lastMessage?: ConversationMessage | null;
+  unreadCount?: number;
+}
+
+/** Everyone is returned; `canInvite` false means the sheet greys them out. */
+export interface ConversationCandidate extends ConversationPerson {
+  canInvite: boolean;
+}
+
+/** One row in the Airchat console list. */
+export interface OfficeChatRow {
+  id: string;
+  kind: ChatKind;
+  title?: string | null;
+  status: ConversationStatus;
+  archivedAt?: string | null;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  turnover?: ConversationTurnoverRef | null;
+  members: ConversationMember[];
+  lastMessage?: ConversationMessage | null;
+  /** Last word came from outside the office and nobody answered. */
+  needsReply: boolean;
+  /** When the oldest unanswered question was asked. */
+  waitingSince?: string | null;
+  unreadCount: number;
+  starred: boolean;
+}
+
+export type OfficeQueue =
+  | 'waiting' | 'unread' | 'all' | 'mine'
+  | 'turnover' | 'direct' | 'starred' | 'archived';
+
+export interface OfficeQueuesResult {
+  items: OfficeChatRow[];
+  counts: Record<OfficeQueue, number>;
+  queue: OfficeQueue;
+}
+
+export const conversations = {
+  /** Airchat console. Office roles only. */
+  office: (params: { queue?: OfficeQueue; sort?: 'oldest' | 'newest'; search?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.queue) qs.set('queue', params.queue);
+    if (params.sort) qs.set('sort', params.sort);
+    if (params.search) qs.set('search', params.search);
+    const suffix = qs.toString();
+    return get<OfficeQueuesResult>(`/conversations/office${suffix ? `?${suffix}` : ''}`);
+  },
+  list: () => get<Conversation[]>('/conversations'),
+  count: () => get<{ count: number }>('/conversations/count'),
+  /** Idempotent: returns the existing channel for this turnover if there is one. */
+  open: (turnoverId: string) => post<Conversation>('/conversations', { turnoverId }),
+  /** Manager only. A cleaner opens her turnover's channel instead. */
+  openDirect: (dto: { userIds: string[]; title?: string; body?: string }) =>
+    post<Conversation>('/conversations/direct', dto),
+  get: (id: string) => get<Conversation>(`/conversations/${id}`),
+  post: (
+    id: string,
+    dto: {
+      body?: string;
+      attachments?: { url: string; mimeType?: string; bytes?: number; width?: number; height?: number }[];
+    },
+  ) => post<ConversationMessage>(`/conversations/${id}/messages`, dto),
+  candidates: (id: string) => get<ConversationCandidate[]>(`/conversations/${id}/candidates`),
+  addMembers: (id: string, userIds: string[]) =>
+    post<Conversation>(`/conversations/${id}/members`, { userIds }),
+  markRead: (id: string) => post<{ ok: true }>(`/conversations/${id}/read`, {}),
+  /** Keep a thread through the 30-day archive sweep. */
+  star: (id: string, starred: boolean) =>
+    post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
+  /** Clear a thread by hand — the `e` key in Airchat. Office roles only. */
+  archive: (id: string, archived = true) =>
+    post<{ archived: boolean }>(`/conversations/${id}/archive`, { archived }),
 };
 
 export { ApiError };

@@ -398,6 +398,32 @@ export class BookingSyncService {
       });
     }
 
+    // A manager editing times in Planning is the other way these change, and
+    // for the cleaner it is the same event as a PMS edit.
+    if (data.checkInTime && oldCheckInTime.getTime() !== new Date(data.checkInTime).getTime()) {
+      await this.notifyTurnoverAssignees(tenantId, b.id, 'to', {
+        kind: 'CHECKIN_CHANGED',
+        fromValue: oldCheckInTime.toISOString(),
+        toValue: new Date(data.checkInTime).toISOString(),
+        title: 'Arrival time changed',
+        body: (name) => `${name} — the guest now arrives at a different time.`,
+      });
+    }
+    if (data.checkOutTime && b.checkOutTime &&
+        b.checkOutTime.getTime() !== new Date(data.checkOutTime).getTime()) {
+      const later = new Date(data.checkOutTime).getTime() > b.checkOutTime.getTime();
+      await this.notifyTurnoverAssignees(tenantId, b.id, 'from', {
+        kind: later ? 'STAY_EXTENDED' : 'STAY_SHORTENED',
+        fromValue: b.checkOutTime.toISOString(),
+        toValue: new Date(data.checkOutTime).toISOString(),
+        title: later ? 'Stay extended' : 'Stay shortened',
+        body: (name) =>
+          later
+            ? `${name} — the guest stays longer, so the cleaning moves back.`
+            : `${name} — the guest leaves earlier, so the cleaning moves up.`,
+      });
+    }
+
     // Step 3: notify assigned cleaners
     if (b.cleaning?.assignments) {
       for (const a of b.cleaning.assignments) {
@@ -671,6 +697,48 @@ export class BookingSyncService {
             });
           }
         });
+
+        // What actually changed, from the cleaner's point of view. Sent before
+        // the chain is re-threaded, while the booking references still hold.
+        const guestsBefore = `${existing.numAdults}+${existing.numChildren}`;
+        const guestsAfter = `${booking.numAdults}+${booking.numChildren}`;
+        if (guestsBefore !== guestsAfter) {
+          await this.notifyTurnoverAssignees(tenantId, existing.id, 'to', {
+            kind: 'GUESTS_CHANGED',
+            fromValue: guestsBefore,
+            toValue: guestsAfter,
+            title: 'Guest count changed',
+            body: (name) =>
+              `${name} — the party changed to ${booking.numAdults} adults` +
+              `${booking.numChildren ? ` and ${booking.numChildren} children` : ''}. ` +
+              `Check bedding and towels.`,
+          });
+        }
+
+        if (existing.checkInTime.getTime() !== checkIn.getTime()) {
+          await this.notifyTurnoverAssignees(tenantId, existing.id, 'to', {
+            kind: 'CHECKIN_CHANGED',
+            fromValue: existing.checkInTime.toISOString(),
+            toValue: checkIn.toISOString(),
+            title: 'Arrival time changed',
+            body: (name) => `${name} — the guest now arrives at a different time.`,
+          });
+        }
+
+        const oldCheckOut = existing.checkOutTime ?? null;
+        if (checkOut && oldCheckOut && oldCheckOut.getTime() !== checkOut.getTime()) {
+          const later = checkOut.getTime() > oldCheckOut.getTime();
+          await this.notifyTurnoverAssignees(tenantId, existing.id, 'from', {
+            kind: later ? 'STAY_EXTENDED' : 'STAY_SHORTENED',
+            fromValue: oldCheckOut.toISOString(),
+            toValue: checkOut.toISOString(),
+            title: later ? 'Stay extended' : 'Stay shortened',
+            body: (name) =>
+              later
+                ? `${name} — the guest stays longer, so the cleaning moves back.`
+                : `${name} — the guest leaves earlier, so the cleaning moves up.`,
+          });
+        }
 
         // Turnover dual-write: re-thread chain if position changed, or just
         // update anchors if booking is still in the same slot
@@ -963,10 +1031,55 @@ export class BookingSyncService {
       });
     });
 
+    // Who is actually holding this work RIGHT NOW, under the turnover model.
+    // Read before the chain is re-stitched: onBookingCancelled supersedes rows
+    // and nulls the booking references, after which this lookup finds nothing.
+    //
+    // The block below this one notifies `cleaning.assignments` instead — the
+    // legacy model, which is empty for anything claimed through the pool. That
+    // is why cancellations have been silent in practice.
+    const affectedTurnovers = await this.prisma.turnover.findMany({
+      where: {
+        tenantId,
+        supersededById: null,
+        OR: [{ fromBookingId: existing.id }, { toBookingId: existing.id }],
+      },
+      select: {
+        id: true,
+        property: { select: { name: true } },
+        toBooking: { select: { checkInTime: true } },
+        assignments: {
+          where: { status: { in: ['ASSIGNED', 'STARTED'] } },
+          select: { userId: true },
+        },
+      },
+    });
+
     // Turnover dual-write: stitch the chain back together
     await this.safelyRunTurnoverSync('onBookingCancelled', async (tx) => {
       await this.turnoverSync.onBookingCancelled(existing.id, tx);
     });
+
+    for (const t of affectedTurnovers) {
+      const propertyName = t.property?.name ?? existing.accommodationName ?? '';
+      for (const a of t.assignments) {
+        await this.createNotification(
+          tenantId, a.userId, 'CANCELLATION',
+          'Booking cancelled',
+          `${propertyName} — the guest booking was cancelled. The cleaning is ` +
+          `still yours and still needs doing; there is no arrival deadline now.`,
+          t.id,
+          {
+            kind: 'BOOKING_CANCELLED',
+            turnoverId: t.id,
+            propertyName,
+            bookingRef: existing.bookingRef,
+            fromValue: t.toBooking?.checkInTime ?? null,
+            toValue: null,
+          },
+        );
+      }
+    }
 
     if (existing.cleaning?.assignments?.length) {
       for (const a of existing.cleaning.assignments) {
@@ -1271,9 +1384,70 @@ export class BookingSyncService {
 
   // ─── Helpers ───
 
+  /**
+   * Tell whoever is holding the affected cleaning what changed, in terms of the
+   * work rather than the record: "2 adults → 4 adults", not "a booking was
+   * modified".
+   *
+   * `side` picks which end of the chain cares. A check-out moving changes when
+   * the cleaner can START (the turnover whose `from` booking this is); a
+   * check-in or a guest count moving changes what she is preparing FOR (the
+   * turnover whose `to` booking this is).
+   *
+   * Must run BEFORE the turnover chain is re-threaded — afterwards the booking
+   * references have moved and this finds nothing.
+   */
+  private async notifyTurnoverAssignees(
+    tenantId: string,
+    bookingId: string,
+    side: 'to' | 'from',
+    change: {
+      kind: string;
+      fromValue: string | number | null;
+      toValue: string | number | null;
+      title: string;
+      body: (propertyName: string) => string;
+    },
+  ) {
+    const turnovers = await this.prisma.turnover.findMany({
+      where: {
+        tenantId,
+        supersededById: null,
+        completedAt: null,
+        ...(side === 'to' ? { toBookingId: bookingId } : { fromBookingId: bookingId }),
+      },
+      select: {
+        id: true,
+        property: { select: { name: true } },
+        assignments: {
+          where: { status: { in: ['ASSIGNED', 'STARTED'] } },
+          select: { userId: true },
+        },
+      },
+    });
+
+    for (const t of turnovers) {
+      const propertyName = t.property?.name ?? '';
+      for (const a of t.assignments) {
+        await this.createNotification(
+          tenantId, a.userId, 'BOOKING_MODIFIED',
+          change.title, change.body(propertyName), t.id,
+          {
+            kind: change.kind,
+            turnoverId: t.id,
+            propertyName,
+            fromValue: change.fromValue,
+            toValue: change.toValue,
+          },
+        );
+      }
+    }
+  }
+
   private async createNotification(
     tenantId: string, userId: string, type: string,
     title: string, body: string, eventId: string,
+    payload: Record<string, any> = {},
   ) {
     if (this.notificationsSuppressed) return;
     await this.prisma.notification.create({
@@ -1282,7 +1456,9 @@ export class BookingSyncService {
         type: type as any,
         channel: 'IN_APP',
         title, body,
-        payload: { eventId },
+        // The extra payload is what lets the app render "2 adults → 4 adults"
+        // instead of "a booking was modified".
+        payload: { eventId, ...payload },
       },
     });
   }

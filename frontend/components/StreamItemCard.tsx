@@ -7,6 +7,8 @@ import {
   Wrench,
   ClipboardCheck,
   StickyNote,
+  RefreshCw,
+  MessagesSquare,
 } from 'lucide-react';
 import { SignedImage } from './SignedImage';
 import type { StreamItem, StreamItemType } from '@/lib/api';
@@ -18,6 +20,10 @@ const ICONS: Record<StreamItemType, any> = {
   REPAIR: Wrench,
   INSPECTION: ClipboardCheck,
   MANUAL: StickyNote,
+  // A turnover is the unit of work; CLEANING above is the legacy row it
+  // replaces, kept until those are retired.
+  TURNOVER: RefreshCw,
+  DIRECT_CHAT: MessagesSquare,
 };
 
 const COLORS: Record<StreamItemType, { bg: string; text: string; border: string }> = {
@@ -27,6 +33,10 @@ const COLORS: Record<StreamItemType, { bg: string; text: string; border: string 
   REPAIR:      { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   INSPECTION:  { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
   MANUAL:      { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-200' },
+  // Turnovers wear the app's amber; chats wear the message blue they already
+  // have everywhere else.
+  TURNOVER:    { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300' },
+  DIRECT_CHAT: { bg: 'bg-[#eef2fa]', text: 'text-[#243b6b]', border: 'border-[#c8d4ea]' },
 };
 
 interface Props {

@@ -60,6 +60,11 @@ export class RolesGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<TenantRequest>();
     if (!req.userRole) throw new ForbiddenException('No role assigned');
 
+    // ADMIN satisfies every requirement. Without this an admin account would
+    // be locked out of the app it administers the moment its role is set,
+    // because every guarded endpoint names concrete roles.
+    if (req.userRole === 'ADMIN') return true;
+
     if (!requiredRoles.includes(req.userRole)) {
       throw new ForbiddenException('Insufficient permissions');
     }

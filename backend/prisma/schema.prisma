@@ -42,16 +42,37 @@ model Tenant {
   turnovers           Turnover[]
   notes               Note[]
   helpDocs            HelpDoc[]
+  conversations       Conversation[]
 
   @@map("tenants")
 }
 
 // ─── USER ─────────────────────────────────────
 
+/// Roles the portal knows about.
+///
+/// Only MANAGER, CLEANER and REPAIRMAN are wired to permissions today; the
+/// rest exist so accounts can be created and addressed (a role is also an
+/// audience for announcements) before we decide what each one may open.
+/// Until then they behave like a user with no permissions — every endpoint
+/// guarded by @Roles() refuses them, which is the safe default.
+///
+/// ADMIN is the exception: it satisfies every @Roles() check, so an admin
+/// account cannot lock itself out of the app it administers.
 enum UserRole {
   MANAGER
   CLEANER
   REPAIRMAN
+
+  ADMIN
+  OPERATION_MANAGER
+  FRONT_DESK_MANAGER
+  FRONT_DESK
+  ASSIST
+  /// Field runner — moves between flats with linen, keys and small fixes.
+  /// Scope still to be defined.
+  TERENAK
+  AGENT
 }
 
 enum Language {
@@ -113,6 +134,10 @@ model User {
 
   authoredNotes              Note[]                @relation("NoteAuthor")
   publishedHelpDocs          HelpDoc[]             @relation("HelpDocPublisher")
+  createdConversations       Conversation[]        @relation("ConversationCreator")
+  conversationMemberships    ConversationMember[]  @relation("ConversationMemberUser")
+  addedConversationMembers   ConversationMember[]  @relation("ConversationMemberAddedBy")
+  conversationMessages       ConversationMessage[] @relation("ConversationMessageAuthor")
   noteTargets                NoteTarget[]
   noteAcks                   NoteAck[]
 
@@ -827,6 +852,8 @@ model Turnover {
   assignments      TurnoverAssignment[]
   photos           TurnoverPhoto[]
 
+  conversations       Conversation[]
+
   @@index([tenantId, propertyId, availableFrom])
   @@index([tenantId, status, dueBy])
   @@index([tenantId, status])
@@ -1002,4 +1029,139 @@ model HelpDoc {
   @@unique([tenantId, locale])
   @@index([tenantId])
   @@map("help_docs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversations — the open channel on a turnover
+//
+// The counterpart to Note, which is closed: an announcement goes down and comes
+// back only as a confirmation. A Conversation is two-way and belongs to a piece
+// of work, not to a pair of phone numbers — which is the whole reason for
+// moving this off WhatsApp. In six months "what happened at Černá on the 17th"
+// has an answer.
+//
+// A cleaner may open one only on a turnover they hold AND have started; before
+// that there is nothing concrete to talk about and the pool would fill with
+// speculative threads. Managers may open one at any time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+/// Two different animals that happen to share a message list.
+///
+/// TURNOVER — opened by whoever is doing the work, always about one cleaning.
+///   It is part of that turnover's record, which is why the Stream shows it on
+///   the turnover rather than as a line of its own.
+/// DIRECT — opened by the office towards people. Not tied to a cleaning, so it
+///   stands alone and only a manager can start one.
+enum ChatKind {
+  TURNOVER
+  DIRECT
+}
+
+enum MessageKind {
+  TEXT
+  /// "X added Y", "cleaning finished" — written by the server, not a person.
+  SYSTEM
+}
+
+enum AttachmentKind {
+  IMAGE
+  /// Not accepted yet; here so adding video later is a value, not a migration.
+  VIDEO
+}
+
+model Conversation {
+  id            String             @id @default(uuid())
+  tenantId      String
+  kind          ChatKind           @default(TURNOVER)
+  /// Null for DIRECT chats — they belong to people, not to a cleaning.
+  turnoverId    String?
+  /// Subject line. Only DIRECT chats need one; a turnover chat is named by
+  /// the flat it is about.
+  title         String?
+  createdById   String
+  status        ConversationStatus @default(OPEN)
+  /// Denormalised for ordering the list without touching every message.
+  lastMessageAt DateTime?
+  /// Set once the work is long finished and nobody kept the thread. Archived
+  /// chats leave the inbox; they are still readable and still queryable.
+  archivedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  turnover  Turnover?            @relation(fields: [turnoverId], references: [id], onDelete: Cascade)
+  createdBy User                  @relation("ConversationCreator", fields: [createdById], references: [id])
+  members   ConversationMember[]
+  messages  ConversationMessage[]
+
+  @@index([tenantId, lastMessageAt])
+  @@index([turnoverId])
+  @@index([tenantId, kind])
+  @@index([archivedAt])
+  @@map("turnover_chats")
+}
+
+model ConversationMember {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  addedById      String?
+  addedAt        DateTime  @default(now())
+  leftAt         DateTime?
+  /// Everything after this timestamp is unread for this person. One row per
+  /// member is enough to compute badges; per-message receipts can come later.
+  lastReadAt     DateTime?
+  /// Kept by this person. A starred chat survives the 30-day archive sweep;
+  /// unstar it and the next sweep takes it like any other.
+  starred        Boolean   @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation("ConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy      User?        @relation("ConversationMemberAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("turnover_chat_members")
+}
+
+model ConversationMessage {
+  id             String      @id @default(uuid())
+  conversationId String
+  /// Null for SYSTEM messages.
+  authorId       String?
+  kind           MessageKind @default(TEXT)
+  body           String?
+  createdAt      DateTime    @default(now())
+  editedAt       DateTime?
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?               @relation("ConversationMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, createdAt])
+  @@map("turnover_chat_messages")
+}
+
+model MessageAttachment {
+  id        String         @id @default(uuid())
+  messageId String
+  kind      AttachmentKind @default(IMAGE)
+  /// Canonical GCS object URL, same shape the incident photos use, so the
+  /// existing SignedImage component renders it without changes.
+  url       String
+  mimeType  String?
+  bytes     Int?
+  width     Int?
+  height    Int?
+  createdAt DateTime       @default(now())
+
+  message ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("turnover_chat_attachments")
 }
