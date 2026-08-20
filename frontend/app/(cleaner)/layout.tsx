@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { BottomNav } from '@/components/BottomNav';
 import {
@@ -18,6 +18,7 @@ import { translations, type Locale } from '@/i18n/translations';
 export default function CleanerLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, loadFromStorage, token, setAuth } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [unread, setUnread] = useState(0);
   const [unconfirmedNotes, setUnconfirmedNotes] = useState(0);
   const [todayArrivals, setTodayArrivals] = useState(0);
@@ -27,12 +28,16 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   useEffect(() => {
     if (!loading) {
       if (!user) { router.replace('/login'); return; }
-      if (user.role === 'MANAGER' || user.role === 'ADMIN') {
+      // Managers belong in the manager app — except inside a turnover chat,
+      // which is one screen both sides share. Bouncing them out of a thread
+      // they were invited to would make the invitation meaningless.
+      const inThread = pathname?.startsWith('/conversations');
+      if ((user.role === 'MANAGER' || user.role === 'ADMIN') && !inThread) {
         router.replace('/dashboard');
         return;
       }
     }
-  }, [user, loading]);
+  }, [user, loading, pathname]);
 
   // After auth hydration, refresh the current user from /auth/me. The login
   // response may not include all profile fields (notably `preferences`), so

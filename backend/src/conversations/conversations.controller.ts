@@ -97,6 +97,21 @@ export class ConversationsController {
     );
   }
 
+  @Post(':id/star')
+  @ApiOperation({
+    summary: 'Keep this thread (or stop keeping it)',
+    description:
+      'A starred chat survives the 30-day archive sweep. Remove the star and ' +
+      'the next sweep takes it like any other.',
+  })
+  star(
+    @Req() req: TenantRequest,
+    @Param('id') id: string,
+    @Body() dto: { starred: boolean },
+  ) {
+    return this.service.setStarred(req.tenantId!, req.userId!, id, !!dto?.starred);
+  }
+
   @Post(':id/read')
   @ApiOperation({ summary: 'Mark everything up to now as read' })
   read(@Req() req: TenantRequest, @Param('id') id: string) {

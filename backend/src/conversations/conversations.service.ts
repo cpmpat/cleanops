@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma.service';
 import { CleanOpsGateway } from '../websocket/websocket.module';
 
@@ -33,6 +34,15 @@ const CLEANER_INVITABLE_ROLES = ['CLEANER'] as const;
 
 const HELD_ASSIGNMENT_STATUSES = ['ASSIGNED', 'STARTED'] as const;
 
+/**
+ * How long a finished turnover's chat stays in the inbox.
+ *
+ * Without this the list only ever grows, and an inbox nobody can face is an
+ * inbox nobody reads. A star exempts a thread from the sweep; remove the star
+ * and the next sweep takes it like any other.
+ */
+const ARCHIVE_AFTER_DAYS = 30;
+
 interface Actor {
   userId: string;
   userRole: string;
@@ -43,6 +53,7 @@ const MEMBER_SELECT = {
   userId: true,
   addedAt: true,
   lastReadAt: true,
+  starred: true,
   user: { select: { id: true, name: true, email: true, role: true } },
 } as const;
 
@@ -147,7 +158,11 @@ export class ConversationsService {
 
   async listForUser(tenantId: string, userId: string) {
     const conversations = await this.prisma.conversation.findMany({
-      where: { tenantId, members: { some: { userId, leftAt: null } } },
+      where: {
+        tenantId,
+        archivedAt: null,
+        members: { some: { userId, leftAt: null } },
+      },
       include: {
         turnover: {
           select: {
@@ -235,6 +250,58 @@ export class ConversationsService {
       data: { lastReadAt: new Date() },
     });
     return { ok: true };
+  }
+
+  /**
+   * Keep this thread. Starring is per person: what one cleaner needs to hold on
+   * to is not what another does, and the office keeping a thread should not
+   * pin it into everybody's inbox.
+   */
+  async setStarred(tenantId: string, userId: string, id: string, starred: boolean) {
+    const member = await this.prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId, conversation: { tenantId } },
+      select: { id: true },
+    });
+    if (!member) throw new ForbiddenException('You are not in this conversation');
+
+    await this.prisma.conversationMember.update({
+      where: { id: member.id },
+      data: { starred },
+    });
+    return { starred };
+  }
+
+  /**
+   * Nightly sweep: archive chats whose cleaning finished more than 30 days ago
+   * and which nobody kept.
+   *
+   * Archived means gone from the inbox and closed to new messages — not
+   * deleted. The history stays queryable, which is the entire reason this
+   * lives in our database instead of somebody's phone.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async archiveFinishedChats() {
+    const cutoff = new Date(Date.now() - ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000);
+
+    const stale = await this.prisma.conversation.findMany({
+      where: {
+        archivedAt: null,
+        turnover: { completedAt: { lt: cutoff } },
+        // One star from anyone keeps the thread alive for everyone in it —
+        // splitting a thread per person would be worse than keeping it.
+        members: { none: { starred: true } },
+      },
+      select: { id: true },
+    });
+    if (!stale.length) return { archived: 0 };
+
+    await this.prisma.conversation.updateMany({
+      where: { id: { in: stale.map((c) => c.id) } },
+      data: { archivedAt: new Date(), status: 'CLOSED' },
+    });
+
+    this.logger.log(`Archived ${stale.length} finished turnover chats`);
+    return { archived: stale.length };
   }
 
   // ─── Writing ───────────────────────────────────────────────────────────────

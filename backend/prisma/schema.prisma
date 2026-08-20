@@ -1069,6 +1069,9 @@ model Conversation {
   status        ConversationStatus @default(OPEN)
   /// Denormalised for ordering the list without touching every message.
   lastMessageAt DateTime?
+  /// Set once the work is long finished and nobody kept the thread. Archived
+  /// chats leave the inbox; they are still readable and still queryable.
+  archivedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -1080,7 +1083,8 @@ model Conversation {
 
   @@index([tenantId, lastMessageAt])
   @@index([turnoverId])
-  @@map("conversations")
+  @@index([archivedAt])
+  @@map("turnover_chats")
 }
 
 model ConversationMember {
@@ -1093,6 +1097,9 @@ model ConversationMember {
   /// Everything after this timestamp is unread for this person. One row per
   /// member is enough to compute badges; per-message receipts can come later.
   lastReadAt     DateTime?
+  /// Kept by this person. A starred chat survives the 30-day archive sweep;
+  /// unstar it and the next sweep takes it like any other.
+  starred        Boolean   @default(false)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation("ConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -1100,7 +1107,7 @@ model ConversationMember {
 
   @@unique([conversationId, userId])
   @@index([userId])
-  @@map("conversation_members")
+  @@map("turnover_chat_members")
 }
 
 model ConversationMessage {
@@ -1118,7 +1125,7 @@ model ConversationMessage {
   attachments  MessageAttachment[]
 
   @@index([conversationId, createdAt])
-  @@map("conversation_messages")
+  @@map("turnover_chat_messages")
 }
 
 model MessageAttachment {
@@ -1137,5 +1144,5 @@ model MessageAttachment {
   message ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
-  @@map("message_attachments")
+  @@map("turnover_chat_attachments")
 }

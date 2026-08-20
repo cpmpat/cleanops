@@ -810,6 +810,8 @@ export interface CalendarResponse {
 export type StreamItemType =
   | 'RESERVATION'
   | 'CLEANING'
+  | 'TURNOVER'
+  | 'TURNOVER_CHAT'
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
@@ -1486,6 +1488,8 @@ export interface ConversationMember {
   userId: string;
   addedAt: string;
   lastReadAt?: string | null;
+  /** This person keeps the thread through the 30-day archive sweep. */
+  starred?: boolean;
   user: ConversationPerson;
 }
 
@@ -1524,6 +1528,7 @@ export interface Conversation {
   id: string;
   turnoverId: string;
   status: ConversationStatus;
+  archivedAt?: string | null;
   lastMessageAt?: string | null;
   createdAt: string;
   turnover: ConversationTurnoverRef;
@@ -1555,6 +1560,9 @@ export const conversations = {
   addMembers: (id: string, userIds: string[]) =>
     post<Conversation>(`/conversations/${id}/members`, { userIds }),
   markRead: (id: string) => post<{ ok: true }>(`/conversations/${id}/read`, {}),
+  /** Keep a thread through the 30-day archive sweep. */
+  star: (id: string, starred: boolean) =>
+    post<{ starred: boolean }>(`/conversations/${id}/star`, { starred }),
 };
 
 export { ApiError };

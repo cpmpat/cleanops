@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
-  ArrowLeft, UserPlus, Send, ImagePlus, X, Check, Lock, LogIn, LogOut,
+  ArrowLeft, UserPlus, Send, ImagePlus, X, Check, Lock, LogIn, LogOut, Star,
 } from 'lucide-react';
 import {
   conversations as conversationsApi,
@@ -44,19 +44,21 @@ export default function ConversationPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [starred, setStarred] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await conversationsApi.get(id);
       setConversation(data);
+      setStarred(!!data.members.find((mem) => mem.userId === user?.id)?.starred);
       conversationsApi.markRead(id).catch(() => {});
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
       setLoading(false);
     }
-  }, [id, t.general.error]);
+  }, [id, t.general.error, user?.id]);
 
   useEffect(() => { if (id) load(); }, [id, load]);
   useSocket({ 'conversation:changed': () => load() });
@@ -134,13 +136,37 @@ export default function ConversationPage() {
             {m.thread.participants(conversation.members.length)}
           </p>
         </div>
-        <button
-          onClick={() => setSheetOpen(true)}
-          className="ml-auto flex items-center gap-1.5 bg-white/12 hover:bg-white/20 rounded-full px-3 py-1.5 text-[10.5px] font-bold transition"
-        >
-          <UserPlus size={12} />
-          {m.thread.add}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="flex items-center gap-1.5 bg-white/12 hover:bg-white/20 rounded-full px-3 py-1.5 text-[10.5px] font-bold transition"
+          >
+            <UserPlus size={12} />
+            {m.thread.add}
+          </button>
+
+          {/* Keep. Finished cleanings take their chat with them after 30 days;
+              a star holds this one back. Optimistic, because a star that waits
+              for the network feels broken. */}
+          <button
+            onClick={async () => {
+              const next = !starred;
+              setStarred(next);
+              try {
+                await conversationsApi.star(id, next);
+              } catch {
+                setStarred(!next);
+              }
+            }}
+            title={starred ? m.thread.kept : m.thread.keep}
+            aria-pressed={starred}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition ${
+              starred ? 'text-amber-300 bg-white/12' : 'text-white/55 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Star size={17} fill={starred ? 'currentColor' : 'none'} />
+          </button>
+        </div>
       </div>
 
       {/* Context — what this conversation is about */}

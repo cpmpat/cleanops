@@ -74,6 +74,8 @@ export interface MessageStrings {
     memberAdded: (actor: string, target: string) => string;
     startFirst: string;
     closed: string;
+    keep: string;
+    kept: string;
   };
   changes: {
     cancelled: string;
@@ -82,6 +84,8 @@ export interface MessageStrings {
     modified: string;
     openTurnover: string;
     cancelledMeaning: string;
+    checkIn: string;
+    stayShortened: string;
   };
   manager: {
     navLabel: string;
@@ -173,7 +177,7 @@ const en: MessageStrings = {
     forTeam: (n) => `For ${n} team members`,
     forProperty: (name) => `For ${name}`,
   },
-  card: { swapToday: 'Turnaround today', askOffice: 'Message the office' },
+  card: { swapToday: 'Turnaround today', askOffice: 'Message the front desk' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Announcements',
@@ -200,6 +204,8 @@ const en: MessageStrings = {
     memberAdded: (actor, target) => `${actor} added ${target}`,
     startFirst: 'Start the cleaning first',
     closed: 'This conversation is closed.',
+    keep: 'Keep this thread',
+    kept: 'Kept',
   },
   changes: {
     cancelled: 'Booking cancelled',
@@ -208,6 +214,8 @@ const en: MessageStrings = {
     modified: 'Booking changed',
     openTurnover: 'Open cleaning',
     cancelledMeaning: 'The cleaning is still yours and still needs doing — there is just no arrival deadline now.',
+    checkIn: 'Arrival time changed',
+    stayShortened: 'Stay shortened',
   },
   manager: {
     navLabel: 'Messages',
@@ -299,7 +307,7 @@ const cs: MessageStrings = {
     forTeam: (n) => `Pro ${n} ${n === 1 ? 'člena' : n < 5 ? 'členy' : 'členů'} týmu`,
     forProperty: (name) => `Pro objekt ${name}`,
   },
-  card: { swapToday: 'Výměna dnes', askOffice: 'Napsat na centrálu' },
+  card: { swapToday: 'Výměna dnes', askOffice: 'Napsat na front desk' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Oznámení',
@@ -326,6 +334,8 @@ const cs: MessageStrings = {
     memberAdded: (actor, target) => `${actor} přidal(a) ${target}`,
     startFirst: 'Nejdřív úklid zahajte',
     closed: 'Tato konverzace je uzavřená.',
+    keep: 'Ponechat konverzaci',
+    kept: 'Ponecháno',
   },
   changes: {
     cancelled: 'Rezervace zrušena',
@@ -334,6 +344,8 @@ const cs: MessageStrings = {
     modified: 'Změna rezervace',
     openTurnover: 'Otevřít úklid',
     cancelledMeaning: 'Úklid zůstává váš a je pořád potřeba ho udělat — jen už na něj netlačí termín příjezdu.',
+    checkIn: 'Změna času příjezdu',
+    stayShortened: 'Pobyt zkrácen',
   },
   manager: {
     navLabel: 'Zprávy',
@@ -425,7 +437,7 @@ const ru: MessageStrings = {
     forTeam: (n) => `Для ${n} сотрудников`,
     forProperty: (name) => `Для объекта ${name}`,
   },
-  card: { swapToday: 'Смена сегодня', askOffice: 'Написать в офис' },
+  card: { swapToday: 'Смена сегодня', askOffice: 'Написать на ресепшн' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Объявления',
@@ -452,6 +464,8 @@ const ru: MessageStrings = {
     memberAdded: (actor, target) => `${actor} добавил(а) ${target}`,
     startFirst: 'Сначала начните уборку',
     closed: 'Переписка закрыта.',
+    keep: 'Сохранить переписку',
+    kept: 'Сохранено',
   },
   changes: {
     cancelled: 'Бронь отменена',
@@ -460,6 +474,8 @@ const ru: MessageStrings = {
     modified: 'Бронь изменена',
     openTurnover: 'Открыть уборку',
     cancelledMeaning: 'Уборка остаётся за вами, и её нужно сделать — просто больше нет срока к приезду.',
+    checkIn: 'Изменилось время приезда',
+    stayShortened: 'Проживание сокращено',
   },
   manager: {
     navLabel: 'Сообщения',
@@ -551,7 +567,7 @@ const uk: MessageStrings = {
     forTeam: (n) => `Для ${n} працівників`,
     forProperty: (name) => `Для об'єкта ${name}`,
   },
-  card: { swapToday: 'Заміна сьогодні', askOffice: 'Написати в офіс' },
+  card: { swapToday: 'Заміна сьогодні', askOffice: 'Написати на ресепшн' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Оголошення',
@@ -578,6 +594,8 @@ const uk: MessageStrings = {
     memberAdded: (actor, target) => `${actor} додав(ла) ${target}`,
     startFirst: 'Спершу розпочніть прибирання',
     closed: 'Це листування закрите.',
+    keep: 'Зберегти листування',
+    kept: 'Збережено',
   },
   changes: {
     cancelled: 'Бронювання скасовано',
@@ -586,6 +604,8 @@ const uk: MessageStrings = {
     modified: 'Бронювання змінено',
     openTurnover: 'Відкрити прибирання',
     cancelledMeaning: 'Прибирання залишається за вами і його треба зробити — просто немає терміну до приїзду.',
+    checkIn: 'Змінився час приїзду',
+    stayShortened: 'Перебування скорочено',
   },
   manager: {
     navLabel: 'Повідомлення',

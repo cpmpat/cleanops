@@ -244,6 +244,10 @@ function ChangeCard({ update, locale }: { update: TurnoverUpdate; locale: Locale
       ? { rail: 'border-l-red-600', tone: 'text-red-700', icon: <CircleX size={11} />, label: m.changes.cancelled }
       : kind === 'STAY_EXTENDED'
       ? { rail: 'border-l-violet-500', tone: 'text-violet-700', icon: <CalendarClock size={11} />, label: m.changes.stay }
+      : kind === 'STAY_SHORTENED'
+      ? { rail: 'border-l-violet-500', tone: 'text-violet-700', icon: <CalendarClock size={11} />, label: m.changes.stayShortened }
+      : kind === 'CHECKIN_CHANGED'
+      ? { rail: 'border-l-sky-500', tone: 'text-sky-700', icon: <CalendarClock size={11} />, label: m.changes.checkIn }
       : kind === 'GUESTS_CHANGED'
       ? { rail: 'border-l-amber-400', tone: 'text-amber-700', icon: <UserPlus size={11} />, label: m.changes.guests }
       : { rail: 'border-l-amber-400', tone: 'text-amber-700', icon: <UserPlus size={11} />, label: m.changes.modified };
