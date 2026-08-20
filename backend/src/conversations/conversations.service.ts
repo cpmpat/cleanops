@@ -30,8 +30,22 @@ import { CleanOpsGateway } from '../websocket/websocket.module';
  *    of them.
  */
 
-/** Roles that are always in the room and may invite anybody. */
-const OFFICE_ROLES = ['MANAGER', 'ADMIN'] as const;
+/**
+ * The office.
+ *
+ * These roles are members of every turnover chat from the moment it opens, may
+ * invite anybody, may read any thread, and may start a direct chat. A cleaner
+ * writing "to the front desk" should not have to guess who is on shift, so the
+ * whole desk is in the room and whoever is free answers.
+ */
+const OFFICE_ROLES = [
+  'MANAGER',
+  'ADMIN',
+  'OPERATION_MANAGER',
+  'FRONT_DESK_MANAGER',
+  'FRONT_DESK',
+  'ASSIST',
+] as const;
 /** Roles a cleaner is allowed to pull in. */
 const CLEANER_INVITABLE_ROLES = ['CLEANER'] as const;
 

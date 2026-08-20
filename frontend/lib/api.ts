@@ -10,6 +10,7 @@ export type Role =
   | 'CLEANER'
   | 'REPAIRMAN'
   | 'ADMIN'
+  | 'OPERATION_MANAGER'
   | 'FRONT_DESK_MANAGER'
   | 'FRONT_DESK'
   | 'ASSIST'
