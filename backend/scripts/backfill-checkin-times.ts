@@ -73,7 +73,16 @@ type Row = {
 };
 
 async function main() {
+  // npm strips the `--` separator before handing argv to the script; pnpm
+  // forwards it verbatim. parseArgs treats a literal `--` as end-of-options and
+  // then rejects everything after it as a positional, so `pnpm run x -- --tenant y`
+  // would die with "does not take positional arguments". Drop a leading `--` so
+  // the same command line works under either runner.
+  const argv = process.argv.slice(2);
+  if (argv[0] === '--') argv.shift();
+
   const { values } = parseArgs({
+    args: argv,
     options: {
       tenant: { type: 'string' },
       apply: { type: 'boolean', default: false },
