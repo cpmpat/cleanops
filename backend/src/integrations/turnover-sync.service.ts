@@ -150,6 +150,21 @@ export class TurnoverSyncService {
   // Adjacent-booking lookup
   // ==========================================================================
 
+  // Both lookups walk the same total order the reconciler uses:
+  // (checkInTime, id). The id half is not decoration.
+  //
+  // With a plain `checkInTime < x` / `> x` and no tie-break, two bookings that
+  // share a check-in time to the millisecond are invisible to each other —
+  // neither is the other's neighbour — and Postgres picks arbitrarily among
+  // them when a third booking asks who came before it. That is not
+  // theoretical: on Zborovská 58/1 two confirmed bookings arrived at the same
+  // instant, a later arrival attached itself to the wrong one, and the
+  // departing guest's turnover was superseded and never replaced. The cleaning
+  // silently ceased to exist and nobody noticed for five days.
+  //
+  // TurnoverReconcileService orders by [checkInTime, id] already. Matching it
+  // here is what keeps the two from disagreeing about the same chain.
+
   private async findPrev(
     propertyId: string,
     checkInTime: Date,
@@ -160,10 +175,13 @@ export class TurnoverSyncService {
       where: {
         propertyId,
         status: 'CONFIRMED',
-        checkInTime: { lt: checkInTime },
         NOT: { id: excludeBookingId },
+        OR: [
+          { checkInTime: { lt: checkInTime } },
+          { AND: [{ checkInTime }, { id: { lt: excludeBookingId } }] },
+        ],
       },
-      orderBy: { checkInTime: 'desc' },
+      orderBy: [{ checkInTime: 'desc' }, { id: 'desc' }],
     });
   }
 
@@ -177,10 +195,13 @@ export class TurnoverSyncService {
       where: {
         propertyId,
         status: 'CONFIRMED',
-        checkInTime: { gt: checkInTime },
         NOT: { id: excludeBookingId },
+        OR: [
+          { checkInTime: { gt: checkInTime } },
+          { AND: [{ checkInTime }, { id: { gt: excludeBookingId } }] },
+        ],
       },
-      orderBy: { checkInTime: 'asc' },
+      orderBy: [{ checkInTime: 'asc' }, { id: 'asc' }],
     });
   }
 

@@ -43,6 +43,25 @@ set +a
 
 : "${DATABASE_URL:?DATABASE_URL is not set in backend/$ENV_FILE}"
 
+# The template ships with placeholders. Without this check the script happily
+# tries to connect to "HOST-pooler.REGION.aws.neon.tech" and the failure comes
+# back as a DNS error several seconds later, which reads like a network problem
+# rather than an unedited file.
+case "$DATABASE_URL" in
+  *USER:PASSWORD*|*HOST-pooler.REGION*)
+    cat >&2 <<MSG
+backend/$ENV_FILE still contains the template placeholders.
+
+Open it and paste the real Neon connection string:
+
+  open -e backend/$ENV_FILE     # or: nano backend/$ENV_FILE
+
+Neon Console -> your project -> Connection Details -> pooled connection string.
+MSG
+    exit 2
+    ;;
+esac
+
 # Show the target host with credentials stripped, so a run against the wrong
 # database is obvious before it writes anything.
 echo "→ target: ${DATABASE_URL##*@}"

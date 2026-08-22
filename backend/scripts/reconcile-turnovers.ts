@@ -55,6 +55,7 @@ const KIND_ORDER: DriftKind[] = [
   'MISSING',
   'STALE_ENDPOINT',
   'TIME_DRIFT',
+  'IMPOSSIBLE_WINDOW',
   'DUPLICATE_ACTIVE',
   'ORPHAN',
   'CHAIN_CYCLE',
@@ -62,9 +63,18 @@ const KIND_ORDER: DriftKind[] = [
 ];
 
 async function main(): Promise<number> {
+  // npm strips the `--` separator before handing argv to the script; pnpm
+  // forwards it verbatim. parseArgs treats a literal `--` as end-of-options and
+  // then rejects everything after it as a positional, so `pnpm run x -- --tenant y`
+  // would die with "does not take positional arguments". Drop a leading `--` so
+  // the same command line works under either runner.
+  const argv = process.argv.slice(2);
+  if (argv[0] === '--') argv.shift();
+
   let parsed;
   try {
     parsed = parseArgs({
+      args: argv,
       options: {
         tenant: { type: 'string' },
         property: { type: 'string', multiple: true },
@@ -160,6 +170,19 @@ async function main(): Promise<number> {
       respectUnknownSkips: !args['include-unknown-skips'],
       verify: Boolean(args.verify),
       orphanVisibilityDays: orphanWindow,
+      onProgress: (done, total, name) => {
+        // One line, rewritten in place, so a long run visibly moves. Without
+        // it the script prints the header and then nothing for minutes, which
+        // is indistinguishable from a hang and gets killed with ^C.
+        const label = name.length > 40 ? `${name.slice(0, 39)}…` : name;
+        const line = `  [${String(done).padStart(String(total).length)}/${total}] ${label}`;
+        if (process.stdout.isTTY) {
+          process.stdout.write(`\r${line.padEnd(60)}`);
+          if (done === total) process.stdout.write('\n');
+        } else if (done === 1 || done % 25 === 0 || done === total) {
+          console.log(line);
+        }
+      },
     });
 
     printReport(report, printLimit);

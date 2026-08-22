@@ -99,6 +99,7 @@ export type DriftKind =
   | 'STALE_ENDPOINT'    // live turnover points at the wrong neighbour
   | 'DUPLICATE_ACTIVE'  // two or more live turnovers claim the same slot/endpoint
   | 'ORPHAN'            // live turnover matches no slot at all
+  | 'IMPOSSIBLE_WINDOW' // slot ends before it begins — the bookings overlap
   | 'LEGACY_MERGE'      // SKIPPED-by-merge row still active (pre-fix rows)
   | 'CHAIN_CYCLE';      // supersededById points at itself / forms a loop
 
@@ -146,6 +147,13 @@ export interface ReconcileOptions {
    * orphan regardless of age.
    */
   orphanVisibilityDays?: number;
+  /**
+   * Called once per property, before its transaction runs. Scripts boot this
+   * service with the Nest logger quieted, so without a hook the whole run is
+   * silent from the header to the final report — minutes of nothing while it
+   * works through every unit, which reads exactly like a hang.
+   */
+  onProgress?: (done: number, total: number, propertyName: string) => void;
 }
 
 /** ReconcileOptions with the defaults filled in. */
@@ -221,7 +229,7 @@ export class TurnoverReconcileService {
       drift: [],
       counts: {
         MISSING: 0, TIME_DRIFT: 0, STALE_ENDPOINT: 0, DUPLICATE_ACTIVE: 0,
-        ORPHAN: 0, LEGACY_MERGE: 0, CHAIN_CYCLE: 0,
+        ORPHAN: 0, LEGACY_MERGE: 0, CHAIN_CYCLE: 0, IMPOSSIBLE_WINDOW: 0,
       },
       appliedCount: 0,
       needsReviewCount: 0,
@@ -252,8 +260,11 @@ export class TurnoverReconcileService {
     );
 
     let historicalOrphansLeft = 0;
+    let outOfWindowSkipped = 0;
 
+    let scanned = 0;
     for (const property of properties) {
+      opts.onProgress?.(++scanned, properties.length, property.name);
       report.propertiesScanned++;
       try {
         // One transaction per property: a single bad unit must not roll back
@@ -265,6 +276,7 @@ export class TurnoverReconcileService {
 
         report.bookingsConsidered += result.bookingsConsidered;
         historicalOrphansLeft += result.historicalOrphansLeft;
+        outOfWindowSkipped += result.outOfWindowSkipped;
         if (result.drift.length > 0) report.propertiesWithDrift++;
         for (const item of result.drift) {
           report.drift.push(item);
@@ -284,6 +296,14 @@ export class TurnoverReconcileService {
           message,
         });
       }
+    }
+
+    if (outOfWindowSkipped > 0) {
+      report.excluded.push(
+        `${outOfWindowSkipped} live turnover(s) ended before the --since ` +
+        `window and were not classified. They are almost always completed ` +
+        `cleanings from earlier periods. Use --all-history to judge them.`,
+      );
     }
 
     if (historicalOrphansLeft > 0) {
@@ -311,6 +331,7 @@ export class TurnoverReconcileService {
     bookingsConsidered: number;
     verifyFailures: string[];
     historicalOrphansLeft: number;
+    outOfWindowSkipped: number;
   }> {
     const drift = await this.detectAndFix(tx, property, opts);
     const verifyFailures: string[] = [];
@@ -336,6 +357,7 @@ export class TurnoverReconcileService {
       drift: drift.drift,
       bookingsConsidered: drift.bookingsConsidered,
       historicalOrphansLeft: drift.historicalOrphansLeft,
+      outOfWindowSkipped: drift.outOfWindowSkipped,
       verifyFailures,
     };
   }
@@ -348,9 +370,11 @@ export class TurnoverReconcileService {
     drift: DriftItem[];
     bookingsConsidered: number;
     historicalOrphansLeft: number;
+    outOfWindowSkipped: number;
   }> {
     const drift: DriftItem[] = [];
     let historicalOrphansLeft = 0;
+    let outOfWindowSkipped = 0;
     const add = (
       kind: DriftKind,
       detail: string,
@@ -397,6 +421,26 @@ export class TurnoverReconcileService {
       : null;
 
     const expected = this.buildExpectedSlots(bookings, anchor);
+
+    // A slot that ends before it starts means two CONFIRMED bookings occupy
+    // the unit at once — one guest still in when the next is already due. The
+    // chain is doing its job here; the bookings are wrong, usually a
+    // cancellation the PMS never told us about. So this is reported and never
+    // repaired: inventing a window would paper over the real fault, and the
+    // cleaner would be handed a cleaning that is overdue the moment it appears.
+    for (const slot of expected) {
+      if (slot.availableFrom && slot.dueBy && slot.availableFrom > slot.dueBy) {
+        add(
+          'IMPOSSIBLE_WINDOW',
+          `slot ${this.describeSlot(slot)} is available from ` +
+          `${slot.availableFrom.toISOString()} but due by ` +
+          `${slot.dueBy.toISOString()} — the two bookings overlap`,
+          'left alone — check both bookings in the PMS; one is probably ' +
+          'cancelled there and still CONFIRMED here',
+          { needsReview: true },
+        );
+      }
+    }
 
     // ── Turnovers currently attached to this property ──
     const actives = await this.loadActiveTurnovers(tx, property.id);
@@ -621,6 +665,21 @@ export class TurnoverReconcileService {
     for (const t of live) {
       if (claimed.has(t.id)) continue;
 
+      // The expected slots above were derived from bookings inside --since,
+      // but this list is every live turnover on the property, with no window
+      // at all. Without this guard every completed cleaning from before the
+      // window has nothing to match and gets reported as an orphan — 1783 of
+      // them on the first real run, which buried the five items that were
+      // actually wrong. A turnover whose late end predates the window was
+      // simply not examined; say so in `excluded` instead of accusing it.
+      if (opts.fromDate) {
+        const lateEnd = t.dueBy ?? t.availableFrom ?? t.createdAt;
+        if (lateEnd < opts.fromDate) {
+          outOfWindowSkipped++;
+          continue;
+        }
+      }
+
       // Our snapshot predates the writes above. createTurnover() and
       // supersede() both call TurnoverSyncService.enforceUniqueActive(), which
       // retires rows sharing an endpoint — so this row may already be resolved.
@@ -686,7 +745,12 @@ export class TurnoverReconcileService {
       );
     }
 
-    return { drift, bookingsConsidered: bookings.length, historicalOrphansLeft };
+    return {
+      drift,
+      bookingsConsidered: bookings.length,
+      historicalOrphansLeft,
+      outOfWindowSkipped,
+    };
   }
 
   // ==========================================================================
