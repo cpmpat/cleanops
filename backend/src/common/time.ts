@@ -47,3 +47,23 @@ export function startOfDayInAppZone(day: string): Date {
   );
   return new Date(probe.getTime() - (asZoned.getTime() - probe.getTime()));
 }
+
+/**
+ * A given wall-clock time on a given day in the application timezone, as a UTC
+ * instant. `atTimeInAppZone('2026-08-21', '15:00')` → the instant that reads
+ * 15:00 in Prague that day.
+ *
+ * Adding hours to startOfDayInAppZone() would be wrong twice a year: on the DST
+ * switch days the offset changes between midnight and the afternoon, so the
+ * result would land an hour off. This resolves the offset at the target time
+ * instead.
+ */
+export function atTimeInAppZone(day: string, time: string): Date {
+  const [h = '00', m = '00'] = time.split(':');
+  const naive = `${day}T${h.padStart(2, '0')}:${m.padStart(2, '0')}:00`;
+  const probe = new Date(`${naive}Z`);
+  const asZoned = new Date(
+    probe.toLocaleString('sv-SE', { timeZone: APP_TIME_ZONE }).replace(' ', 'T') + 'Z',
+  );
+  return new Date(probe.getTime() - (asZoned.getTime() - probe.getTime()));
+}

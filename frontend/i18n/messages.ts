@@ -47,6 +47,7 @@ export interface MessageStrings {
   card: {
     swapToday: string;
     askOffice: string;
+    checkInUnconfirmed: string;
   };
   inbox: {
     title: string;
@@ -177,7 +178,7 @@ const en: MessageStrings = {
     forTeam: (n) => `For ${n} team members`,
     forProperty: (name) => `For ${name}`,
   },
-  card: { swapToday: 'Turnaround today', askOffice: 'Message the front desk' },
+  card: { swapToday: 'Turnaround today', askOffice: 'Message the front desk', checkInUnconfirmed: 'Arrival time not confirmed' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Announcements',
@@ -307,7 +308,7 @@ const cs: MessageStrings = {
     forTeam: (n) => `Pro ${n} ${n === 1 ? 'člena' : n < 5 ? 'členy' : 'členů'} týmu`,
     forProperty: (name) => `Pro objekt ${name}`,
   },
-  card: { swapToday: 'Výměna dnes', askOffice: 'Napsat na front desk' },
+  card: { swapToday: 'Výměna dnes', askOffice: 'Napsat na front desk', checkInUnconfirmed: 'Čas příjezdu nepotvrzen' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Oznámení',
@@ -437,7 +438,7 @@ const ru: MessageStrings = {
     forTeam: (n) => `Для ${n} сотрудников`,
     forProperty: (name) => `Для объекта ${name}`,
   },
-  card: { swapToday: 'Смена сегодня', askOffice: 'Написать на ресепшн' },
+  card: { swapToday: 'Смена сегодня', askOffice: 'Написать на ресепшн', checkInUnconfirmed: 'Время приезда не подтверждено' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Объявления',
@@ -567,7 +568,7 @@ const uk: MessageStrings = {
     forTeam: (n) => `Для ${n} працівників`,
     forProperty: (name) => `Для об'єкта ${name}`,
   },
-  card: { swapToday: 'Заміна сьогодні', askOffice: 'Написати на ресепшн' },
+  card: { swapToday: 'Заміна сьогодні', askOffice: 'Написати на ресепшн', checkInUnconfirmed: 'Час приїзду не підтверджено' },
   inbox: {
     title: 'Inbox & Notifications',
     tabAnnouncements: 'Оголошення',

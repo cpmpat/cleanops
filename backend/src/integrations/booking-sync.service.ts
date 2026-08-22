@@ -297,6 +297,9 @@ export class BookingSyncService {
       pmsPropertyId: (b.property as any)?.pmsPropertyId,
       checkInTime: b.checkInTime,
       checkOutTime: b.checkOutTime,
+      // Lets the Planning view flag times we assumed (FALLBACK) vs. confirmed ones.
+      checkInSource: (b as any).checkInSource,
+      checkOutSource: (b as any).checkOutSource,
       timeSlot: b.cleaning?.timeSlot,
       numAdults: b.numAdults,
       numChildren: b.numChildren,
@@ -337,6 +340,8 @@ export class BookingSyncService {
     tenantId: string,
     pmsBookingId: string,
     data: { checkInTime?: string; checkOutTime?: string },
+    actorId?: string,
+    actorEmail?: string,
   ): Promise<{ success: boolean; bookingId?: string; cleaningId?: string }> {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) {
@@ -363,6 +368,15 @@ export class BookingSyncService {
       return { success: true };
     }
 
+    // The audit row should name a person, not a service account.
+    const actor = actorId
+      ? await this.prisma.user.findUnique({
+          where: { id: actorId },
+          select: { email: true },
+        })
+      : null;
+    const resolvedActorEmail = actorEmail ?? actor?.email ?? 'planning@cleanops';
+
     const oldCheckInTime = b.checkInTime; // capture for turnover sync
 
     const now = new Date();
@@ -370,9 +384,40 @@ export class BookingSyncService {
       await tx.booking.update({
         where: { id: b.id },
         data: {
-          ...(data.checkInTime && { checkInTime: new Date(data.checkInTime) }),
-          ...(data.checkOutTime && { checkOutTime: new Date(data.checkOutTime) }),
+          // A human decided this. Mark it, so no later sync replaces it with
+          // the house default when Avantio goes on returning midnight.
+          ...(data.checkInTime && {
+            checkInTime: new Date(data.checkInTime),
+            checkInSource: 'MANAGER' as any,
+          }),
+          ...(data.checkOutTime && {
+            checkOutTime: new Date(data.checkOutTime),
+            checkOutSource: 'MANAGER' as any,
+          }),
           pmsLastSyncedAt: now,
+        },
+      });
+
+      // Until now the only audited change on a booking was its cancellation.
+      // "Why does this cleaning end at three" deserves an answer too.
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: 'PMS_SYNC' as any,
+          action: 'booking.times_updated_via_planning',
+          actorId: actorId ?? null,
+          actorEmail: resolvedActorEmail,
+          targetType: 'Booking',
+          targetId: b.id,
+          metadata: {
+            pmsBookingId,
+            bookingRef: b.bookingRef,
+            accommodationName: b.accommodationName,
+            previousCheckInTime: b.checkInTime?.toISOString() ?? null,
+            previousCheckOutTime: b.checkOutTime?.toISOString() ?? null,
+            newCheckInTime: data.checkInTime ?? null,
+            newCheckOutTime: data.checkOutTime ?? null,
+          } as any,
         },
       });
 
@@ -653,8 +698,30 @@ export class BookingSyncService {
 
       if (hasChanges) {
         const now = new Date();
-        const checkIn = new Date(booking.checkInTime);
-        const checkOut = booking.checkOutTime ? new Date(booking.checkOutTime) : null;
+
+        // A time a human set outranks anything the PMS sends back, but only
+        // when what comes back is a guess. Avantio keeps returning "0:00" for
+        // Airbnb bookings even after a manager has set a real arrival time, so
+        // without this the next sync would quietly undo their work.
+        const keepManagerCheckIn =
+          existing.checkInSource === 'MANAGER' && !!booking.checkInAssumed;
+        const keepManagerCheckOut =
+          existing.checkOutSource === 'MANAGER' && !!booking.checkOutAssumed;
+
+        const checkIn = keepManagerCheckIn
+          ? existing.checkInTime
+          : new Date(booking.checkInTime);
+        const checkOut = keepManagerCheckOut
+          ? existing.checkOutTime
+          : booking.checkOutTime ? new Date(booking.checkOutTime) : null;
+
+        const checkInSource = keepManagerCheckIn
+          ? 'MANAGER'
+          : booking.checkInAssumed ? 'FALLBACK' : 'PMS';
+        const checkOutSource = keepManagerCheckOut
+          ? 'MANAGER'
+          : booking.checkOutAssumed ? 'FALLBACK' : 'PMS';
+
         const oldCheckInTime = existing.checkInTime;   // capture for turnover sync
         const oldPropertyId = existing.propertyId;    // ditto — unit moves
 
@@ -664,7 +731,9 @@ export class BookingSyncService {
             data: {
               propertyId: property.id,
               checkInTime: checkIn,
+              checkInSource: checkInSource as any,
               checkOutTime: checkOut,
+              checkOutSource: checkOutSource as any,
               accommodationName: property.name,
               accommodationType: property.accommodationType,
               numAdults: booking.numAdults,
@@ -783,7 +852,9 @@ export class BookingSyncService {
           pmsBookingId: booking.pmsBookingId,
           status: BookingStatus.CONFIRMED,
           checkInTime: checkIn,
+          checkInSource: (booking.checkInAssumed ? 'FALLBACK' : 'PMS') as any,
           checkOutTime: checkOut,
+          checkOutSource: (booking.checkOutAssumed ? 'FALLBACK' : 'PMS') as any,
           accommodationName: property.name,
           accommodationType: property.accommodationType,
           numAdults: booking.numAdults,

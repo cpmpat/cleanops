@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { translations, type Locale } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, Edit2, X, Send, UserPlus, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { Search, Filter, Edit2, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle } from 'lucide-react';
 import type { EventStatus } from '@/lib/api';
 
 const STATUSES: EventStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
@@ -23,6 +23,8 @@ export default function PlanningPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [unitSearch, setUnitSearch] = useState('');
   const [refSearch, setRefSearch] = useState('');
+  // Bookings whose check-in time we assumed (15:00) because the PMS sent 00:00 / nothing.
+  const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
 
   // ── Data ──
   const [bookings, setBookings] = useState<PlanningBooking[]>([]);
@@ -65,10 +67,13 @@ export default function PlanningPage() {
     finally { setLoading(false); }
   }, [arrivalFrom, arrivalTo, creationFrom, statusFilter]);
 
+  const unconfirmedCount = bookings.filter(b => b.checkInSource === 'FALLBACK').length;
+
   const filtered = bookings.filter(b => {
     const matchUnit = !unitSearch || b.accommodationName.toLowerCase().includes(unitSearch.toLowerCase());
     const matchRef = !refSearch || b.bookingRef.toLowerCase().includes(refSearch.toLowerCase());
-    return matchUnit && matchRef;
+    const matchUnconfirmed = !onlyUnconfirmed || b.checkInSource === 'FALLBACK';
+    return matchUnit && matchRef && matchUnconfirmed;
   });
 
   function openEdit(b: PlanningBooking) {
@@ -103,6 +108,9 @@ export default function PlanningPage() {
               ...b,
               checkInTime: `${arrDate}T${editCheckIn}:00.000Z`,
               checkOutTime: editCheckOut ? `${depDate}T${editCheckOut}:00.000Z` : b.checkOutTime,
+              // Manager just confirmed these — drop the amber "assumed" marker immediately.
+              checkInSource: editCheckIn ? ('MANAGER' as const) : b.checkInSource,
+              checkOutSource: editCheckOut ? ('MANAGER' as const) : b.checkOutSource,
             }
           : b
       ));
@@ -211,6 +219,28 @@ export default function PlanningPage() {
             />
           </div>
           <button
+            type="button"
+            onClick={() => setOnlyUnconfirmed(v => !v)}
+            title={tp.unconfirmedHint}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition',
+              onlyUnconfirmed
+                ? 'bg-amber-100 border-amber-400 text-amber-900'
+                : 'bg-surface border-surface-border text-ink-muted hover:text-ink'
+            )}
+          >
+            <AlertCircle size={14} />
+            {tp.unconfirmedFilter}
+            {unconfirmedCount > 0 && (
+              <span className={cn(
+                'text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none',
+                onlyUnconfirmed ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-800'
+              )}>
+                {unconfirmedCount}
+              </span>
+            )}
+          </button>
+          <button
             onClick={load}
             disabled={loading}
             className="flex items-center gap-2 px-5 py-2 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50"
@@ -252,7 +282,15 @@ export default function PlanningPage() {
 
                 {/* Times */}
                 <div className="text-right flex-shrink-0 w-28">
-                  <p className="text-xs font-semibold text-ink">↓ {formatTime(b.checkInTime)}</p>
+                  <p className="text-xs font-semibold text-ink flex items-center justify-end gap-1.5">
+                    {b.checkInSource === 'FALLBACK' && (
+                      <span
+                        title={tp.unconfirmedHint}
+                        className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"
+                      />
+                    )}
+                    ↓ {formatTime(b.checkInTime)}
+                  </p>
                   {b.checkOutTime && <p className="text-xs text-ink-muted">↑ {formatTime(b.checkOutTime)}</p>}
                 </div>
 
@@ -326,6 +364,12 @@ export default function PlanningPage() {
                 <X size={16} />
               </button>
             </div>
+            {editing.checkInSource === 'FALLBACK' && (
+              <p className="mb-4 flex items-start gap-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                {tp.unconfirmedHint}
+              </p>
+            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-ink-muted mb-1.5">{tp.checkInTime}</label>

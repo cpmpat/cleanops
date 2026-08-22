@@ -99,6 +99,7 @@ export interface Booking {
   status: BookingStatus;
   cancelledAt?: string | null;
   checkInTime: string;
+  checkInSource?: TimeSource;
   checkOutTime?: string;
   accommodationName: string;
   accommodationType?: string;
@@ -183,6 +184,9 @@ export interface PlanningBooking {
   pmsPropertyId?: string;
   checkInTime: string;
   checkOutTime?: string;
+  /** Where the stored check-in time came from — FALLBACK means we assumed it. */
+  checkInSource?: TimeSource;
+  checkOutSource?: TimeSource;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;
@@ -584,6 +588,9 @@ export interface TurnoverAssignment {
 }
 
 /** Booking shape as included on a Turnover (subset of Booking). */
+/** Where a booking time came from — PMS, our fallback, or a manager. */
+export type TimeSource = 'PMS' | 'FALLBACK' | 'MANAGER';
+
 export interface TurnoverBookingRef {
   id: string;
   bookingRef: string;
@@ -591,7 +598,9 @@ export interface TurnoverBookingRef {
   status: BookingStatus;
   cancelledAt?: string | null;
   checkInTime: string;
+  checkInSource?: TimeSource;
   checkOutTime?: string;
+  checkOutSource?: TimeSource;
   isOwnerStay?: boolean;
   accommodationName?: string;
   numAdults: number;

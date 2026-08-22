@@ -274,6 +274,8 @@ const _translationsBase = {
       checkOutTime: 'Check-out time',
       pushing: 'Pushing...',
       pushed: 'Saved & synced ✓',
+      unconfirmedFilter: 'Unconfirmed time',
+      unconfirmedHint: 'Check-in time was assumed (15:00) — not confirmed by the PMS or a manager.',
     },
     dashboard: {
       title: "Today's Overview",
@@ -573,6 +575,8 @@ const _translationsBase = {
       pushToAvantio: 'Uložit a odeslat do Avantio', noBookings: 'Žádné rezervace.',
       checkInTime: 'Čas příjezdu', checkOutTime: 'Čas odjezdu',
       pushing: 'Odesílám...', pushed: 'Uloženo a synchronizováno ✓',
+      unconfirmedFilter: 'Nepotvrzený čas',
+      unconfirmedHint: 'Čas příjezdu jsme doplnili (15:00) — nepotvrdil ho PMS ani manažer.',
     },
     dashboard: {
       title: 'Přehled dne', total: 'Celkem', completed: 'Hotovo',
@@ -835,6 +839,8 @@ const _translationsBase = {
       pushToAvantio: 'Сохранить и отправить в Avantio', noBookings: 'Нет бронирований.',
       checkInTime: 'Время заезда', checkOutTime: 'Время выезда',
       pushing: 'Отправляю...', pushed: 'Сохранено и синхронизировано ✓',
+      unconfirmedFilter: 'Время не подтверждено',
+      unconfirmedHint: 'Время заезда подставлено (15:00) — не подтверждено PMS или менеджером.',
     },
     dashboard: {
       title: 'Обзор дня', total: 'Всего', completed: 'Готово',
@@ -1097,6 +1103,8 @@ const _translationsBase = {
       pushToAvantio: 'Зберегти та надіслати в Avantio', noBookings: 'Немає бронювань.',
       checkInTime: 'Час заїзду', checkOutTime: 'Час виїзду',
       pushing: 'Надсилаю...', pushed: 'Збережено та синхронізовано ✓',
+      unconfirmedFilter: 'Час не підтверджено',
+      unconfirmedHint: 'Час заїзду підставлено (15:00) — не підтверджено PMS чи менеджером.',
     },
     dashboard: {
       title: 'Огляд дня', total: 'Всього', completed: 'Готово',

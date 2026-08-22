@@ -10,7 +10,10 @@ export interface PmsBooking {
   pmsBookingId: string;          // unique ID in the PMS
   bookingRef: string;            // human-readable reference
   checkInTime: string;           // ISO datetime
+  /** True when the PMS gave no usable time and the house default was applied. */
+  checkInAssumed?: boolean;
   checkOutTime?: string;         // ISO datetime
+  checkOutAssumed?: boolean;
   pmsPropertyId?: string;        // accommodation ID in PMS (links to PmsAccommodation.pmsId)
   numAdults: number;
   numChildren: number;

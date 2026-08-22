@@ -230,6 +230,23 @@ enum BookingChannel {
   OTHER
 }
 
+/// Where a check-in / check-out time came from.
+///
+/// The distinction matters because "15:00 because the guest said so" and
+/// "15:00 because nobody said anything" look identical in a timestamp column —
+/// and only one of them is worth putting in front of a manager to confirm.
+///
+/// MANAGER outranks everything: once a human has set a time, no sync may
+/// replace it with a guess, even if the PMS keeps sending midnight.
+enum TimeSource {
+  /// A real time from the PMS.
+  PMS
+  /// The PMS said nothing, or said midnight; we filled in the house default.
+  FALLBACK
+  /// A manager set it in Planning and pushed it to the PMS.
+  MANAGER
+}
+
 enum BookingStatus {
   CONFIRMED
   CANCELLED
@@ -252,7 +269,9 @@ model Booking {
 
   // Reservation details
   checkInTime       DateTime
+  checkInSource     TimeSource     @default(PMS)
   checkOutTime      DateTime?
+  checkOutSource    TimeSource     @default(PMS)
   accommodationName String
   accommodationType String?
   numAdults         Int            @default(1)
