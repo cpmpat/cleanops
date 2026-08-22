@@ -146,6 +146,13 @@ export interface ReconcileOptions {
    * orphan regardless of age.
    */
   orphanVisibilityDays?: number;
+  /**
+   * Called once per property, before its transaction runs. Scripts boot this
+   * service with the Nest logger quieted, so without a hook the whole run is
+   * silent from the header to the final report — minutes of nothing while it
+   * works through every unit, which reads exactly like a hang.
+   */
+  onProgress?: (done: number, total: number, propertyName: string) => void;
 }
 
 /** ReconcileOptions with the defaults filled in. */
@@ -253,7 +260,9 @@ export class TurnoverReconcileService {
 
     let historicalOrphansLeft = 0;
 
+    let scanned = 0;
     for (const property of properties) {
+      opts.onProgress?.(++scanned, properties.length, property.name);
       report.propertiesScanned++;
       try {
         // One transaction per property: a single bad unit must not roll back

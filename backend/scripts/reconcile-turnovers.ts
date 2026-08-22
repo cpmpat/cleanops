@@ -169,6 +169,19 @@ async function main(): Promise<number> {
       respectUnknownSkips: !args['include-unknown-skips'],
       verify: Boolean(args.verify),
       orphanVisibilityDays: orphanWindow,
+      onProgress: (done, total, name) => {
+        // One line, rewritten in place, so a long run visibly moves. Without
+        // it the script prints the header and then nothing for minutes, which
+        // is indistinguishable from a hang and gets killed with ^C.
+        const label = name.length > 40 ? `${name.slice(0, 39)}…` : name;
+        const line = `  [${String(done).padStart(String(total).length)}/${total}] ${label}`;
+        if (process.stdout.isTTY) {
+          process.stdout.write(`\r${line.padEnd(60)}`);
+          if (done === total) process.stdout.write('\n');
+        } else if (done === 1 || done % 25 === 0 || done === total) {
+          console.log(line);
+        }
+      },
     });
 
     printReport(report, printLimit);
