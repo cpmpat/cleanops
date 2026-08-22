@@ -81,7 +81,10 @@ const TURNOVER_INCLUDE = {
       status: true,
       cancelledAt: true,
       checkInTime: true,
+      // Lets the card admit when 15:00 is our guess rather than the guest's word.
+      checkInSource: true,
       checkOutTime: true,
+      checkOutSource: true,
       isOwnerStay: true,
       accommodationName: true,
       numAdults: true,
@@ -97,7 +100,10 @@ const TURNOVER_INCLUDE = {
       status: true,
       cancelledAt: true,
       checkInTime: true,
+      // Lets the card admit when 15:00 is our guess rather than the guest's word.
+      checkInSource: true,
       checkOutTime: true,
+      checkOutSource: true,
       isOwnerStay: true,
       accommodationName: true,
       numAdults: true,

@@ -15,6 +15,7 @@
     "reconcile:turnovers": "ts-node -P tsconfig.scripts.json scripts/reconcile-turnovers.ts",
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
     "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
+    "backfill:checkin-times": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-times.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },
   "dependencies": {

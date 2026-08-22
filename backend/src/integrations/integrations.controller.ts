@@ -111,6 +111,7 @@ export class IntegrationsController {
       req.tenantId!,
       pmsBookingId,
       body,
+      req.userId,
     );
   }
 }

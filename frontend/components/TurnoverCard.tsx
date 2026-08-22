@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
-  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare,
+  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare, AlertCircle,
 } from 'lucide-react';
 import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
@@ -392,6 +392,17 @@ export function TurnoverCard({
             </div>
           )}
         </div>
+
+        {/* The arrival time is ours, not the guest's. Say so — otherwise
+            "15:00" reads as a promise the booking never made. */}
+        {toBooking?.checkInSource === 'FALLBACK' && !isCompleted && (
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5">
+              <AlertCircle size={11} />
+              {m.card.checkInUnconfirmed}
+            </span>
+          </div>
+        )}
 
         {/* Manager note */}
         {turnover.managerNote && (

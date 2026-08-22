@@ -498,12 +498,8 @@ export class AvantioAdapter implements PmsAdapter {
       throw new Error(`Booking ${raw.id} has no accommodation reference`);
     }
 
-    const checkInDateTime = this.combineDateAndTime(
-      raw.stayDates.arrival, raw.checkInTime || '15:00',
-    );
-    const checkOutDateTime = this.combineDateAndTime(
-      raw.stayDates.departure, raw.checkOutTime || '10:00',
-    );
+    const arrival = this.resolveTime(raw.stayDates.arrival, raw.checkInTime, '15:00');
+    const departure = this.resolveTime(raw.stayDates.departure, raw.checkOutTime, '10:00');
     const guestName = raw.customer
       ? [raw.customer.name, ...(raw.customer.surnames || [])].filter(Boolean).join(' ')
       : undefined;
@@ -514,8 +510,10 @@ export class AvantioAdapter implements PmsAdapter {
     return {
       pmsBookingId: String(raw.id),
       bookingRef: raw.reference,
-      checkInTime: checkInDateTime,
-      checkOutTime: checkOutDateTime,
+      checkInTime: arrival.iso,
+      checkInAssumed: arrival.assumed,
+      checkOutTime: departure.iso,
+      checkOutAssumed: departure.assumed,
       pmsPropertyId: String(raw.accommodation.id),
       numAdults,
       numChildren,
@@ -525,6 +523,32 @@ export class AvantioAdapter implements PmsAdapter {
       guestName,
       guestEmail,
       rawData: raw,
+    };
+  }
+
+  /**
+   * Midnight means "nobody said", not "the guest arrives at midnight".
+   *
+   * Avantio sends "0:00 " for bookings whose channel never collected an
+   * arrival time — Airbnb, mostly. The old `raw.checkInTime || '15:00'` never
+   * caught it, because a non-empty string is truthy, so midnight was stored as
+   * though it were a real time and the turnover inherited a deadline at the
+   * start of the day.
+   *
+   * A genuine midnight arrival would be misread by this rule. The raw payload
+   * is kept on the booking, so nothing is lost, and one edit in Planning marks
+   * the time as set by a human and puts it out of this rule's reach for good.
+   */
+  private resolveTime(
+    dateStr: string,
+    rawTime: string | undefined,
+    fallback: string,
+  ): { iso: string; assumed: boolean } {
+    const cleaned = (rawTime ?? '').trim();
+    const unknown = cleaned === '' || /^0{1,2}:0{1,2}(:0{1,2})?$/.test(cleaned);
+    return {
+      iso: this.combineDateAndTime(dateStr, unknown ? fallback : cleaned),
+      assumed: unknown,
     };
   }
 
