@@ -259,6 +259,7 @@ export class TurnoverReconcileService {
     );
 
     let historicalOrphansLeft = 0;
+    let outOfWindowSkipped = 0;
 
     let scanned = 0;
     for (const property of properties) {
@@ -274,6 +275,7 @@ export class TurnoverReconcileService {
 
         report.bookingsConsidered += result.bookingsConsidered;
         historicalOrphansLeft += result.historicalOrphansLeft;
+        outOfWindowSkipped += result.outOfWindowSkipped;
         if (result.drift.length > 0) report.propertiesWithDrift++;
         for (const item of result.drift) {
           report.drift.push(item);
@@ -293,6 +295,14 @@ export class TurnoverReconcileService {
           message,
         });
       }
+    }
+
+    if (outOfWindowSkipped > 0) {
+      report.excluded.push(
+        `${outOfWindowSkipped} live turnover(s) ended before the --since ` +
+        `window and were not classified. They are almost always completed ` +
+        `cleanings from earlier periods. Use --all-history to judge them.`,
+      );
     }
 
     if (historicalOrphansLeft > 0) {
@@ -320,6 +330,7 @@ export class TurnoverReconcileService {
     bookingsConsidered: number;
     verifyFailures: string[];
     historicalOrphansLeft: number;
+    outOfWindowSkipped: number;
   }> {
     const drift = await this.detectAndFix(tx, property, opts);
     const verifyFailures: string[] = [];
@@ -345,6 +356,7 @@ export class TurnoverReconcileService {
       drift: drift.drift,
       bookingsConsidered: drift.bookingsConsidered,
       historicalOrphansLeft: drift.historicalOrphansLeft,
+      outOfWindowSkipped: drift.outOfWindowSkipped,
       verifyFailures,
     };
   }
@@ -357,9 +369,11 @@ export class TurnoverReconcileService {
     drift: DriftItem[];
     bookingsConsidered: number;
     historicalOrphansLeft: number;
+    outOfWindowSkipped: number;
   }> {
     const drift: DriftItem[] = [];
     let historicalOrphansLeft = 0;
+    let outOfWindowSkipped = 0;
     const add = (
       kind: DriftKind,
       detail: string,
@@ -630,6 +644,21 @@ export class TurnoverReconcileService {
     for (const t of live) {
       if (claimed.has(t.id)) continue;
 
+      // The expected slots above were derived from bookings inside --since,
+      // but this list is every live turnover on the property, with no window
+      // at all. Without this guard every completed cleaning from before the
+      // window has nothing to match and gets reported as an orphan — 1783 of
+      // them on the first real run, which buried the five items that were
+      // actually wrong. A turnover whose late end predates the window was
+      // simply not examined; say so in `excluded` instead of accusing it.
+      if (opts.fromDate) {
+        const lateEnd = t.dueBy ?? t.availableFrom ?? t.createdAt;
+        if (lateEnd < opts.fromDate) {
+          outOfWindowSkipped++;
+          continue;
+        }
+      }
+
       // Our snapshot predates the writes above. createTurnover() and
       // supersede() both call TurnoverSyncService.enforceUniqueActive(), which
       // retires rows sharing an endpoint — so this row may already be resolved.
@@ -695,7 +724,12 @@ export class TurnoverReconcileService {
       );
     }
 
-    return { drift, bookingsConsidered: bookings.length, historicalOrphansLeft };
+    return {
+      drift,
+      bookingsConsidered: bookings.length,
+      historicalOrphansLeft,
+      outOfWindowSkipped,
+    };
   }
 
   // ==========================================================================
