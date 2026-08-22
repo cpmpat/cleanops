@@ -99,6 +99,7 @@ export type DriftKind =
   | 'STALE_ENDPOINT'    // live turnover points at the wrong neighbour
   | 'DUPLICATE_ACTIVE'  // two or more live turnovers claim the same slot/endpoint
   | 'ORPHAN'            // live turnover matches no slot at all
+  | 'IMPOSSIBLE_WINDOW' // slot ends before it begins — the bookings overlap
   | 'LEGACY_MERGE'      // SKIPPED-by-merge row still active (pre-fix rows)
   | 'CHAIN_CYCLE';      // supersededById points at itself / forms a loop
 
@@ -228,7 +229,7 @@ export class TurnoverReconcileService {
       drift: [],
       counts: {
         MISSING: 0, TIME_DRIFT: 0, STALE_ENDPOINT: 0, DUPLICATE_ACTIVE: 0,
-        ORPHAN: 0, LEGACY_MERGE: 0, CHAIN_CYCLE: 0,
+        ORPHAN: 0, LEGACY_MERGE: 0, CHAIN_CYCLE: 0, IMPOSSIBLE_WINDOW: 0,
       },
       appliedCount: 0,
       needsReviewCount: 0,
@@ -420,6 +421,26 @@ export class TurnoverReconcileService {
       : null;
 
     const expected = this.buildExpectedSlots(bookings, anchor);
+
+    // A slot that ends before it starts means two CONFIRMED bookings occupy
+    // the unit at once — one guest still in when the next is already due. The
+    // chain is doing its job here; the bookings are wrong, usually a
+    // cancellation the PMS never told us about. So this is reported and never
+    // repaired: inventing a window would paper over the real fault, and the
+    // cleaner would be handed a cleaning that is overdue the moment it appears.
+    for (const slot of expected) {
+      if (slot.availableFrom && slot.dueBy && slot.availableFrom > slot.dueBy) {
+        add(
+          'IMPOSSIBLE_WINDOW',
+          `slot ${this.describeSlot(slot)} is available from ` +
+          `${slot.availableFrom.toISOString()} but due by ` +
+          `${slot.dueBy.toISOString()} — the two bookings overlap`,
+          'left alone — check both bookings in the PMS; one is probably ' +
+          'cancelled there and still CONFIRMED here',
+          { needsReview: true },
+        );
+      }
+    }
 
     // ── Turnovers currently attached to this property ──
     const actives = await this.loadActiveTurnovers(tx, property.id);
