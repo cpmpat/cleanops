@@ -48,6 +48,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, Booking, Turnover, TurnoverStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { TurnoverSyncService } from './turnover-sync.service';
+import { timeInAppZone } from '../common/time';
 
 type Tx = Prisma.TransactionClient;
 
@@ -261,6 +262,7 @@ export class TurnoverReconcileService {
 
     let historicalOrphansLeft = 0;
     let outOfWindowSkipped = 0;
+    let impossibleWindowsHistorical = 0;
 
     let scanned = 0;
     for (const property of properties) {
@@ -277,6 +279,7 @@ export class TurnoverReconcileService {
         report.bookingsConsidered += result.bookingsConsidered;
         historicalOrphansLeft += result.historicalOrphansLeft;
         outOfWindowSkipped += result.outOfWindowSkipped;
+        impossibleWindowsHistorical += result.impossibleWindowsHistorical;
         if (result.drift.length > 0) report.propertiesWithDrift++;
         for (const item of result.drift) {
           report.drift.push(item);
@@ -296,6 +299,15 @@ export class TurnoverReconcileService {
           message,
         });
       }
+    }
+
+    if (impossibleWindowsHistorical > 0) {
+      report.excluded.push(
+        `${impossibleWindowsHistorical} slot(s) end before they begin but are ` +
+        `already past the pool cutoff, so they were counted rather than ` +
+        `reported. Almost all are same-day turnovers whose arrival was stored ` +
+        `at midnight; repair those with backfill:checkin-times --include-past.`,
+      );
     }
 
     if (outOfWindowSkipped > 0) {
@@ -332,6 +344,7 @@ export class TurnoverReconcileService {
     verifyFailures: string[];
     historicalOrphansLeft: number;
     outOfWindowSkipped: number;
+    impossibleWindowsHistorical: number;
   }> {
     const drift = await this.detectAndFix(tx, property, opts);
     const verifyFailures: string[] = [];
@@ -358,6 +371,7 @@ export class TurnoverReconcileService {
       bookingsConsidered: drift.bookingsConsidered,
       historicalOrphansLeft: drift.historicalOrphansLeft,
       outOfWindowSkipped: drift.outOfWindowSkipped,
+      impossibleWindowsHistorical: drift.impossibleWindowsHistorical,
       verifyFailures,
     };
   }
@@ -371,10 +385,12 @@ export class TurnoverReconcileService {
     bookingsConsidered: number;
     historicalOrphansLeft: number;
     outOfWindowSkipped: number;
+    impossibleWindowsHistorical: number;
   }> {
     const drift: DriftItem[] = [];
     let historicalOrphansLeft = 0;
     let outOfWindowSkipped = 0;
+    let impossibleWindowsHistorical = 0;
     const add = (
       kind: DriftKind,
       detail: string,
@@ -428,18 +444,45 @@ export class TurnoverReconcileService {
     // cancellation the PMS never told us about. So this is reported and never
     // repaired: inventing a window would paper over the real fault, and the
     // cleaner would be handed a cleaning that is overdue the moment it appears.
+    const actionableFrom = new Date(
+      Date.now() - opts.orphanVisibilityDays * 24 * 60 * 60 * 1000,
+    );
+
     for (const slot of expected) {
-      if (slot.availableFrom && slot.dueBy && slot.availableFrom > slot.dueBy) {
-        add(
-          'IMPOSSIBLE_WINDOW',
-          `slot ${this.describeSlot(slot)} is available from ` +
-          `${slot.availableFrom.toISOString()} but due by ` +
-          `${slot.dueBy.toISOString()} — the two bookings overlap`,
-          'left alone — check both bookings in the PMS; one is probably ' +
-          'cancelled there and still CONFIRMED here',
-          { needsReview: true },
-        );
+      if (!slot.availableFrom || !slot.dueBy) continue;
+      if (slot.availableFrom <= slot.dueBy) continue;
+
+      // Past the pool cutoff nobody can act on it. The first production run
+      // reported 3564 of these across 241 properties — every same-day turnover
+      // in the archive — and buried the handful that were still live. Same
+      // mistake the orphan check used to make: a detector that flags what
+      // cannot be acted on is not a detector.
+      if (slot.dueBy < actionableFrom) {
+        impossibleWindowsHistorical++;
+        continue;
       }
+
+      // An arrival sitting at Prague midnight is not a second guest, it is a
+      // missing check-in time — the PMS sent "0:00" and the fallback never
+      // reached this row. Saying "the bookings overlap" there sends whoever
+      // reads it into Avantio hunting a cancellation that does not exist.
+      const arrivalUnknown = timeInAppZone(slot.dueBy) === '00:00';
+
+      add(
+        'IMPOSSIBLE_WINDOW',
+        `slot ${this.describeSlot(slot)} is available from ` +
+        `${slot.availableFrom.toISOString()} but due by ` +
+        `${slot.dueBy.toISOString()} — ` +
+        (arrivalUnknown
+          ? 'the arrival has no time (midnight), so the window is inverted'
+          : 'the two bookings overlap'),
+        arrivalUnknown
+          ? 'left alone — set the arrival time in Planning, or run ' +
+            'backfill:checkin-times for this booking'
+          : 'left alone — check both bookings in the PMS; one is probably ' +
+            'cancelled there and still CONFIRMED here',
+        { needsReview: true },
+      );
     }
 
     // ── Turnovers currently attached to this property ──
@@ -750,6 +793,7 @@ export class TurnoverReconcileService {
       bookingsConsidered: bookings.length,
       historicalOrphansLeft,
       outOfWindowSkipped,
+      impossibleWindowsHistorical,
     };
   }
 
