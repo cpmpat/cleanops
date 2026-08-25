@@ -249,8 +249,10 @@ function printReport(report: ReconcileReport, printLimit: number): void {
 
   if (report.needsReviewCount > 0) {
     console.log(
-      `\n${report.needsReviewCount} item(s) were left untouched on purpose: they carry ` +
-      `started/completed work or assignments. Resolve those in the UI.`,
+      `\n${report.needsReviewCount} item(s) were left untouched on purpose — ` +
+      `they carry started or completed work, or they need a decision the ` +
+      `reconciler is not entitled to make. Read the REVIEW line on each: ` +
+      `some belong in the UI, some in the PMS.`,
     );
   }
 

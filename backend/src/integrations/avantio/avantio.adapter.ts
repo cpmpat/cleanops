@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import {
-  PmsAdapter, PmsBooking, PmsAccommodation, PmsTenantConfig,
+  PmsAdapter, PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
 } from '../../common/interfaces/pms-adapter.interface';
 import { timeInAppZone } from '../../common/time';
 
@@ -307,7 +307,7 @@ export class AvantioAdapter implements PmsAdapter {
    *
    * At FETCH_CONCURRENCY=5 and ~250ms per batch, 500 bookings ≈ 25 seconds.
    */
-  async pullBookings(since: Date, config: PmsTenantConfig): Promise<PmsBooking[]> {
+  async pullBookings(since: Date, config: PmsTenantConfig): Promise<PmsPullResult> {
     const client = this.createClient(config);
 
     // ── Step 1: collect all booking IDs from the list endpoint ──
@@ -316,11 +316,15 @@ export class AvantioAdapter implements PmsAdapter {
 
     if (bookingIds.length === 0) {
       this.logger.log('No bookings to fetch');
-      return [];
+      return { bookings: [], failedIds: [] };
     }
 
     // ── Step 2: fetch full booking details in concurrent batches ──
     const all: PmsBooking[] = [];
+    // Every id the list gave us that we could not turn into a booking. These
+    // used to be a warn-and-continue, which meant the sync forgot them while
+    // its watermark moved past — the booking was then never asked for again.
+    const failedIds: Array<{ pmsBookingId: string; reason: string }> = [];
 
     for (let i = 0; i < bookingIds.length; i += FETCH_CONCURRENCY) {
       const batch = bookingIds.slice(i, i + FETCH_CONCURRENCY);
@@ -329,17 +333,21 @@ export class AvantioAdapter implements PmsAdapter {
         batch.map(id => this.fetchFullBookingRaw(id, client)),
       );
 
-      for (const result of results) {
+      results.forEach((result, idx) => {
+        const id = batch[idx];
         if (result.status === 'rejected') {
-          this.logger.warn(`Failed to fetch booking detail: ${result.reason?.message}`);
-          continue;
+          const reason = result.reason?.message ?? String(result.reason);
+          this.logger.warn(`Failed to fetch booking detail ${id}: ${reason}`);
+          failedIds.push({ pmsBookingId: id, reason: `fetch: ${reason}` });
+          return;
         }
         try {
           all.push(this.mapBooking(result.value));
         } catch (err) {
-          this.logger.warn(`Failed to map booking ${result.value?.id}: ${err.message}`);
+          this.logger.warn(`Failed to map booking ${id}: ${err.message}`);
+          failedIds.push({ pmsBookingId: id, reason: `map: ${err.message}` });
         }
-      }
+      });
 
       // Brief pause between batches — skip after the last one
       if (i + FETCH_CONCURRENCY < bookingIds.length) {
@@ -353,8 +361,11 @@ export class AvantioAdapter implements PmsAdapter {
       }
     }
 
-    this.logger.log(`Pulled ${all.length} bookings from Avantio`);
-    return all;
+    this.logger.log(
+      `Pulled ${all.length} bookings from Avantio` +
+      (failedIds.length ? `, ${failedIds.length} queued for retry` : ''),
+    );
+    return { bookings: all, failedIds };
   }
 
   /**
