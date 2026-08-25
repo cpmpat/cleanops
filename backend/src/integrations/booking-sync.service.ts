@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import {
-  PmsBooking, PmsAccommodation, PmsTenantConfig,
+  PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
@@ -144,13 +144,36 @@ export class BookingSyncService {
 
     // ── Step 2: Sync bookings ──
     const since = tenant.pmsLastSyncAt || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Stamped BEFORE the pull, not after it.
+    //
+    // The list query asks Avantio for everything touched since `since`. If the
+    // watermark is then set to the time the run *finished*, every booking
+    // modified while the run was working is in neither this window nor the
+    // next: not in the list, because the list was taken earlier; not in the
+    // next run, because the watermark is already past it. That was a hole the
+    // width of the run, every thirty minutes.
+    //
+    // Taking the timestamp first makes the windows overlap instead of leaving
+    // a gap. Re-processing a handful of bookings is free — processBooking is
+    // idempotent — and losing one is not.
+    const runStartedAt = new Date();
+
     const bookingResult = await this.syncBookings(tenantId, adapter, config, since);
 
-    // Update last sync timestamp
-    await this.prisma.tenant.update({
-      where: { id: tenantId },
-      data: { pmsLastSyncAt: new Date() },
-    });
+    if (bookingResult.listFailed) {
+      // Do not advance. The window was never read, and moving the watermark
+      // past it would discard every booking Avantio changed inside it.
+      this.logger.error(
+        `[${tenant.name}] booking pull failed — leaving pmsLastSyncAt at ` +
+        `${since.toISOString()} so the next run retries this window`,
+      );
+    } else {
+      await this.prisma.tenant.update({
+        where: { id: tenantId },
+        data: { pmsLastSyncAt: runStartedAt },
+      });
+    }
 
     this.logger.log(
       `[${tenant.name}] Sync complete: ` +
@@ -629,26 +652,128 @@ export class BookingSyncService {
     adapter: AvantioAdapter,
     config: PmsTenantConfig,
     since: Date,
-  ): Promise<{ created: number; updated: number; cancelled: number }> {
-    let bookings: PmsBooking[];
+  ): Promise<{
+    created: number;
+    updated: number;
+    cancelled: number;
+    /** True when the list endpoint itself failed — the window was never read. */
+    listFailed: boolean;
+  }> {
+    let pull: PmsPullResult;
     try {
-      bookings = await adapter.pullBookings(since, config);
+      pull = await adapter.pullBookings(since, config);
     } catch (err) {
+      // The window was never read at all. Say so, so the caller knows to leave
+      // pmsLastSyncAt alone; advancing it here discarded whole windows.
       this.logger.error(`Failed to pull bookings: ${err.message}`);
-      return { created: 0, updated: 0, cancelled: 0 };
+      return { created: 0, updated: 0, cancelled: 0, listFailed: true };
     }
 
     let created = 0, updated = 0, cancelled = 0;
 
-    for (const booking of bookings) {
+    // Ids the list gave us but the detail fetch or the mapper refused.
+    for (const failure of pull.failedIds) {
+      await this.rememberSyncFailure(tenantId, failure.pmsBookingId, failure.reason);
+    }
+
+    for (const booking of pull.bookings) {
       try {
         // Pass adapter + config so processBooking can live-fetch a missing property
         const result = await this.processBooking(tenantId, booking, adapter, config);
         if (result === 'created') created++;
         if (result === 'updated') updated++;
         if (result === 'cancelled') cancelled++;
+        await this.forgetSyncFailure(tenantId, booking.pmsBookingId);
       } catch (err) {
         this.logger.error(`Failed to process booking ${booking.pmsBookingId}: ${err.message}`);
+        await this.rememberSyncFailure(
+          tenantId,
+          booking.pmsBookingId,
+          `process: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    const retried = await this.retryRememberedFailures(tenantId, adapter, config);
+    created += retried.created;
+    updated += retried.updated;
+    cancelled += retried.cancelled;
+
+    return { created, updated, cancelled, listFailed: false };
+  }
+
+  // ─── Failure queue ───
+  //
+  // A booking that fails to fetch or process is written down rather than
+  // logged and forgotten. Every later run picks the queue up again. Without
+  // this, one rejected request lost a booking permanently, because the sync
+  // watermark moved past it and the list endpoint never offered it again.
+
+  /** Give up asking after this many runs (~6 hours at the 30-minute cadence). */
+  private static readonly MAX_SYNC_ATTEMPTS = 12;
+
+  private async rememberSyncFailure(
+    tenantId: string,
+    pmsBookingId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.pmsSyncFailure.upsert({
+        where: { tenantId_pmsBookingId: { tenantId, pmsBookingId } },
+        create: { tenantId, pmsBookingId, lastError: reason.slice(0, 500) },
+        update: { attempts: { increment: 1 }, lastError: reason.slice(0, 500) },
+      });
+    } catch (err) {
+      // Never let bookkeeping break the sync itself.
+      this.logger.warn(
+        `Could not record sync failure for ${pmsBookingId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async forgetSyncFailure(tenantId: string, pmsBookingId: string): Promise<void> {
+    try {
+      await this.prisma.pmsSyncFailure.deleteMany({ where: { tenantId, pmsBookingId } });
+    } catch {
+      // A row that will not delete is retried once more next run. Harmless.
+    }
+  }
+
+  private async retryRememberedFailures(
+    tenantId: string,
+    adapter: AvantioAdapter,
+    config: PmsTenantConfig,
+  ): Promise<{ created: number; updated: number; cancelled: number }> {
+    let created = 0, updated = 0, cancelled = 0;
+
+    const queued = await this.prisma.pmsSyncFailure.findMany({
+      where: { tenantId, attempts: { lt: BookingSyncService.MAX_SYNC_ATTEMPTS } },
+      orderBy: { firstFailedAt: 'asc' },
+      take: 100,
+    });
+    if (queued.length === 0) return { created, updated, cancelled };
+
+    this.logger.log(`Retrying ${queued.length} previously failed booking(s)`);
+
+    for (const row of queued) {
+      try {
+        const booking = await adapter.getBooking(row.pmsBookingId, config);
+        const result = await this.processBooking(tenantId, booking, adapter, config);
+        if (result === 'created') created++;
+        if (result === 'updated') updated++;
+        if (result === 'cancelled') cancelled++;
+        await this.forgetSyncFailure(tenantId, row.pmsBookingId);
+      } catch (err) {
+        const message = (err as Error).message;
+        await this.rememberSyncFailure(tenantId, row.pmsBookingId, `retry: ${message}`);
+        if (row.attempts + 1 >= BookingSyncService.MAX_SYNC_ATTEMPTS) {
+          // Loud on the last attempt: from here on the booking is invisible to
+          // the sync, and someone has to run backfill:bookings --ids by hand.
+          this.logger.error(
+            `Giving up on booking ${row.pmsBookingId} after ` +
+            `${row.attempts + 1} attempts: ${message}`,
+          );
+        }
       }
     }
 

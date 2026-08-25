@@ -43,6 +43,7 @@ model Tenant {
   notes               Note[]
   helpDocs            HelpDoc[]
   conversations       Conversation[]
+  pmsSyncFailures     PmsSyncFailure[]
 
   @@map("tenants")
 }
@@ -1183,4 +1184,35 @@ model MessageAttachment {
 
   @@index([messageId])
   @@map("turnover_chat_attachments")
+}
+
+/// One Avantio booking the sync could not fetch or process.
+///
+/// WHY THIS EXISTS
+/// ---------------
+/// The sync had no memory of a failure. A rejected `GET /bookings/{id}` was
+/// logged with `logger.warn` and dropped, while `tenant.pmsLastSyncAt` still
+/// advanced past it — so that booking was never asked for again. 19 bookings
+/// were found missing this way on 22 Aug 2026, three of them cleanings whose
+/// arrival had already passed.
+///
+/// A row here means "ask Avantio for this one again next run". It is deleted
+/// the moment the booking syncs successfully.
+model PmsSyncFailure {
+  id            String   @id @default(uuid())
+  tenantId      String
+  /// Avantio booking id, as it appears in `GET /bookings/{id}`.
+  pmsBookingId  String
+  /// How many runs have tried and failed. Retries stop past a cap so one
+  /// permanently broken booking cannot stall the queue forever.
+  attempts      Int      @default(1)
+  lastError     String
+  firstFailedAt DateTime @default(now())
+  lastFailedAt  DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, pmsBookingId])
+  @@index([tenantId])
+  @@map("pms_sync_failures")
 }

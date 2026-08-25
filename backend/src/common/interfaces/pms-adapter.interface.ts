@@ -34,6 +34,20 @@ export interface PmsAccommodation {
   rawData?: any;
 }
 
+/**
+ * What a pull actually achieved.
+ *
+ * `failedIds` is the part that matters: booking ids the list endpoint handed
+ * us and the detail fetch (or the mapper) then refused. They used to be logged
+ * and forgotten while the sync watermark advanced past them, which is how
+ * bookings went missing permanently. The caller is expected to persist them
+ * and ask again.
+ */
+export interface PmsPullResult {
+  bookings: PmsBooking[];
+  failedIds: Array<{ pmsBookingId: string; reason: string }>;
+}
+
 export interface PmsAdapter {
   /**
    * Pull all accommodations from PMS.
@@ -45,7 +59,7 @@ export interface PmsAdapter {
    * Pull bookings from PMS.
    * @param since - Only return bookings modified after this date
    */
-  pullBookings(since: Date, tenantConfig: PmsTenantConfig): Promise<PmsBooking[]>;
+  pullBookings(since: Date, tenantConfig: PmsTenantConfig): Promise<PmsPullResult>;
 
   /**
    * Push check-in/check-out time updates back to PMS.
