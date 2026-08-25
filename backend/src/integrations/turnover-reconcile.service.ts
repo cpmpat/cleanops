@@ -472,11 +472,21 @@ export class TurnoverReconcileService {
         continue;
       }
 
-      // An arrival sitting at Prague midnight is not a second guest, it is a
-      // missing check-in time — the PMS sent "0:00" and the fallback never
-      // reached this row. Saying "the bookings overlap" there sends whoever
-      // reads it into Avantio hunting a cancellation that does not exist.
-      const arrivalUnknown = timeInAppZone(slot.dueBy) === '00:00';
+      // A midnight arrival can invert a window on its own: the previous guest
+      // leaves at 10:00 and the next "arrives" at 00:00 the same day, so the
+      // slot reads backwards by ten hours. That is a missing check-in time,
+      // not a second guest, and saying "the bookings overlap" sends whoever
+      // reads it into Avantio hunting a cancellation that is not there.
+      //
+      // But only when filling the time in would actually fix it. Sokolovská
+      // 65/201 P was inverted by four days and Tyršova 13/1 by a month, both
+      // with a midnight arrival — and the first version of this message told
+      // the operator to set the arrival time, which would have changed
+      // nothing. Past a day the midnight is a coincidence and two bookings
+      // genuinely hold the unit at once.
+      const invertedByMs = slot.availableFrom.getTime() - slot.dueBy.getTime();
+      const arrivalUnknown =
+        timeInAppZone(slot.dueBy) === '00:00' && invertedByMs < 24 * 60 * 60 * 1000;
 
       add(
         'IMPOSSIBLE_WINDOW',
@@ -485,7 +495,7 @@ export class TurnoverReconcileService {
         `${slot.dueBy.toISOString()} — ` +
         (arrivalUnknown
           ? 'the arrival has no time (midnight), so the window is inverted'
-          : 'the two bookings overlap'),
+          : `the two bookings overlap by ${Math.round(invertedByMs / 3_600_000)}h`),
         arrivalUnknown
           ? 'left alone — set the arrival time in Planning, or run ' +
             'backfill:checkin-times for this booking'
