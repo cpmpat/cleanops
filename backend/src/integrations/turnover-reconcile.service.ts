@@ -457,16 +457,36 @@ export class TurnoverReconcileService {
       // in the archive — and buried the handful that were still live. Same
       // mistake the orphan check used to make: a detector that flags what
       // cannot be acted on is not a detector.
-      if (slot.dueBy < actionableFrom) {
+      //
+      // Judge that by the LATER endpoint, which for an inverted window is
+      // availableFrom — and availableFrom is exactly what TurnoversService
+      // filters the pool on. Testing dueBy instead (the first attempt at this)
+      // hid the one shape that matters: Sokolovská 65/201 P had a slot
+      // available today with a due date four days in the past, so the cleaner
+      // saw it in her list this morning while the detector called it archive
+      // and said nothing.
+      const lateEnd =
+        slot.availableFrom > slot.dueBy ? slot.availableFrom : slot.dueBy;
+      if (lateEnd < actionableFrom) {
         impossibleWindowsHistorical++;
         continue;
       }
 
-      // An arrival sitting at Prague midnight is not a second guest, it is a
-      // missing check-in time — the PMS sent "0:00" and the fallback never
-      // reached this row. Saying "the bookings overlap" there sends whoever
-      // reads it into Avantio hunting a cancellation that does not exist.
-      const arrivalUnknown = timeInAppZone(slot.dueBy) === '00:00';
+      // A midnight arrival can invert a window on its own: the previous guest
+      // leaves at 10:00 and the next "arrives" at 00:00 the same day, so the
+      // slot reads backwards by ten hours. That is a missing check-in time,
+      // not a second guest, and saying "the bookings overlap" sends whoever
+      // reads it into Avantio hunting a cancellation that is not there.
+      //
+      // But only when filling the time in would actually fix it. Sokolovská
+      // 65/201 P was inverted by four days and Tyršova 13/1 by a month, both
+      // with a midnight arrival — and the first version of this message told
+      // the operator to set the arrival time, which would have changed
+      // nothing. Past a day the midnight is a coincidence and two bookings
+      // genuinely hold the unit at once.
+      const invertedByMs = slot.availableFrom.getTime() - slot.dueBy.getTime();
+      const arrivalUnknown =
+        timeInAppZone(slot.dueBy) === '00:00' && invertedByMs < 24 * 60 * 60 * 1000;
 
       add(
         'IMPOSSIBLE_WINDOW',
@@ -475,7 +495,7 @@ export class TurnoverReconcileService {
         `${slot.dueBy.toISOString()} — ` +
         (arrivalUnknown
           ? 'the arrival has no time (midnight), so the window is inverted'
-          : 'the two bookings overlap'),
+          : `the two bookings overlap by ${Math.round(invertedByMs / 3_600_000)}h`),
         arrivalUnknown
           ? 'left alone — set the arrival time in Planning, or run ' +
             'backfill:checkin-times for this booking'
