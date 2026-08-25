@@ -488,13 +488,34 @@ export class AvantioAdapter implements PmsAdapter {
   // TEST CONNECTION
   // ═══════════════════════════════════════════════════════════════
 
+  /**
+   * Ask Avantio the same question the real sync asks.
+   *
+   * This used to send `pagination_size: 1`, a shape nothing else in the app
+   * uses — and Avantio refused it. The result was a Settings screen reporting
+   * "Connection failed" while the sync running against the very same endpoint
+   * was happily pulling 261 accommodations. A connection test that does not
+   * exercise the real request is not a test; it is a second thing to debug.
+   */
   async testConnection(config: PmsTenantConfig): Promise<boolean> {
     const client = this.createClient(config);
     try {
-      await client.get('/accommodations', { params: { pagination_size: 1 } });
+      await client.get('/accommodations', {
+        params: { pagination_size: 100, sort: 'id', status: 'ENABLED' },
+      });
       return true;
     } catch (err) {
-      this.logger.error(`Connection test failed: ${err.message}`);
+      // The status code is the whole diagnosis: 401 means the key, 429 means
+      // we are being throttled, a timeout means Avantio or egress. Without it
+      // the operator sees "failed" and has nothing to act on.
+      if (axios.isAxiosError(err)) {
+        this.logger.error(
+          `Connection test failed: ${err.response?.status ?? 'no response'} — ` +
+          `${JSON.stringify(err.response?.data ?? err.message)}`,
+        );
+      } else {
+        this.logger.error(`Connection test failed: ${(err as Error).message}`);
+      }
       return false;
     }
   }
