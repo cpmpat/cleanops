@@ -457,7 +457,17 @@ export class TurnoverReconcileService {
       // in the archive — and buried the handful that were still live. Same
       // mistake the orphan check used to make: a detector that flags what
       // cannot be acted on is not a detector.
-      if (slot.dueBy < actionableFrom) {
+      //
+      // Judge that by the LATER endpoint, which for an inverted window is
+      // availableFrom — and availableFrom is exactly what TurnoversService
+      // filters the pool on. Testing dueBy instead (the first attempt at this)
+      // hid the one shape that matters: Sokolovská 65/201 P had a slot
+      // available today with a due date four days in the past, so the cleaner
+      // saw it in her list this morning while the detector called it archive
+      // and said nothing.
+      const lateEnd =
+        slot.availableFrom > slot.dueBy ? slot.availableFrom : slot.dueBy;
+      if (lateEnd < actionableFrom) {
         impossibleWindowsHistorical++;
         continue;
       }
