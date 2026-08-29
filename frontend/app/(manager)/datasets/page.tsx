@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Database, RefreshCw, Search, Columns3, Filter, Snowflake,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -8,8 +8,13 @@ import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/ap
 import { cn } from '@/lib/utils';
 
 /**
- * Frozen panes need arithmetic, and arithmetic needs fixed sizes. Measuring
- * real cell widths would mean a layout pass per render on a 148-column table.
+ * Column width is fixed, so horizontal offsets are pure arithmetic.
+ *
+ * Vertical offsets are not: a row's real height is padding + border + whatever
+ * the font metrics produce, and guessing it puts the frozen band a pixel or two
+ * off the header. The gap is small but it is a hole, and the rows scrolling
+ * underneath show through it. So the frozen rows are measured, once per layout,
+ * and these two numbers are only the first-paint estimate.
  */
 const COL_W = 190;
 const HEAD_H = 36;
@@ -40,6 +45,11 @@ export default function DatasetsPage() {
   // Frozen panes, counted from the top-left exactly like Sheets.
   const [frozenCols, setFrozenCols] = useState(1);
   const [frozenRows, setFrozenRows] = useState(0);
+
+  // Measured sticky offsets: rowTops[r] is where frozen row r must park so the
+  // band is flush with the header and with the row above it.
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [rowTops, setRowTops] = useState<number[]>([]);
 
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
   const [filterColumn, setFilterColumn] = useState<string>('');
@@ -143,6 +153,43 @@ export default function DatasetsPage() {
     }
     return out;
   }, [data, search, filters, sort]);
+
+  /**
+   * The frozen band has to sit exactly under the header, and each frozen row
+   * exactly under the one above it. Those distances are whatever the browser
+   * actually laid out, not what the constants above predict, so read them back.
+   *
+   * A ResizeObserver on the table catches the cases a render-time measurement
+   * would miss: a web font landing, the window narrowing, a long value forcing
+   * a taller row.
+   */
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    if (!table || frozenRows === 0) {
+      setRowTops(prev => (prev.length === 0 ? prev : []));
+      return;
+    }
+
+    const measure = () => {
+      const head = table.tHead;
+      const body = table.tBodies[0];
+      if (!head || !body) return;
+      const tops: number[] = [];
+      let offset = head.getBoundingClientRect().height;
+      for (let r = 0; r < frozenRows && r < body.rows.length; r++) {
+        tops.push(Math.round(offset));
+        offset += body.rows[r].getBoundingClientRect().height;
+      }
+      setRowTops(prev =>
+        prev.length === tops.length && prev.every((v, i) => v === tops[i]) ? prev : tops,
+      );
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [frozenRows, rows, visible.length, data]);
 
   const activeFilterCount = Object.values(filters).filter(s => s.size > 0).length;
   const labelFor = (key: string) => data?.columns.find(c => c.key === key)?.label ?? key;
@@ -410,9 +457,21 @@ export default function DatasetsPage() {
         </div>
       )}
 
+      {/* min-height matches max-height so the block occupies its final space
+          from the first paint. Without it the footer renders directly under the
+          controls and then jumps down the moment rows arrive. */}
       {!error && data && (
-        <div className="border border-surface-border rounded-xl overflow-auto max-h-[65vh] bg-white">
-          <table className="text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
+        <div className="border border-surface-border rounded-xl overflow-auto h-[65vh] bg-white">
+          {/* border-separate, not border-collapse: with collapsed borders the
+              table paints the cell borders itself, so a sticky cell scrolls
+              away from its own border and leaves a hairline the rows below
+              show through. Separate borders belong to the cell and travel with
+              it. borderSpacing 0 keeps the grid looking collapsed. */}
+          <table
+            ref={tableRef}
+            className="text-xs border-separate"
+            style={{ tableLayout: 'fixed', borderSpacing: 0 }}
+          >
             <thead>
               <tr>
                 {visible.map((c, pos) => {
@@ -428,10 +487,10 @@ export default function DatasetsPage() {
                         ...(frozen ? { left: pos * COL_W } : {}),
                       }}
                       className={cn(
-                        'sticky top-0 z-20 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
+                        'sticky top-0 z-40 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
                         'border-b border-surface-border cursor-pointer select-none hover:text-ink',
                         sorted ? 'text-ink' : 'text-ink-muted',
-                        frozen && 'z-30 border-r',
+                        frozen && 'z-50 border-r',
                         frozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
                       )}
                     >
@@ -461,7 +520,7 @@ export default function DatasetsPage() {
                           style={{
                             width: COL_W, minWidth: COL_W, height: ROW_H,
                             ...(colFrozen ? { left: pos * COL_W } : {}),
-                            ...(rowFrozen ? { top: HEAD_H + r * ROW_H } : {}),
+                            ...(rowFrozen ? { top: rowTops[r] ?? HEAD_H + r * ROW_H } : {}),
                           }}
                           className={cn(
                             'px-3 border-b border-surface-border truncate',
@@ -491,7 +550,11 @@ export default function DatasetsPage() {
         </div>
       )}
 
-      {loading && !data && <p className="p-6 text-center text-sm text-ink-muted">Loading…</p>}
+      {!error && !data && (
+        <div className="border border-surface-border rounded-xl h-[65vh] bg-white flex items-center justify-center">
+          <p className="text-sm text-ink-muted">{loading ? 'Loading…' : ''}</p>
+        </div>
+      )}
 
       {/* Below the table rather than above the controls: switching dataset is
           navigation and reads better as a footer. Deliberately NOT fixed to the

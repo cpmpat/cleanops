@@ -74,7 +74,14 @@ interface CacheEntry {
   fetchedAt: number;
   columns: string[];
   rows: string[][];
-  mapping: Map<string, { label?: string; description?: string }>;
+  /**
+   * Keyed by squashed column name, but holding a LIST per key: this sheet
+   * repeats header names (`status` twice, `bedroom`, `bathroom`), and the
+   * mapping sheet repeats them too — once per meaning. Entries are consumed
+   * in order as the data columns are walked, so the first `status` gets the
+   * first mapping row and the second gets the second.
+   */
+  mapping: Map<string, Array<{ label?: string; description?: string }>>;
   /** Which tab the mapping actually came from, for the UI to disclose. */
   mappingTab: string | null;
 }
@@ -114,10 +121,10 @@ export class DatasetsService {
     spreadsheetId: string,
     tab: string,
   ): Promise<{
-    mapping: Map<string, { label?: string; description?: string }>;
+    mapping: Map<string, Array<{ label?: string; description?: string }>>;
     mappingTab: string | null;
   }> {
-    const mapping = new Map<string, { label?: string; description?: string }>();
+    const mapping = new Map<string, Array<{ label?: string; description?: string }>>();
     const wanted = squash(`${MAPPING_PREFIX}${tab}`);
 
     // Ask the spreadsheet what it actually contains rather than guessing a
@@ -149,10 +156,17 @@ export class DatasetsService {
       if (!source) continue;
       const label = (row[MAP_COL_LABEL] ?? '').trim();
       const description = (row[MAP_COL_DESCRIPTION] ?? '').trim();
-      mapping.set(squash(source), {
+      // Append rather than overwrite. Keyed assignment let a second, blank row
+      // for a repeated name wipe out the good label from the first one — which
+      // is exactly how `status` lost its label while its mapping row sat there
+      // plainly filled in.
+      const key = squash(source);
+      const list = mapping.get(key) ?? [];
+      list.push({
         label: label || undefined,
         description: description || undefined,
       });
+      mapping.set(key, list);
     }
 
     this.logger.log(`Loaded ${mapping.size} column mapping(s) from "${name}"`);
@@ -219,13 +233,26 @@ export class DatasetsService {
       .map((c, i) => (allowed.has(c) ? i : -1))
       .filter((i) => i >= 0);
 
+    // Walking in column order lets repeated names line up with their repeated
+    // mapping rows. Past the end of the list we reuse the last entry, and a
+    // blank label falls back to any earlier entry that has one — a duplicate
+    // row left half-filled should not cost the column its name.
+    const seen = new Map<string, number>();
     const shaped: DatasetColumn[] = keptIndexes.map((i) => {
       const key = columns[i];
-      const m = mapping.get(squash(key));
+      const squashed = squash(key);
+      const list = mapping.get(squashed) ?? [];
+      const nth = seen.get(squashed) ?? 0;
+      seen.set(squashed, nth + 1);
+
+      const entry = list[Math.min(nth, list.length - 1)];
+      const label = entry?.label ?? list.find((e) => e.label)?.label;
+      const description = entry?.description ?? list.find((e) => e.description)?.description;
+
       return {
         key,
-        label: m?.label ?? key,
-        description: m?.description,
+        label: label ?? key,
+        description,
         hiddenByDefault: HIDDEN_BY_DEFAULT.includes(key),
       };
     });
