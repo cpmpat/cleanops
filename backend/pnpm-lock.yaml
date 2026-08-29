@@ -68,6 +68,9 @@ importers:
       cookie-parser:
         specifier: ^1.4.6
         version: 1.4.7
+      google-auth-library:
+        specifier: ^9.15.1
+        version: 9.15.1
       helmet:
         specifier: ^7.1.0
         version: 7.2.0
