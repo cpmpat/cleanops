@@ -50,7 +50,21 @@ export default function DatasetsPage() {
     setLoading(true);
     setError('');
     try {
-      const page = await api.read(key, refresh);
+      const raw = await api.read(key, refresh);
+
+      // Tolerate the pre-mapping API shape, where `columns` was a plain string
+      // array. During a rollout the frontend can land before the backend, and
+      // spreading a string into an object turns it into {0:'i',1:'d',…} — every
+      // key undefined, one column surviving the filters, a table of blanks. A
+      // viewer should degrade to raw column names, not to nonsense.
+      const page: DatasetPage = {
+        ...raw,
+        columns: (raw.columns as unknown[]).map((c) =>
+          typeof c === 'string'
+            ? { key: c, label: c, hiddenByDefault: false }
+            : (c as DatasetPage['columns'][number]),
+        ),
+      };
       setData(page);
       // Start from the sheet's own opinion about what is worth showing.
       setHidden(new Set(page.columns.filter(c => c.hiddenByDefault).map(c => c.key)));
@@ -130,8 +144,7 @@ export default function DatasetsPage() {
     data?.columns.find(c => c.key === key)?.label ?? key;
 
   return (
-    // Bottom padding leaves room for the tab bar pinned to the viewport floor.
-    <div className="p-6 pb-24 max-w-full">
+    <div className="p-6 max-w-full">
       <div className="mb-5 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
@@ -432,10 +445,11 @@ export default function DatasetsPage() {
         <p className="p-6 text-center text-sm text-ink-muted">Loading…</p>
       )}
 
-      {/* Tab bar on the viewport floor — switching datasets is navigation, and
-          navigation belongs where the thumb and the eye already are, not above
-          three rows of controls. */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-surface-border bg-white/95 backdrop-blur px-6 py-2.5">
+      {/* Below the table rather than above the controls: switching dataset is
+          navigation and reads better as a footer. Deliberately NOT fixed to the
+          viewport — a fixed bar spans the whole window and slides under the
+          sidebar, which is its own kind of wrong. */}
+      <div className="mt-4 pt-3 border-t border-surface-border">
         <div className="flex items-center gap-2 flex-wrap">
           {tabs.map(t => (
             <button
