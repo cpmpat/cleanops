@@ -18,7 +18,41 @@ const TABS = [
   { key: 'owner',         tab: 'Owner',        label: 'Owner' },
 ] as const;
 
-export type DatasetKey = (typeof TABS)[number]['key'];
+/**
+ * Columns nobody wants in the default view. Still listed in the column picker,
+ * so they are hidden rather than censored — anyone who needs one ticks it back.
+ */
+const HIDDEN_BY_DEFAULT = [
+  'idBh',
+  'feeFinalCleaningVatExl',
+  'feeFinalCleaningVatRate',
+];
+
+/**
+ * A tab's display metadata lives in a sibling tab named `mapping<Tab>` —
+ * `mappingOwner` for `Owner`, and so on. Layout, from row 2 down:
+ *
+ *   column B  the column name as it appears in the data tab
+ *   column C  a human description, shown on hover in the column picker
+ *   column D  the label to display instead of the raw name
+ *
+ * Anything missing degrades quietly: no mapping tab means raw names, a blank
+ * D means the raw name, a blank C means no tooltip. The alternative — failing
+ * the whole dataset because a description is missing — would be absurd.
+ */
+const MAPPING_PREFIX = 'mapping';
+const MAP_COL_SOURCE = 1;      // B
+const MAP_COL_DESCRIPTION = 2; // C
+const MAP_COL_LABEL = 3;       // D
+
+export interface DatasetColumn {
+  /** Name as it appears in the sheet's header row. The stable identity. */
+  key: string;
+  /** What to show the user — the mapped label, or the key when unmapped. */
+  label: string;
+  description?: string;
+  hiddenByDefault: boolean;
+}
 
 /** How long a fetched tab is reused before going back to Google. */
 const CACHE_TTL_MS = 60_000;
@@ -27,6 +61,7 @@ interface CacheEntry {
   fetchedAt: number;
   columns: string[];
   rows: string[][];
+  mapping: Map<string, { label?: string; description?: string }>;
 }
 
 @Injectable()
@@ -52,9 +87,38 @@ export class DatasetsService {
    * the moment a third role gets in here, the answer has to change — and it
    * has to change by returning a WHITELIST. A deny-list over 140 columns is a
    * bet that nobody ever adds a 141st called `passwordSomethingElse`.
+   *
+   * Note this is a different thing from HIDDEN_BY_DEFAULT: that is tidiness,
+   * one click from being undone. This is permission.
    */
   private visibleColumns(columns: string[], _role: UserRole): string[] {
     return columns;
+  }
+
+  private async readMapping(
+    spreadsheetId: string,
+    tab: string,
+  ): Promise<Map<string, { label?: string; description?: string }>> {
+    const mapping = new Map<string, { label?: string; description?: string }>();
+    const name = `${MAPPING_PREFIX}${tab}`;
+
+    const values = await this.sheets.readValues(spreadsheetId, name, { optional: true });
+    if (!values) return mapping;
+
+    // Row 1 is the mapping sheet's own header; data starts at row 2.
+    for (const row of values.slice(1)) {
+      const source = (row[MAP_COL_SOURCE] ?? '').trim();
+      if (!source) continue;
+      const label = (row[MAP_COL_LABEL] ?? '').trim();
+      const description = (row[MAP_COL_DESCRIPTION] ?? '').trim();
+      mapping.set(source, {
+        label: label || undefined,
+        description: description || undefined,
+      });
+    }
+
+    this.logger.log(`Loaded ${mapping.size} column mapping(s) from "${name}"`);
+    return mapping;
   }
 
   async read(
@@ -88,16 +152,21 @@ export class DatasetsService {
 
     let columns: string[];
     let rows: string[][];
+    let mapping: CacheEntry['mapping'];
     let fetchedAt: number;
 
     if (fresh) {
-      ({ columns, rows, fetchedAt } = cached!);
+      ({ columns, rows, mapping, fetchedAt } = cached!);
     } else {
-      const read = await this.sheets.readTab(spreadsheetId, entry.tab);
+      const [read, map] = await Promise.all([
+        this.sheets.readTab(spreadsheetId, entry.tab),
+        this.readMapping(spreadsheetId, entry.tab),
+      ]);
       columns = read.columns;
       rows = read.rows;
+      mapping = map;
       fetchedAt = Date.now();
-      this.cache.set(cacheKey, { fetchedAt, columns, rows });
+      this.cache.set(cacheKey, { fetchedAt, columns, rows, mapping });
       this.logger.log(
         `Read ${rows.length} row(s) × ${columns.length} column(s) from "${entry.tab}"`,
       );
@@ -110,13 +179,25 @@ export class DatasetsService {
       .map((c, i) => (allowed.has(c) ? i : -1))
       .filter((i) => i >= 0);
 
+    const shaped: DatasetColumn[] = keptIndexes.map((i) => {
+      const key = columns[i];
+      const m = mapping.get(key);
+      return {
+        key,
+        label: m?.label ?? key,
+        description: m?.description,
+        hiddenByDefault: HIDDEN_BY_DEFAULT.includes(key),
+      };
+    });
+
     return {
       key: entry.key,
       label: entry.label,
       tab: entry.tab,
       fetchedAt: new Date(fetchedAt).toISOString(),
       cached: Boolean(fresh),
-      columns: keptIndexes.map((i) => columns[i]),
+      mapped: mapping.size > 0,
+      columns: shaped,
       rows: rows.map((row) => keptIndexes.map((i) => row[i])),
       totalColumns: columns.length,
     };
