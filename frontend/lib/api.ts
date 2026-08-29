@@ -1242,14 +1242,24 @@ export interface DatasetSummary {
   label: string;
 }
 
+export interface DatasetColumn {
+  /** Name as it appears in the sheet header — the stable identity. */
+  key: string;
+  /** Mapped display name, or the key when the mapping sheet has none. */
+  label: string;
+  description?: string;
+  hiddenByDefault: boolean;
+}
+
 export interface DatasetPage {
   key: string;
   label: string;
   tab: string;
   fetchedAt: string;
   cached: boolean;
-  /** Columns this role may see — may be fewer than totalColumns. */
-  columns: string[];
+  /** True when a mapping<Tab> sheet supplied labels/descriptions. */
+  mapped: boolean;
+  columns: DatasetColumn[];
   /** Parallel to `columns`; the sheet repeats header names, so rows are arrays. */
   rows: string[][];
   totalColumns: number;

@@ -62,9 +62,55 @@ export class GoogleSheetsClient {
   }
 
   /**
-   * Read one tab whole.
+   * Raw cell grid for a tab, exactly as Sheets returns it — ragged rows and
+   * all. `optional: true` yields null instead of throwing when the tab does
+   * not exist, which is how a missing mapping sheet degrades to "no mapping"
+   * rather than taking the whole dataset down.
+   */
+  async readValues(
+    spreadsheetId: string,
+    tab: string,
+    opts: { optional?: boolean } = {},
+  ): Promise<string[][] | null> {
+    const client = await this.getAuth().getClient();
+    const range = encodeURIComponent(`'${tab.replace(/'/g, "''")}'`);
+    const url =
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+      `/values/${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`;
+
+    try {
+      const res = await client.request<{ values?: string[][] }>({ url });
+      return res.data.values ?? [];
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail =
+        err?.response?.data?.error?.message ?? err?.message ?? 'unknown error';
+
+      // A tab that does not exist comes back as 400 "Unable to parse range",
+      // not 404. Both mean the same thing to a caller asking optionally.
+      const missing =
+        status === 404 || (status === 400 && /unable to parse range/i.test(detail));
+      if (missing && opts.optional) {
+        this.logger.debug(`Optional tab "${tab}" not present — continuing without it`);
+        return null;
+      }
+
+      this.logger.error(`Sheets read failed for tab "${tab}": ${status} ${detail}`);
+
+      if (status === 403 || missing) {
+        throw new ServiceUnavailableException(
+          `Cannot read the sheet. Share it with ${this.serviceAccountEmail() ?? 'the service account'} ` +
+          `as Viewer, and check the tab "${tab}" exists.`,
+        );
+      }
+      throw new ServiceUnavailableException(`Google Sheets error: ${detail}`);
+    }
+  }
+
+  /**
+   * Read one tab as a header row plus padded body rows.
    *
-   * Returns columns and rows as parallel arrays rather than objects, because
+   * Columns and rows come back as parallel arrays rather than objects, because
    * this spreadsheet genuinely repeats header names (`status` appears twice,
    * so do `bedroom` and `bathroom`). Keyed objects would silently drop one of
    * every duplicated pair.
@@ -73,31 +119,7 @@ export class GoogleSheetsClient {
     spreadsheetId: string,
     tab: string,
   ): Promise<{ columns: string[]; rows: string[][] }> {
-    const client = await this.getAuth().getClient();
-    const range = encodeURIComponent(`'${tab.replace(/'/g, "''")}'`);
-    const url =
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
-      `/values/${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`;
-
-    let values: string[][];
-    try {
-      const res = await client.request<{ values?: string[][] }>({ url });
-      values = res.data.values ?? [];
-    } catch (err: any) {
-      const status = err?.response?.status;
-      const detail =
-        err?.response?.data?.error?.message ?? err?.message ?? 'unknown error';
-      this.logger.error(`Sheets read failed for tab "${tab}": ${status} ${detail}`);
-
-      if (status === 403 || status === 404) {
-        throw new ServiceUnavailableException(
-          `Cannot read the sheet. Share it with ${this.serviceAccountEmail() ?? 'the service account'} ` +
-          `as Viewer, and check the tab "${tab}" exists.`,
-        );
-      }
-      throw new ServiceUnavailableException(`Google Sheets error: ${detail}`);
-    }
-
+    const values = (await this.readValues(spreadsheetId, tab)) ?? [];
     if (values.length === 0) return { columns: [], rows: [] };
 
     const [header, ...body] = values;
@@ -105,10 +127,7 @@ export class GoogleSheetsClient {
 
     // Sheets omits trailing empty cells, so rows arrive ragged. Pad them, or
     // the table renders with cells shifted under the wrong headers.
-    const rows = body.map((row) => {
-      const padded = columns.map((_, i) => row[i] ?? '');
-      return padded;
-    });
+    const rows = body.map((row) => columns.map((_, i) => row[i] ?? ''));
 
     return { columns, rows };
   }
