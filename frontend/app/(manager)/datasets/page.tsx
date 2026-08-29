@@ -410,8 +410,11 @@ export default function DatasetsPage() {
         </div>
       )}
 
+      {/* min-height matches max-height so the block occupies its final space
+          from the first paint. Without it the footer renders directly under the
+          controls and then jumps down the moment rows arrive. */}
       {!error && data && (
-        <div className="border border-surface-border rounded-xl overflow-auto max-h-[65vh] bg-white">
+        <div className="border border-surface-border rounded-xl overflow-auto h-[65vh] bg-white">
           <table className="text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr>
@@ -491,7 +494,11 @@ export default function DatasetsPage() {
         </div>
       )}
 
-      {loading && !data && <p className="p-6 text-center text-sm text-ink-muted">Loading…</p>}
+      {!error && !data && (
+        <div className="border border-surface-border rounded-xl h-[65vh] bg-white flex items-center justify-center">
+          <p className="text-sm text-ink-muted">{loading ? 'Loading…' : ''}</p>
+        </div>
+      )}
 
       {/* Below the table rather than above the controls: switching dataset is
           navigation and reads better as a footer. Deliberately NOT fixed to the
