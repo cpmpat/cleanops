@@ -23,10 +23,21 @@ export class TenantsService {
     pmsApiBaseUrl?: string;
     pmsApiKey?: string;
     pmsSyncEnabled?: boolean;
+    /** Google Sheets id for the Datasets module. Read-only source. */
+    datasetsSheetId?: string | null;
   }) {
+    // Accept a pasted spreadsheet URL as well as a bare id. Nobody has the id
+    // to hand; everybody has the address bar.
+    const patch = { ...data };
+    if (typeof patch.datasetsSheetId === 'string') {
+      const match = patch.datasetsSheetId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      const value = (match ? match[1] : patch.datasetsSheetId).trim();
+      patch.datasetsSheetId = value === '' ? null : value;
+    }
+
     return this.prisma.tenant.update({
       where: { id: tenantId },
-      data,
+      data: patch,
     });
   }
 }
