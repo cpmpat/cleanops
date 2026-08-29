@@ -24,6 +24,7 @@ import { RepairsModule } from './repairs/repairs.module';
 import { TurnoversModule } from './turnovers/turnovers.module';
 import { NotesModule } from './notes/notes.module';
 import { HelpModule } from './help/help.module';
+import { DatasetsModule } from './datasets/datasets.module';
 import { ConversationsModule } from './conversations/conversations.module';
 
 @Module({
@@ -51,6 +52,7 @@ import { ConversationsModule } from './conversations/conversations.module';
     StreamsModule,
     NotesModule,
     HelpModule,
+    DatasetsModule,
     ConversationsModule,
   ],
 })

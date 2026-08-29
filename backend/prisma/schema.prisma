@@ -28,6 +28,10 @@ model Tenant {
   pmsLastSyncAt  DateTime?
   pmsSyncEnabled Boolean   @default(true)
 
+  /// Google Sheets id backing the Datasets module. Read-only; the sheet must
+  /// be shared with the GCP_SERVICE_ACCOUNT_JSON service account as Viewer.
+  datasetsSheetId String?
+
   users               User[]
   properties          Property[]
   bookings            Booking[]

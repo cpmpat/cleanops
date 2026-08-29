@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [syncEnabled, setSyncEnabled] = useState(true);
+  const [datasetsSheet, setDatasetsSheet] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -37,6 +38,7 @@ export default function SettingsPage() {
       setApiBaseUrl(data.pmsApiBaseUrl ?? '');
       setApiKey(data.pmsApiKey ?? '');
       setSyncEnabled(data.pmsSyncEnabled ?? true);
+      setDatasetsSheet(data.datasetsSheetId ?? '');
     }).catch(() => {});
   }, []);
 
@@ -48,6 +50,7 @@ export default function SettingsPage() {
         pmsApiKey: apiKey,
         pmsSyncEnabled: syncEnabled,
         pmsProvider: 'avantio',
+        datasetsSheetId: datasetsSheet,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -165,6 +168,22 @@ export default function SettingsPage() {
                 syncEnabled ? 'translate-x-5' : 'translate-x-0',
               )} />
             </button>
+          </div>
+
+          <div className="pt-4 border-t border-surface-border">
+            <label className="block text-xs font-semibold text-ink-muted uppercase tracking-wider mb-1.5">
+              Datasets source
+            </label>
+            <input
+              value={datasetsSheet}
+              onChange={e => setDatasetsSheet(e.target.value)}
+              placeholder="Paste the Google Sheets link or id"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-surface font-mono"
+            />
+            <p className="text-xs text-ink-muted mt-1.5 leading-relaxed">
+              Read-only. Share the sheet with the service account as <b>Viewer</b> —
+              nothing in the app ever writes back to it.
+            </p>
           </div>
         </div>
 

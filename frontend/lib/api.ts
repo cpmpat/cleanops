@@ -1235,6 +1235,32 @@ export const integrations = {
   },
 };
 
+// ─── Datasets ─────────────────────────────────────────────────────────────────
+
+export interface DatasetSummary {
+  key: string;
+  label: string;
+}
+
+export interface DatasetPage {
+  key: string;
+  label: string;
+  tab: string;
+  fetchedAt: string;
+  cached: boolean;
+  /** Columns this role may see — may be fewer than totalColumns. */
+  columns: string[];
+  /** Parallel to `columns`; the sheet repeats header names, so rows are arrays. */
+  rows: string[][];
+  totalColumns: number;
+}
+
+export const datasets = {
+  list: () => get<DatasetSummary[]>('/datasets'),
+  read: (key: string, refresh = false) =>
+    get<DatasetPage>(`/datasets/${key}${refresh ? '?refresh=1' : ''}`),
+};
+
 // ─── Tenant ───────────────────────────────────────────────────────────────────
 
 export const tenant = {
@@ -1244,6 +1270,8 @@ export const tenant = {
     pmsApiBaseUrl?: string;
     pmsApiKey?: string;
     pmsSyncEnabled?: boolean;
+    /** Google Sheets id or URL backing the Datasets module. */
+    datasetsSheetId?: string;
   }) => patch('/tenant/pms-config', data),
 };
 
