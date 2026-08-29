@@ -1,23 +1,29 @@
 'use client';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Pin, PinOff, X, AlertCircle, Check,
+  Database, RefreshCw, Search, Columns3, Filter, Snowflake,
+  X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-/** Pinned columns get a fixed width so their left offsets are computable. */
-const PINNED_WIDTH = 190;
+/**
+ * Frozen panes need arithmetic, and arithmetic needs fixed sizes. Measuring
+ * real cell widths would mean a layout pass per render on a 148-column table.
+ */
+const COL_W = 190;
+const HEAD_H = 36;
+const ROW_H = 30;
+
+type SortDir = 'asc' | 'desc';
 
 /**
  * Read-only viewer over the tenant's CDM spreadsheet.
  *
- * The Accommodation tab is ~140 columns wide, which rules out a plain table:
- * everything after the tenth column is off-screen, and whichever column
- * identifies the row scrolls away with it. Hence pinning, a column picker and
- * per-column row filters. Column labels and the descriptions shown on hover
- * come from the sheet's own mapping<Tab> tab, so the vocabulary is the
- * operator's rather than the database's.
+ * ~140 columns and hundreds of rows, so it borrows the three things a
+ * spreadsheet gives you for that shape: frozen panes, sortable headers, and
+ * per-column value filters. Column labels and hover descriptions come from the
+ * sheet's own mapping tab, so the table speaks the operator's vocabulary.
  */
 export default function DatasetsPage() {
   const [tabs, setTabs] = useState<DatasetSummary[]>([]);
@@ -28,10 +34,14 @@ export default function DatasetsPage() {
 
   const [search, setSearch] = useState('');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [pinned, setPinned] = useState<string[]>([]);
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
+  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(null);
 
-  const [panel, setPanel] = useState<'columns' | 'rows' | null>(null);
+  // Frozen panes, counted from the top-left exactly like Sheets.
+  const [frozenCols, setFrozenCols] = useState(1);
+  const [frozenRows, setFrozenRows] = useState(0);
+
+  const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [columnSearch, setColumnSearch] = useState('');
   const [valueSearch, setValueSearch] = useState('');
@@ -55,8 +65,7 @@ export default function DatasetsPage() {
       // Tolerate the pre-mapping API shape, where `columns` was a plain string
       // array. During a rollout the frontend can land before the backend, and
       // spreading a string into an object turns it into {0:'i',1:'d',…} — every
-      // key undefined, one column surviving the filters, a table of blanks. A
-      // viewer should degrade to raw column names, not to nonsense.
+      // key undefined, one column surviving the filters, a table of blanks.
       const page: DatasetPage = {
         ...raw,
         columns: (raw.columns as unknown[]).map((c) =>
@@ -66,10 +75,9 @@ export default function DatasetsPage() {
         ),
       };
       setData(page);
-      // Start from the sheet's own opinion about what is worth showing.
       setHidden(new Set(page.columns.filter(c => c.hiddenByDefault).map(c => c.key)));
-      setPinned(page.columns.length ? [page.columns[0].key] : []);
       setFilters({});
+      setSort(null);
       setFilterColumn('');
     } catch (e: any) {
       setData(null);
@@ -81,19 +89,13 @@ export default function DatasetsPage() {
 
   useEffect(() => { load(active); }, [active, load]);
 
-  /** Pinned first, in the order they were pinned; then the rest, sheet order. */
   const visible = useMemo(() => {
     if (!data) return [];
-    const withIndex = data.columns.map((c, i) => ({ ...c, i }));
-    const shown = withIndex.filter(c => !hidden.has(c.key));
-    const pins = pinned
-      .map(k => shown.find(c => c.key === k))
-      .filter(Boolean) as typeof shown;
-    const rest = shown.filter(c => !pinned.includes(c.key));
-    return [...pins, ...rest];
-  }, [data, hidden, pinned]);
+    return data.columns
+      .map((c, i) => ({ ...c, i }))
+      .filter(c => !hidden.has(c.key));
+  }, [data, hidden]);
 
-  /** Distinct values of the column being filtered, for the tick list. */
   const filterValues = useMemo(() => {
     if (!data || !filterColumn) return [];
     const idx = data.columns.findIndex(c => c.key === filterColumn);
@@ -111,19 +113,47 @@ export default function DatasetsPage() {
   const rows = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    const active = Object.entries(filters).filter(([, set]) => set.size > 0);
+    const activeFilters = Object.entries(filters).filter(([, set]) => set.size > 0);
 
-    return data.rows.filter(row => {
-      for (const [key, allowed] of active) {
+    let out = data.rows.filter(row => {
+      for (const [key, allowed] of activeFilters) {
         const idx = data.columns.findIndex(c => c.key === key);
         if (idx >= 0 && !allowed.has(row[idx] ?? '')) return false;
       }
       if (!q) return true;
       return row.some(cell => cell?.toLowerCase().includes(q));
     });
-  }, [data, search, filters]);
+
+    if (sort) {
+      const idx = data.columns.findIndex(c => c.key === sort.key);
+      if (idx >= 0) {
+        const dir = sort.dir === 'asc' ? 1 : -1;
+        // Numeric where both sides are numbers, text otherwise. Blanks sort
+        // last in both directions: an empty cell is absence, not a low value.
+        out = [...out].sort((a, b) => {
+          const x = a[idx] ?? '', y = b[idx] ?? '';
+          if (!x && !y) return 0;
+          if (!x) return 1;
+          if (!y) return -1;
+          const nx = Number(x.replace(',', '.')), ny = Number(y.replace(',', '.'));
+          if (!Number.isNaN(nx) && !Number.isNaN(ny)) return (nx - ny) * dir;
+          return x.localeCompare(y, undefined, { numeric: true }) * dir;
+        });
+      }
+    }
+    return out;
+  }, [data, search, filters, sort]);
 
   const activeFilterCount = Object.values(filters).filter(s => s.size > 0).length;
+  const labelFor = (key: string) => data?.columns.find(c => c.key === key)?.label ?? key;
+
+  function cycleSort(key: string) {
+    setSort(prev => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  }
 
   function toggleFilterValue(column: string, value: string) {
     setFilters(prev => {
@@ -135,13 +165,6 @@ export default function DatasetsPage() {
       return next;
     });
   }
-
-  function togglePin(key: string) {
-    setPinned(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
-  }
-
-  const labelFor = (key: string) =>
-    data?.columns.find(c => c.key === key)?.label ?? key;
 
   return (
     <div className="p-6 max-w-full">
@@ -165,7 +188,6 @@ export default function DatasetsPage() {
         </button>
       </div>
 
-      {/* Controls */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
@@ -178,18 +200,22 @@ export default function DatasetsPage() {
         </div>
 
         <PanelButton
-          icon={<Columns3 size={14} />}
-          label="Columns"
+          icon={<Columns3 size={14} />} label="Columns"
           badge={data ? `${visible.length}/${data.columns.length}` : undefined}
           open={panel === 'columns'}
           onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))}
         />
         <PanelButton
-          icon={<Filter size={14} />}
-          label="Rows"
+          icon={<Filter size={14} />} label="Rows"
           badge={activeFilterCount ? String(activeFilterCount) : undefined}
           open={panel === 'rows'}
           onClick={() => setPanel(p => (p === 'rows' ? null : 'rows'))}
+        />
+        <PanelButton
+          icon={<Snowflake size={14} />} label="Freeze"
+          badge={frozenCols || frozenRows ? `${frozenCols}×${frozenRows}` : undefined}
+          open={panel === 'freeze'}
+          onClick={() => setPanel(p => (p === 'freeze' ? null : 'freeze'))}
         />
 
         {data && (
@@ -200,10 +226,17 @@ export default function DatasetsPage() {
         )}
       </div>
 
-      {/* Active filter chips — visible without opening the panel, and each one
-          removable, so a filtered view can never be mistaken for a full one. */}
-      {activeFilterCount > 0 && (
+      {(activeFilterCount > 0 || sort) && (
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          {sort && (
+            <button
+              onClick={() => setSort(null)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-sunken border border-surface-border text-[11px] font-medium text-ink"
+            >
+              Sorted by {labelFor(sort.key)} {sort.dir === 'asc' ? '↑' : '↓'}
+              <X size={11} />
+            </button>
+          )}
           {Object.entries(filters).map(([key, set]) => (
             <button
               key={key}
@@ -214,9 +247,25 @@ export default function DatasetsPage() {
               <X size={11} />
             </button>
           ))}
-          <button onClick={() => setFilters({})} className="text-[11px] text-ink-muted hover:text-ink px-1.5">
-            Clear all
-          </button>
+          {activeFilterCount > 0 && (
+            <button onClick={() => setFilters({})} className="text-[11px] text-ink-muted hover:text-ink px-1.5">
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+
+      {panel === 'freeze' && (
+        <div className="mb-3 p-3 rounded-xl border border-surface-border bg-surface">
+          <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Freeze panes</p>
+          <p className="text-[11px] text-ink-faint mb-3">
+            Counted from the top-left corner, like a spreadsheet. Frozen columns stay
+            put while you scroll sideways; frozen rows stay under the header.
+          </p>
+          <div className="flex flex-wrap gap-6">
+            <Stepper label="Columns" value={frozenCols} max={Math.min(6, visible.length)} onChange={setFrozenCols} />
+            <Stepper label="Rows" value={frozenRows} max={5} onChange={setFrozenRows} />
+          </div>
         </div>
       )}
 
@@ -234,46 +283,30 @@ export default function DatasetsPage() {
               Show all
             </button>
           </div>
-          <p className="text-[11px] text-ink-faint mb-2">
-            Hover a column for its description. The pin keeps it in view while you scroll sideways.
-          </p>
+          <p className="text-[11px] text-ink-faint mb-2">Hover a column for its description.</p>
           <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
             {data.columns
               .filter(c => !columnSearch ||
                 c.label.toLowerCase().includes(columnSearch.toLowerCase()) ||
                 c.key.toLowerCase().includes(columnSearch.toLowerCase()))
               .map(c => (
-                <span
+                <button
                   key={c.key}
-                  title={c.description || c.key}
+                  title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
+                  onClick={() => setHidden(prev => {
+                    const next = new Set(prev);
+                    next.has(c.key) ? next.delete(c.key) : next.add(c.key);
+                    return next;
+                  })}
                   className={cn(
-                    'inline-flex items-center gap-1 rounded-lg text-[11px] border transition',
+                    'px-2 py-1 rounded-lg text-[11px] border transition',
                     hidden.has(c.key)
-                      ? 'bg-surface border-surface-border text-ink-faint'
+                      ? 'bg-surface border-surface-border text-ink-faint line-through'
                       : 'bg-white border-surface-border text-ink',
                   )}
                 >
-                  <button
-                    onClick={() => setHidden(prev => {
-                      const next = new Set(prev);
-                      next.has(c.key) ? next.delete(c.key) : next.add(c.key);
-                      return next;
-                    })}
-                    className={cn('pl-2 py-1', hidden.has(c.key) && 'line-through')}
-                  >
-                    {c.label}
-                  </button>
-                  <button
-                    onClick={() => togglePin(c.key)}
-                    title={pinned.includes(c.key) ? 'Unfreeze this column' : 'Freeze this column'}
-                    className={cn(
-                      'pr-2 pl-0.5 py-1',
-                      pinned.includes(c.key) ? 'text-accent' : 'text-ink-faint hover:text-ink-muted',
-                    )}
-                  >
-                    {pinned.includes(c.key) ? <Pin size={11} /> : <PinOff size={11} />}
-                  </button>
-                </span>
+                  {c.label}
+                </button>
               ))}
           </div>
         </div>
@@ -363,9 +396,7 @@ export default function DatasetsPage() {
                   </div>
                 </>
               ) : (
-                <p className="text-xs text-ink-muted p-2">
-                  Pick a column on the left to filter its values.
-                </p>
+                <p className="text-xs text-ink-muted p-2">Pick a column on the left to filter its values.</p>
               )}
             </div>
           </div>
@@ -381,56 +412,75 @@ export default function DatasetsPage() {
 
       {!error && data && (
         <div className="border border-surface-border rounded-xl overflow-auto max-h-[65vh] bg-white">
-          <table className="text-xs border-collapse">
-            <thead className="sticky top-0 z-20">
+          <table className="text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
+            <thead>
               <tr>
                 {visible.map((c, pos) => {
-                  const isPinned = pinned.includes(c.key);
+                  const frozen = pos < frozenCols;
+                  const sorted = sort?.key === c.key;
                   return (
                     <th
                       key={`${c.key}-${c.i}`}
-                      title={c.description || c.key}
-                      style={isPinned
-                        ? { left: pinned.indexOf(c.key) * PINNED_WIDTH, width: PINNED_WIDTH, minWidth: PINNED_WIDTH }
-                        : undefined}
+                      title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
+                      onClick={() => cycleSort(c.key)}
+                      style={{
+                        width: COL_W, minWidth: COL_W, height: HEAD_H,
+                        ...(frozen ? { left: pos * COL_W } : {}),
+                      }}
                       className={cn(
-                        'text-left font-semibold text-ink-muted whitespace-nowrap px-3 py-2 bg-surface-sunken border-b border-surface-border',
-                        isPinned && 'sticky z-30 border-r',
-                        isPinned && pos === pinned.length - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.04)]',
+                        'sticky top-0 z-20 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
+                        'border-b border-surface-border cursor-pointer select-none hover:text-ink',
+                        sorted ? 'text-ink' : 'text-ink-muted',
+                        frozen && 'z-30 border-r',
+                        frozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
                       )}
                     >
-                      {c.label}
+                      <span className="flex items-center gap-1">
+                        <span className="truncate">{c.label}</span>
+                        {sorted
+                          ? (sort!.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+                          : <ChevronsUpDown size={10} className="opacity-0 group-hover:opacity-40" />}
+                      </span>
                     </th>
                   );
                 })}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, r) => (
-                <tr key={r} className="hover:bg-surface-sunken/60 group">
-                  {visible.map((c, pos) => {
-                    const isPinned = pinned.includes(c.key);
-                    return (
-                      <td
-                        key={`${c.key}-${c.i}`}
-                        title={row[c.i]}
-                        style={isPinned
-                          ? { left: pinned.indexOf(c.key) * PINNED_WIDTH, width: PINNED_WIDTH, minWidth: PINNED_WIDTH }
-                          : undefined}
-                        className={cn(
-                          'px-3 py-1.5 border-b border-surface-border truncate',
-                          isPinned
-                            ? 'sticky z-10 bg-white group-hover:bg-surface-sunken font-medium text-ink border-r'
-                            : 'max-w-[280px] text-ink-muted',
-                          isPinned && pos === pinned.length - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.04)]',
-                        )}
-                      >
-                        {row[c.i]}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {rows.map((row, r) => {
+                const rowFrozen = r < frozenRows;
+                return (
+                  <tr key={r} className={cn('group', !rowFrozen && 'hover:bg-surface-sunken/60')}>
+                    {visible.map((c, pos) => {
+                      const colFrozen = pos < frozenCols;
+                      const stick = rowFrozen || colFrozen;
+                      return (
+                        <td
+                          key={`${c.key}-${c.i}`}
+                          title={row[c.i]}
+                          style={{
+                            width: COL_W, minWidth: COL_W, height: ROW_H,
+                            ...(colFrozen ? { left: pos * COL_W } : {}),
+                            ...(rowFrozen ? { top: HEAD_H + r * ROW_H } : {}),
+                          }}
+                          className={cn(
+                            'px-3 border-b border-surface-border truncate',
+                            stick && 'sticky bg-white',
+                            rowFrozen && colFrozen ? 'z-30' : rowFrozen ? 'z-20' : colFrozen ? 'z-10' : '',
+                            colFrozen ? 'font-medium text-ink border-r' : 'text-ink-muted',
+                            rowFrozen && 'border-b-ink/10',
+                            !stick && 'group-hover:bg-surface-sunken/0',
+                            colFrozen && !rowFrozen && 'group-hover:bg-surface-sunken',
+                            colFrozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
+                          )}
+                        >
+                          {row[c.i]}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {rows.length === 0 && (
@@ -441,9 +491,7 @@ export default function DatasetsPage() {
         </div>
       )}
 
-      {loading && !data && (
-        <p className="p-6 text-center text-sm text-ink-muted">Loading…</p>
-      )}
+      {loading && !data && <p className="p-6 text-center text-sm text-ink-muted">Loading…</p>}
 
       {/* Below the table rather than above the controls: switching dataset is
           navigation and reads better as a footer. Deliberately NOT fixed to the
@@ -467,7 +515,9 @@ export default function DatasetsPage() {
           ))}
           {data && (
             <span className="ml-auto text-[11px] text-ink-faint">
-              {data.mapped ? 'Labels from mapping sheet' : 'Raw column names'}
+              {data.mapped
+                ? `Labels from ${data.mappingTab ?? 'mapping sheet'}`
+                : 'Raw column names — no mapping tab matched'}
             </span>
           )}
         </div>
@@ -476,23 +526,44 @@ export default function DatasetsPage() {
   );
 }
 
+function Stepper({
+  label, value, max, onChange,
+}: { label: string; value: number; max: number; onChange: (n: number) => void }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-ink-muted mb-1.5">{label}</p>
+      <div className="flex items-center gap-1">
+        {Array.from({ length: max + 1 }, (_, n) => (
+          <button
+            key={n}
+            onClick={() => onChange(n)}
+            className={cn(
+              'w-8 h-8 rounded-lg text-xs font-semibold border transition',
+              value === n
+                ? 'bg-ink text-white border-ink'
+                : 'bg-white border-surface-border text-ink-muted hover:text-ink',
+            )}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PanelButton({
   icon, label, badge, open, onClick,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  badge?: string;
-  open: boolean;
-  onClick: () => void;
+  icon: React.ReactNode; label: string; badge?: string; open: boolean; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
         'flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition',
-        open
-          ? 'bg-ink text-white border-ink'
-          : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
+        open ? 'bg-ink text-white border-ink'
+             : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
       )}
     >
       {icon}
