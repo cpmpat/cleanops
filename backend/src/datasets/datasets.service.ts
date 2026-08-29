@@ -41,6 +41,19 @@ const HIDDEN_BY_DEFAULT = [
  * the whole dataset because a description is missing — would be absurd.
  */
 const MAPPING_PREFIX = 'mapping';
+
+/**
+ * Tab names are typed by hand and drift: the data tab is `Accomodation` with
+ * one m, its mapping tab `mappingAccommodation` with two. Comparing on a
+ * squashed form — lowercased, non-alphanumerics dropped, repeated letters
+ * collapsed — matches them without hard-coding either spelling.
+ */
+function squash(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/(.)\1+/g, '$1');
+}
 const MAP_COL_SOURCE = 1;      // B
 const MAP_COL_DESCRIPTION = 2; // C
 const MAP_COL_LABEL = 3;       // D
@@ -62,6 +75,8 @@ interface CacheEntry {
   columns: string[];
   rows: string[][];
   mapping: Map<string, { label?: string; description?: string }>;
+  /** Which tab the mapping actually came from, for the UI to disclose. */
+  mappingTab: string | null;
 }
 
 @Injectable()
@@ -98,27 +113,50 @@ export class DatasetsService {
   private async readMapping(
     spreadsheetId: string,
     tab: string,
-  ): Promise<Map<string, { label?: string; description?: string }>> {
+  ): Promise<{
+    mapping: Map<string, { label?: string; description?: string }>;
+    mappingTab: string | null;
+  }> {
     const mapping = new Map<string, { label?: string; description?: string }>();
-    const name = `${MAPPING_PREFIX}${tab}`;
+    const wanted = squash(`${MAPPING_PREFIX}${tab}`);
+
+    // Ask the spreadsheet what it actually contains rather than guessing a
+    // name. The first version guessed `mapping` + the data tab's spelling and
+    // silently found nothing, because the two tabs spell "Accommodation"
+    // differently from each other.
+    const tabs = await this.sheets.listTabs(spreadsheetId);
+    const name =
+      tabs.find((t) => squash(t) === wanted) ??
+      tabs.find((t) => squash(t).startsWith(squash(MAPPING_PREFIX)) && squash(t).includes(squash(tab))) ??
+      null;
+
+    if (!name) {
+      this.logger.warn(
+        `No mapping tab for "${tab}". Looked for something like ` +
+        `"${MAPPING_PREFIX}${tab}" among: ${tabs.join(', ') || '(none listed)'}`,
+      );
+      return { mapping, mappingTab: null };
+    }
 
     const values = await this.sheets.readValues(spreadsheetId, name, { optional: true });
-    if (!values) return mapping;
+    if (!values) return { mapping, mappingTab: null };
 
     // Row 1 is the mapping sheet's own header; data starts at row 2.
+    // Keys are squashed too, so a stray space or capital in either sheet does
+    // not quietly cost a label.
     for (const row of values.slice(1)) {
       const source = (row[MAP_COL_SOURCE] ?? '').trim();
       if (!source) continue;
       const label = (row[MAP_COL_LABEL] ?? '').trim();
       const description = (row[MAP_COL_DESCRIPTION] ?? '').trim();
-      mapping.set(source, {
+      mapping.set(squash(source), {
         label: label || undefined,
         description: description || undefined,
       });
     }
 
     this.logger.log(`Loaded ${mapping.size} column mapping(s) from "${name}"`);
-    return mapping;
+    return { mapping, mappingTab: name };
   }
 
   async read(
@@ -153,10 +191,11 @@ export class DatasetsService {
     let columns: string[];
     let rows: string[][];
     let mapping: CacheEntry['mapping'];
+    let mappingTab: string | null;
     let fetchedAt: number;
 
     if (fresh) {
-      ({ columns, rows, mapping, fetchedAt } = cached!);
+      ({ columns, rows, mapping, mappingTab, fetchedAt } = cached!);
     } else {
       const [read, map] = await Promise.all([
         this.sheets.readTab(spreadsheetId, entry.tab),
@@ -164,9 +203,10 @@ export class DatasetsService {
       ]);
       columns = read.columns;
       rows = read.rows;
-      mapping = map;
+      mapping = map.mapping;
+      mappingTab = map.mappingTab;
       fetchedAt = Date.now();
-      this.cache.set(cacheKey, { fetchedAt, columns, rows, mapping });
+      this.cache.set(cacheKey, { fetchedAt, columns, rows, mapping, mappingTab });
       this.logger.log(
         `Read ${rows.length} row(s) × ${columns.length} column(s) from "${entry.tab}"`,
       );
@@ -181,7 +221,7 @@ export class DatasetsService {
 
     const shaped: DatasetColumn[] = keptIndexes.map((i) => {
       const key = columns[i];
-      const m = mapping.get(key);
+      const m = mapping.get(squash(key));
       return {
         key,
         label: m?.label ?? key,
@@ -197,6 +237,7 @@ export class DatasetsService {
       fetchedAt: new Date(fetchedAt).toISOString(),
       cached: Boolean(fresh),
       mapped: mapping.size > 0,
+      mappingTab,
       columns: shaped,
       rows: rows.map((row) => keptIndexes.map((i) => row[i])),
       totalColumns: columns.length,

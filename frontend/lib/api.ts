@@ -1259,6 +1259,8 @@ export interface DatasetPage {
   cached: boolean;
   /** True when a mapping<Tab> sheet supplied labels/descriptions. */
   mapped: boolean;
+  /** Which tab the labels came from — names drift, so we disclose the match. */
+  mappingTab?: string | null;
   columns: DatasetColumn[];
   /** Parallel to `columns`; the sheet repeats header names, so rows are arrays. */
   rows: string[][];

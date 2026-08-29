@@ -107,6 +107,27 @@ export class GoogleSheetsClient {
     }
   }
 
+  /** Every tab title in the spreadsheet, in sheet order. */
+  async listTabs(spreadsheetId: string): Promise<string[]> {
+    const client = await this.getAuth().getClient();
+    const url =
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+      `?fields=sheets.properties.title`;
+    try {
+      const res = await client.request<{
+        sheets?: Array<{ properties?: { title?: string } }>;
+      }>({ url });
+      return (res.data.sheets ?? [])
+        .map((s) => s.properties?.title ?? '')
+        .filter(Boolean);
+    } catch (err: any) {
+      const detail =
+        err?.response?.data?.error?.message ?? err?.message ?? 'unknown error';
+      this.logger.warn(`Could not list tabs: ${detail}`);
+      return [];
+    }
+  }
+
   /**
    * Read one tab as a header row plus padded body rows.
    *
