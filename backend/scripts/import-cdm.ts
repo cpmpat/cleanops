@@ -27,6 +27,7 @@
 //   --tenant <id|slug>  required
 //   --list <key>        which list (default: user; only `user` exists so far)
 //   --apply             write (default: report only)
+//   --show-keys         print every natural key the sheet yielded
 //
 // Exit codes:
 //   0  success            1  one or more rows failed            2  bad usage
@@ -46,6 +47,7 @@ const { values } = parseArgs({
     tenant: { type: 'string' },
     list: { type: 'string', default: 'user' },
     apply: { type: 'boolean', default: false },
+    'show-keys': { type: 'boolean', default: false },
   },
 });
 
@@ -203,6 +205,18 @@ async function main() {
       console.error(`\nDuplicate ${spec.key} values — refusing to import:`);
       for (const [k, n] of dupes) console.error(`  ${k} x${n}`);
       process.exit(1);
+    }
+
+    if (values['show-keys']) {
+      // Worth having on a first import. A row count that disagrees with what
+      // you expect has two very different causes — the sheet grew, or
+      // something below the table is being read as data — and the keys tell
+      // them apart at a glance.
+      const keys = rows.map((r) => clean(r[keyIndex])).filter(Boolean);
+      console.log(`\n${keys.length} ${spec.key} value(s):`);
+      for (let i = 0; i < keys.length; i += 12) {
+        console.log('  ' + keys.slice(i, i + 12).join(' '));
+      }
     }
 
     if (!values.apply) {
