@@ -30,10 +30,12 @@ export class StreamsController {
     description:
       'Returns a chronologically merged feed of cleanings, reservations, ' +
       'incidents, and manual events. Pass propertyId for a single-property ' +
-      'drill-down; omit for the tenant-wide feed. Use the returned nextCursor ' +
-      'for infinite scroll.',
+      'drill-down, or propertyIds for a set of units; omit for the tenant-wide ' +
+      'feed. Direct chats belong to no property, so they are omitted whenever a ' +
+      'unit filter is active. Use the returned nextCursor for infinite scroll.',
   })
   @ApiQuery({ name: 'propertyId', required: false })
+  @ApiQuery({ name: 'propertyIds', required: false, description: 'Comma-separated property ids; unioned with propertyId' })
   @ApiQuery({ name: 'cursor', required: false, description: 'ISO timestamp; returns items strictly older' })
   @ApiQuery({ name: 'limit', required: false, description: 'Max 100, default 30' })
   @ApiQuery({ name: 'types', required: false, description: 'Comma-separated: RESERVATION,CLEANING,INCIDENT,REPAIR,INSPECTION,MANUAL' })

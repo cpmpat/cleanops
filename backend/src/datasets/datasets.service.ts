@@ -26,6 +26,9 @@ const HIDDEN_BY_DEFAULT = [
   'idBh',
   'feeFinalCleaningVatExl',
   'feeFinalCleaningVatRate',
+  'category',
+  'unit',
+  'listingDescriptionAirbnb',
 ];
 
 /**

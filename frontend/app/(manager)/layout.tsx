@@ -68,7 +68,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
     { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
     { href: '/schedule',   icon: CalendarRange,   label: (t.nav as any).schedule ?? 'Schedule' },
-    { href: '/streams',    icon: Activity,        label: (t.nav as any).streams  ?? 'Streams' },
+    { href: '/streams',    icon: Activity,        label: (t.nav as any).stream   ?? 'Stream' },
     { href: '/incidents',  icon: AlertTriangle,   label: t.nav.incidents },
     { href: '/repairs',    icon: Wrench,          label: (t.nav as any).repairs  ?? 'Repairs' },
     { href: '/airchat',    icon: MessagesSquare,  label: 'Airchat' },

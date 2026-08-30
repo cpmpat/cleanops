@@ -878,6 +878,8 @@ export interface ManualStreamEvent {
 export const streams = {
   feed: (params?: {
     propertyId?: string;
+    /** A set of units. Empty or omitted means every unit. */
+    propertyIds?: string[];
     cursor?: string;
     limit?: number;
     types?: StreamItemType[];
@@ -886,6 +888,7 @@ export const streams = {
   }) => {
     const q = new URLSearchParams();
     if (params?.propertyId) q.set('propertyId', params.propertyId);
+    if (params?.propertyIds?.length) q.set('propertyIds', params.propertyIds.join(','));
     if (params?.cursor) q.set('cursor', params.cursor);
     if (params?.limit) q.set('limit', String(params.limit));
     if (params?.types?.length) q.set('types', params.types.join(','));
