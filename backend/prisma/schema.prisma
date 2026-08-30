@@ -48,6 +48,8 @@ model Tenant {
   helpDocs            HelpDoc[]
   conversations       Conversation[]
   pmsSyncFailures     PmsSyncFailure[]
+  cdmUsers            CdmUser[]
+  datasetFields       DatasetField[]
 
   @@map("tenants")
 }
@@ -78,6 +80,14 @@ enum UserRole {
   /// Scope still to be defined.
   TERENAK
   AGENT
+
+  /// Added 30 Aug 2026. Values only — no module access is granted to any of
+  /// these yet, and under the default-deny matrix that is the safe state:
+  /// a role with no grants sees nothing rather than everything.
+  DIRECTOR
+  EVIDENCE
+  RESOLUTIONS
+  MARKETING_MANAGER
 }
 
 enum Language {
@@ -497,6 +507,8 @@ enum AuditCategory {
   PMS_SYNC
   INCIDENT_LIFECYCLE
   SYSTEM
+  /// Someone changed a row in a CDM dataset through the app.
+  DATA_EDIT
 }
 
 model AuditEvent {
@@ -1219,4 +1231,103 @@ model PmsSyncFailure {
   @@unique([tenantId, pmsBookingId])
   @@index([tenantId])
   @@map("pms_sync_failures")
+}
+
+// ─── CDM DATASETS ─────────────────────────────────────────────
+//
+// The CDM spreadsheet, moving into Postgres one list at a time. Each list gets
+// a real table; `DatasetField` describes it.
+//
+// That metadata table is the part that earns its keep. In the sheet era three
+// separate mechanisms did this job badly: a `mapping<Tab>` sibling sheet found
+// by fuzzy name matching (because `Accomodation` and `mappingAccommodation`
+// disagree on how many m's), a hardcoded HIDDEN_BY_DEFAULT array that needed a
+// deploy to change, and column order implied by position. All three collapse
+// into rows here, and two whole classes of bug go with them: a table cannot
+// have two columns called `status`, and a foreign key cannot be misspelled.
+
+model DatasetField {
+  id              String  @id @default(uuid())
+  tenantId        String
+  /// Which list this describes — matches the dataset key in the API.
+  dataset         String
+  /// 1-based position, from the mapping sheet's A/B/C column letters.
+  columnOrder     Int
+  /// The column name on the data table. Also the API's stable column key.
+  field           String
+  displayName     String
+  description     String?
+  /// text | int | bool | date. Drives both rendering and create-form parsing.
+  type            String  @default("text")
+  /// Tidiness: off in the default view, one click from being shown.
+  hiddenByDefault Boolean @default(false)
+  /// Permission: credentials and personal data. Never the same thing as
+  /// hiddenByDefault, and never collapsed into it.
+  sensitive       Boolean @default(false)
+  /// Must be present when creating a row.
+  required        Boolean @default(false)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dataset, field])
+  @@index([tenantId, dataset, columnOrder])
+  @@map("dataset_fields")
+}
+
+/// CDM list `User`: the company's people directory.
+///
+/// Deliberately NOT related to `User`. That table is who can log into this app;
+/// this one is every person the company employs, and the two overlap only
+/// partly. `email1` is not unique here either — two pairs of people share a
+/// shared mailbox in the source data — so it cannot be a key.
+///
+/// Column names mirror the sheet's header exactly, typos included (`phuneNumber`,
+/// `not`, `possitionTier`). Renaming them here would break the mapping the
+/// operators already read; the display names in `DatasetField` fix the spelling
+/// where it is seen.
+model CdmUser {
+  id                    String    @id @default(uuid())
+  tenantId              String
+
+  /// The natural key — unique across all 122 source rows.
+  internalId            String
+  firstName             String?
+  lastName              String?
+  position              String?
+  area                  String?
+  dataAccess            Int?
+  department            String?
+  possitionTier         String?
+  /// The company's own idea of a role (Management / Staff / Designer).
+  /// NOT the app's UserRole enum, despite the name.
+  role                  String?
+  email1                String?
+  email2                String?
+  passwordEmail1        String?
+  passwordEmail2Avantio String?
+  phuneNumber           String?
+  validity              String?
+  cleaningArea          String?
+  checkinCollaborator   Boolean?
+  rajon                 String?
+  nickname              String?
+  not                   String?
+  address               String?
+  birthNumber           String?
+  birthPlace            String?
+  businessId            String?
+  healthInsurer         String?
+  tariff                String?
+  terminationDate       DateTime?
+  startDate             DateTime?
+  folder                String?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, internalId])
+  @@index([tenantId, lastName])
+  @@map("cdm_users")
 }

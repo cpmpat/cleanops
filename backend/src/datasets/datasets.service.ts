@@ -13,14 +13,30 @@ import { UserRole } from '@prisma/client';
  * below is the seam it plugs into.
  */
 const TABS = [
-  { key: 'accommodation', tab: 'Accomodation', label: 'Accommodation' },
-  { key: 'user',          tab: 'User',         label: 'User' },
-  { key: 'owner',         tab: 'Owner',        label: 'Owner' },
+  { key: 'accommodation', tab: 'Accomodation', label: 'Accommodation', source: 'sheet' },
+  { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
+  { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
 ] as const;
+
+/**
+ * Which Prisma model backs a migrated list, and what its natural key is.
+ *
+ * The delegate is looked up by name rather than imported, which is what keeps
+ * `read` and `create` generic across lists. The names here are the only place
+ * that indirection is resolved, so a typo fails loudly at the first request
+ * rather than silently returning nothing.
+ */
+const DB_MODELS: Record<string, { model: string; key: string }> = {
+  user: { model: 'cdmUser', key: 'internalId' },
+};
 
 /**
  * Columns nobody wants in the default view. Still listed in the column picker,
  * so they are hidden rather than censored — anyone who needs one ticks it back.
+ *
+ * Sheet-backed lists only. A migrated list carries this per column in
+ * `dataset_fields`, where it can be changed without a deploy — which is what
+ * this array was always a stand-in for.
  */
 const HIDDEN_BY_DEFAULT = [
   'idBh',
@@ -68,6 +84,10 @@ export interface DatasetColumn {
   label: string;
   description?: string;
   hiddenByDefault: boolean;
+  /** text | int | bool | date. Drives the create form's input and parsing. */
+  type: string;
+  /** Must be filled in when adding a row. */
+  required: boolean;
 }
 
 /** How long a fetched tab is reused before going back to Google. */
@@ -118,6 +138,44 @@ export class DatasetsService {
    */
   private visibleColumns(columns: string[], _role: UserRole): string[] {
     return columns;
+  }
+
+  /**
+   * The same decision for a migrated list, where the metadata says which
+   * columns are credentials and which are personal data.
+   *
+   * Today's behaviour is preserved exactly: MANAGER and ADMIN are the only
+   * roles that can reach this module at all, and they keep seeing everything.
+   * The change is what happens to the roles added since — DIRECTOR, EVIDENCE,
+   * RESOLUTIONS, MARKETING_MANAGER. If one of them is ever granted the module,
+   * it gets the list without the mailbox passwords and without the birth
+   * numbers, rather than everything by default.
+   *
+   * This is the whitelist seam, not the whitelist. When the privilege matrix
+   * lands it replaces this function; until then the failure mode of a new role
+   * is "sees less than expected", which is the right way round.
+   */
+  private visibleFields<T extends { field: string; sensitive: boolean }>(
+    fields: T[],
+    role: UserRole,
+  ): T[] {
+    const mayReadSensitive = role === 'MANAGER' || role === 'ADMIN';
+    return mayReadSensitive ? fields : fields.filter((f) => !f.sensitive);
+  }
+
+  /**
+   * Postgres values back to the strings the viewer speaks.
+   *
+   * The grid was built for a spreadsheet and every cell in it is a string.
+   * Keeping that contract is what let this list migrate without the frontend
+   * changing at all — booleans render in the sheet's own TRUE/FALSE vocabulary
+   * so a migrated column reads identically to an unmigrated one beside it.
+   */
+  private render(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    return String(value);
   }
 
   private async readMapping(
@@ -185,6 +243,10 @@ export class DatasetsService {
     const entry = TABS.find((t) => t.key === key);
     if (!entry) {
       throw new NotFoundException(`Unknown dataset "${key}"`);
+    }
+
+    if (entry.source === 'db') {
+      return this.readFromDb(tenantId, entry.key, entry.label, role);
     }
 
     const tenant = await this.prisma.tenant.findUnique({
@@ -257,6 +319,8 @@ export class DatasetsService {
         label: label ?? key,
         description,
         hiddenByDefault: HIDDEN_BY_DEFAULT.includes(key),
+        type: 'text',
+        required: false,
       };
     });
 
@@ -271,6 +335,187 @@ export class DatasetsService {
       columns: shaped,
       rows: rows.map((row) => keptIndexes.map((i) => row[i])),
       totalColumns: columns.length,
+      // The app has read-only scope on the spreadsheet, so a sheet-backed list
+      // cannot be added to. Saying so here is what greys out "Add new" rather
+      // than letting the button fail on submit.
+      canCreate: false,
     };
+  }
+
+  // ─── Postgres-backed lists ────────────────────────────────────────────────
+
+  /**
+   * Read a migrated list.
+   *
+   * Three things the sheet path had to work around simply do not exist here.
+   * Column order is a number rather than a position. Names cannot drift,
+   * because the metadata row and the table column are the same string enforced
+   * by a unique index instead of matched by a fuzzy `squash()`. And no list can
+   * repeat a column name, so the whole "consume mapping entries in column
+   * order" dance that `status` needed is gone.
+   */
+  private async readFromDb(
+    tenantId: string,
+    key: string,
+    label: string,
+    role: UserRole,
+  ) {
+    const spec = DB_MODELS[key];
+    if (!spec) throw new NotFoundException(`Dataset "${key}" has no table behind it`);
+
+    const all = await this.prisma.datasetField.findMany({
+      where: { tenantId, dataset: key },
+      orderBy: { columnOrder: 'asc' },
+    });
+
+    if (all.length === 0) {
+      throw new BadRequestException(
+        `The "${key}" dataset has no columns yet. Run ` +
+        `\`npm run import:cdm -- --tenant <slug> --list ${key} --apply\` to load it.`,
+      );
+    }
+
+    const fields = this.visibleFields(all, role);
+    const delegate = (this.prisma as any)[spec.model];
+
+    const select: Record<string, true> = {};
+    for (const f of fields) select[f.field] = true;
+
+    const records: Record<string, unknown>[] = await delegate.findMany({
+      where: { tenantId },
+      select,
+      orderBy: { [spec.key]: 'asc' },
+    });
+
+    return {
+      key,
+      label,
+      tab: null,
+      fetchedAt: new Date().toISOString(),
+      // Postgres is faster than the cache the sheet needed, so there is none
+      // and nothing is ever stale.
+      cached: false,
+      mapped: true,
+      mappingTab: null,
+      columns: fields.map((f) => ({
+        key: f.field,
+        label: f.displayName,
+        description: f.description ?? undefined,
+        hiddenByDefault: f.hiddenByDefault,
+        type: f.type,
+        required: f.required,
+      })),
+      rows: records.map((r) => fields.map((f) => this.render(r[f.field]))),
+      totalColumns: all.length,
+      canCreate: true,
+    };
+  }
+
+  /**
+   * Add a row to a migrated list.
+   *
+   * Everything the request may set is derived from the metadata, so an unknown
+   * key is rejected rather than ignored, and a sensitive column cannot be
+   * written by a role that is not allowed to read it.
+   */
+  async create(
+    tenantId: string,
+    key: string,
+    role: UserRole,
+    actorId: string | undefined,
+    body: Record<string, unknown>,
+  ) {
+    const entry = TABS.find((t) => t.key === key);
+    if (!entry) throw new NotFoundException(`Unknown dataset "${key}"`);
+    if (entry.source !== 'db') {
+      throw new BadRequestException(
+        `"${entry.label}" still lives in the spreadsheet, which this app can only read.`,
+      );
+    }
+
+    const spec = DB_MODELS[key];
+    const all = await this.prisma.datasetField.findMany({
+      where: { tenantId, dataset: key },
+      orderBy: { columnOrder: 'asc' },
+    });
+    const writable = this.visibleFields(all, role);
+    const byField = new Map(writable.map((f) => [f.field, f]));
+
+    const unknown = Object.keys(body).filter((k) => !byField.has(k));
+    if (unknown.length) {
+      throw new BadRequestException(`Unknown or not-writable column(s): ${unknown.join(', ')}`);
+    }
+
+    const data: Record<string, unknown> = { tenantId };
+    for (const f of writable) {
+      const raw = body[f.field];
+      const str = raw === null || raw === undefined ? '' : String(raw).trim();
+
+      if (!str) {
+        if (f.required) throw new BadRequestException(`"${f.displayName}" is required.`);
+        continue;
+      }
+
+      if (f.type === 'int') {
+        const n = Number(str);
+        if (!Number.isFinite(n)) throw new BadRequestException(`"${f.displayName}" must be a number.`);
+        data[f.field] = Math.trunc(n);
+      } else if (f.type === 'bool') {
+        data[f.field] = ['true', 'yes', '1'].includes(str.toLowerCase());
+      } else if (f.type === 'date') {
+        const d = new Date(str);
+        if (isNaN(d.getTime())) throw new BadRequestException(`"${f.displayName}" must be a date.`);
+        data[f.field] = d;
+      } else {
+        data[f.field] = str;
+      }
+    }
+
+    const naturalKey = data[spec.key];
+    if (!naturalKey) throw new BadRequestException(`"${spec.key}" is required.`);
+
+    const delegate = (this.prisma as any)[spec.model];
+    const clash = await delegate.findUnique({
+      where: { [`tenantId_${spec.key}`]: { tenantId, [spec.key]: naturalKey } },
+      select: { id: true },
+    });
+    if (clash) {
+      throw new BadRequestException(`${spec.key} "${naturalKey}" already exists.`);
+    }
+
+    // The email is denormalised onto the audit row rather than left to the
+    // foreign key. A person can leave and their account can go; the record of
+    // what they did must not go with it.
+    const actor = actorId
+      ? await this.prisma.user.findUnique({
+          where: { id: actorId },
+          select: { email: true },
+        })
+      : null;
+
+    // The row and its audit entry go in together. An audit row written after
+    // the commit is an audit row that sometimes does not exist.
+    return this.prisma.$transaction(async (tx) => {
+      const created = await (tx as any)[spec.model].create({ data });
+
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: 'DATA_EDIT',
+          action: `dataset.${key}.create`,
+          actorId: actorId ?? null,
+          actorEmail: actor?.email ?? null,
+          targetType: `dataset:${key}`,
+          targetId: created.id,
+          // Values are deliberately not recorded here: this row can carry
+          // mailbox passwords, and an audit log is not a second place to keep
+          // them. What was created, by whom and when is the useful part.
+          metadata: { fields: Object.keys(data).filter((k) => k !== 'tenantId') },
+        },
+      });
+
+      this.logger.log(`Created ${key} row ${created.id} (${naturalKey}) by ${actor?.email ?? 'unknown'}`);
+      return { id: created.id, [spec.key]: naturalKey };
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
@@ -33,5 +33,27 @@ export class DatasetsController {
     return this.datasets.read(req.tenantId!, key, req.userRole as any, {
       refresh: refresh === '1' || refresh === 'true',
     });
+  }
+
+  @Post(':key')
+  @ApiOperation({
+    summary: 'Add a row to a dataset',
+    description:
+      'Only for lists that have been migrated into Postgres. A list still ' +
+      'served from the spreadsheet rejects this, because the app holds ' +
+      'read-only scope on the sheet and always will.',
+  })
+  create(
+    @Req() req: TenantRequest,
+    @Param('key') key: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.datasets.create(
+      req.tenantId!,
+      key,
+      req.userRole as any,
+      req.userId,
+      body ?? {},
+    );
   }
 }

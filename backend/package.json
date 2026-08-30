@@ -16,7 +16,8 @@
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
     "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
     "backfill:checkin-times": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-times.ts",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",

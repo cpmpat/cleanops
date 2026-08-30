@@ -2,7 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    // "node" alone drops @types/multer, and this config still compiles
+    // src/**/* — so uploads.module.ts reported two phantom errors on every
+    // run and `typecheck:scripts` was noise nobody could gate on.
+    "types": ["node", "multer"]
   },
   "include": ["src/**/*", "prisma/**/*", "scripts/**/*"]
 }
