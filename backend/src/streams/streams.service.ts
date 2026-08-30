@@ -79,7 +79,10 @@ interface UpdateManualDto {
 }
 
 interface FeedQuery {
+  /** One property — kept for the per-property drill-down page. */
   propertyId?: string;
+  /** Comma-separated property ids. Unioned with `propertyId` if both arrive. */
+  propertyIds?: string;
   cursor?: string;
   limit?: string | number;
   types?: string;
@@ -119,16 +122,28 @@ export class StreamsService {
       ? (q.types.split(',').map((s) => s.trim().toUpperCase()) as StreamItemType[])
       : null;
 
+    // One filter, however it arrived: `propertyId` from the drill-down page,
+    // `propertyIds` from the unit picker on the feed.
+    const propertyIds = [
+      ...(q.propertyId ? [q.propertyId] : []),
+      ...(q.propertyIds ? q.propertyIds.split(',').map((s) => s.trim()) : []),
+    ].filter(Boolean);
+    const scoped = propertyIds.length > 0 ? propertyIds : null;
+
     const fetchSize = limit * OVERFETCH_PER_SOURCE;
 
     const [reservations, cleanings, turnovers, directChats, incidents, manuals] =
       await Promise.all([
-        this.fetchReservations(tenantId, q.propertyId, cursor, from, to, fetchSize),
-        this.fetchCleanings(tenantId, q.propertyId, cursor, from, to, fetchSize),
-        this.fetchTurnovers(tenantId, q.propertyId, cursor, from, to, fetchSize),
-        this.fetchDirectChats(tenantId, cursor, from, to, fetchSize),
-        this.fetchIncidents(tenantId, q.propertyId, cursor, from, to, fetchSize),
-        this.fetchManualEvents(tenantId, q.propertyId, cursor, from, to, fetchSize),
+        this.fetchReservations(tenantId, scoped, cursor, from, to, fetchSize),
+        this.fetchCleanings(tenantId, scoped, cursor, from, to, fetchSize),
+        this.fetchTurnovers(tenantId, scoped, cursor, from, to, fetchSize),
+        // Direct chats carry no property at all — `propertyId` is null on every
+        // one of them. Letting them through a unit filter would put messages
+        // about flat B in a feed the user has narrowed to flat A, which reads
+        // as a bug in the filter rather than a property of the data.
+        scoped ? Promise.resolve([]) : this.fetchDirectChats(tenantId, cursor, from, to, fetchSize),
+        this.fetchIncidents(tenantId, scoped, cursor, from, to, fetchSize),
+        this.fetchManualEvents(tenantId, scoped, cursor, from, to, fetchSize),
       ]);
 
     let merged: StreamItem[] = [
@@ -161,14 +176,14 @@ export class StreamsService {
 
   private async fetchReservations(
     tenantId: string,
-    propertyId: string | undefined,
+    propertyIds: string[] | null,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
     const where: Prisma.BookingWhereInput = { tenantId };
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyIds?.length) where.propertyId = { in: propertyIds };
     if (cursor || from || to) {
       where.checkInTime = {
         ...(cursor ? { lt: cursor } : {}),
@@ -212,14 +227,14 @@ export class StreamsService {
 
   private async fetchCleanings(
     tenantId: string,
-    propertyId: string | undefined,
+    propertyIds: string[] | null,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
     const where: Prisma.CleaningWhereInput = { tenantId };
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyIds?.length) where.propertyId = { in: propertyIds };
     if (cursor || from || to) {
       where.timeSlot = {
         ...(cursor ? { lt: cursor } : {}),
@@ -262,14 +277,14 @@ export class StreamsService {
    */
   private async fetchTurnovers(
     tenantId: string,
-    propertyId: string | undefined,
+    propertyIds: string[] | null,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
     const where: Prisma.TurnoverWhereInput = { tenantId, supersededById: null };
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyIds?.length) where.propertyId = { in: propertyIds };
     if (cursor || from || to) {
       where.createdAt = {
         ...(cursor ? { lt: cursor } : {}),
@@ -405,14 +420,14 @@ export class StreamsService {
 
   private async fetchIncidents(
     tenantId: string,
-    propertyId: string | undefined,
+    propertyIds: string[] | null,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
     const where: Prisma.IncidentWhereInput = { tenantId };
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyIds?.length) where.propertyId = { in: propertyIds };
     if (cursor || from || to) {
       where.createdAt = {
         ...(cursor ? { lt: cursor } : {}),
@@ -461,14 +476,14 @@ export class StreamsService {
 
   private async fetchManualEvents(
     tenantId: string,
-    propertyId: string | undefined,
+    propertyIds: string[] | null,
     cursor: Date | null,
     from: Date | null,
     to: Date | null,
     fetchSize: number,
   ): Promise<StreamItem[]> {
     const where: Prisma.ManualStreamEventWhereInput = { tenantId };
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyIds?.length) where.propertyId = { in: propertyIds };
     if (cursor || from || to) {
       where.occurredAt = {
         ...(cursor ? { lt: cursor } : {}),

@@ -61,6 +61,7 @@ const _translationsBase = {
       settings: 'Settings',
       cleanings: 'Cleanings',
       mine: 'Mine',
+      stream: 'Stream',
     },
     pool: {
       title: 'Cleanings',
@@ -396,6 +397,7 @@ const _translationsBase = {
       settings: 'Nastavení',
       cleanings: 'Úklidy',
       mine: 'Moje',
+      stream: 'Stream',
     },
     pool: {
       title: 'Úklidy',
@@ -663,6 +665,7 @@ const _translationsBase = {
       dashboard: 'Панель', staff: 'Персонал', properties: 'Объекты',
       planning: 'Планирование', schedule: 'Расписание', incidents: 'Инциденты',
       settings: 'Настройки', cleanings: 'Уборки', mine: 'Мои',
+      stream: 'Stream',
     },
     pool: {
       title: 'Уборки',
@@ -927,6 +930,7 @@ const _translationsBase = {
       dashboard: 'Панель', staff: 'Персонал', properties: "Об'єкти",
       planning: 'Планування', schedule: 'Розклад', incidents: 'Інциденти',
       settings: 'Налаштування', cleanings: 'Прибирання', mine: 'Мої',
+      stream: 'Stream',
     },
     pool: {
       title: 'Прибирання',

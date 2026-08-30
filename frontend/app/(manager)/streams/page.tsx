@@ -2,11 +2,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  Plus, RefreshCw, Activity, ArrowUpDown, X, ExternalLink,
+  Plus, RefreshCw, Activity, ArrowUpDown, X, ExternalLink, Check,
   BedDouble, Sparkles, MessageSquare, AlertTriangle, Wrench, ClipboardCheck, PenLine,
+  Building2, ChevronDown, Search, CalendarRange,
 } from 'lucide-react';
-import { streams, ApiError } from '@/lib/api';
-import type { StreamItem, StreamItemType } from '@/lib/api';
+import { streams, properties as propertiesApi, ApiError } from '@/lib/api';
+import type { StreamItem, StreamItemType, Property } from '@/lib/api';
 import { ManualEventComposer } from '@/components/ManualEventComposer';
 import { useSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
@@ -49,6 +50,17 @@ export default function StreamsPage() {
   const [error, setError] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<StreamItemType[]>([]);
   const [oldestFirst, setOldestFirst] = useState(false);
+
+  // Unit and date filters. `units` empty means every unit; the page does not
+  // start that way (see the properties effect below).
+  const [units, setUnits] = useState<string[]>([]);
+  const [unitList, setUnitList] = useState<Property[]>([]);
+  const [unitsReady, setUnitsReady] = useState(false);
+  const [unitOpen, setUnitOpen] = useState(false);
+  const [unitSearch, setUnitSearch] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
   const [composerOpen, setComposerOpen] = useState(false);
   const [detail, setDetail] = useState<StreamItem | null>(null);
 
@@ -62,6 +74,9 @@ export default function StreamsPage() {
           cursor: reset ? undefined : (cursorOverride ?? undefined),
           limit: 30,
           types: selectedTypes.length > 0 ? selectedTypes : undefined,
+          propertyIds: units.length > 0 ? units : undefined,
+          from: from ? startOfDay(from) : undefined,
+          to: to ? endOfDay(to) : undefined,
         });
         setItems((prev) => (reset ? res.items : [...prev, ...res.items]));
         setNextCursor(res.nextCursor);
@@ -72,10 +87,33 @@ export default function StreamsPage() {
         setLoadingMore(false);
       }
     },
-    [selectedTypes],
+    [selectedTypes, units, from, to],
   );
 
-  useEffect(() => { load(true); /* eslint-disable-next-line */ }, [selectedTypes]);
+  /**
+   * Open on the first unit, not on everything.
+   *
+   * The tenant-wide feed is every event across every flat, which is a wall of
+   * text rather than an answer to any question. Starting narrow means the first
+   * screen is readable and widening is a deliberate click.
+   */
+  useEffect(() => {
+    propertiesApi.list()
+      .then((list) => {
+        const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+        setUnitList(sorted);
+        if (sorted.length > 0) setUnits([sorted[0].id]);
+      })
+      .catch(() => { /* no unit list: fall back to the tenant-wide feed */ })
+      .finally(() => setUnitsReady(true));
+  }, []);
+
+  // Gated on unitsReady so the page does not fetch the unfiltered feed and then
+  // immediately throw it away when the default unit arrives.
+  useEffect(() => {
+    if (unitsReady) load(true);
+    /* eslint-disable-next-line */
+  }, [unitsReady, selectedTypes, units, from, to]);
   useSocket({
     'stream:created': () => load(true),
     'stream:updated': () => load(true),
@@ -96,6 +134,40 @@ export default function StreamsPage() {
     );
     return copy;
   }, [items, oldestFirst]);
+
+  const unitLabel =
+    units.length === 0
+      ? 'Všechny jednotky'
+      : units.length === 1
+      ? unitList.find((p) => p.id === units[0])?.name ?? '1 jednotka'
+      : `${units.length} jednotek`;
+
+  const filtered = unitSearch
+    ? unitList.filter((p) =>
+        `${p.name} ${p.address ?? ''}`.toLowerCase().includes(unitSearch.toLowerCase()),
+      )
+    : unitList;
+
+  // "Default" is the first unit, no dates, no type filter — not an empty
+  // filter set, because the page deliberately does not start empty.
+  const atDefaultUnits =
+    unitList.length === 0
+      ? units.length === 0
+      : units.length === 1 && units[0] === unitList[0].id;
+  const dirty = !atDefaultUnits || Boolean(from) || Boolean(to) || selectedTypes.length > 0;
+
+  function toggleUnit(id: string) {
+    setUnits((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function resetFilters() {
+    setSelectedTypes([]);
+    setFrom('');
+    setTo('');
+    setUnits(unitList.length > 0 ? [unitList[0].id] : []);
+  }
 
   function toggleType(t: StreamItemType) {
     setSelectedTypes((prev) =>
@@ -135,6 +207,115 @@ export default function StreamsPage() {
             Nová událost
           </button>
         </div>
+      </div>
+
+      {/* Unit + date range. Both narrow the same feed, so they share a row. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="relative">
+          <button
+            onClick={() => setUnitOpen((v) => !v)}
+            className={cn(
+              'flex items-center gap-2 px-3.5 py-2 bg-white border rounded-xl text-sm font-semibold transition',
+              units.length > 0 ? 'border-ink text-ink' : 'border-surface-border text-ink-muted hover:text-ink',
+            )}
+          >
+            <Building2 size={14} />
+            <span className="max-w-[220px] truncate">{unitLabel}</span>
+            <ChevronDown size={13} className={cn('transition', unitOpen && 'rotate-180')} />
+          </button>
+
+          {unitOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setUnitOpen(false)} />
+              <div className="absolute z-40 mt-2 w-80 bg-white border border-surface-border rounded-xl shadow-lg p-2">
+                <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-surface-border">
+                  <Search size={13} className="text-ink-faint flex-shrink-0" />
+                  <input
+                    autoFocus
+                    value={unitSearch}
+                    onChange={(e) => setUnitSearch(e.target.value)}
+                    placeholder="Hledat jednotku…"
+                    className="w-full text-xs outline-none bg-transparent py-0.5"
+                  />
+                </div>
+
+                <button
+                  onClick={() => { setUnits([]); setUnitOpen(false); }}
+                  className="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-lg text-xs font-semibold hover:bg-surface-sunken"
+                >
+                  <span className={cn(
+                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                    units.length === 0 ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white',
+                  )}>
+                    {units.length === 0 && <Check size={9} />}
+                  </span>
+                  Všechny jednotky
+                </button>
+
+                <div className="max-h-64 overflow-y-auto flex flex-col gap-0.5 mt-1">
+                  {filtered.map((p) => {
+                    const on = units.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => toggleUnit(p.id)}
+                        className="flex items-center gap-2 text-left px-2 py-1.5 rounded-lg text-[11px] hover:bg-surface-sunken"
+                      >
+                        <span className={cn(
+                          'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                          on ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white',
+                        )}>
+                          {on && <Check size={9} />}
+                        </span>
+                        <span className="truncate">{p.name}</span>
+                      </button>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <p className="text-[11px] text-ink-muted px-2 py-3 text-center">Nic nenalezeno.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-surface-border rounded-xl">
+          <CalendarRange size={14} className="text-ink-faint flex-shrink-0" />
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className="text-xs outline-none bg-transparent text-ink"
+          />
+          <span className="text-ink-faint text-xs">–</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className="text-xs outline-none bg-transparent text-ink"
+          />
+          {(from || to) && (
+            <button
+              onClick={() => { setFrom(''); setTo(''); }}
+              className="ml-1 text-ink-faint hover:text-ink"
+              aria-label="Zrušit rozsah dat"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {dirty && (
+          <button
+            onClick={resetFilters}
+            className="text-xs font-semibold text-accent px-2 underline"
+          >
+            Výchozí filtr
+          </button>
+        )}
       </div>
 
       {/* Type filter */}
@@ -408,4 +589,20 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 
 function dayKey(iso: string): string {
   return iso.slice(0, 10);
+}
+
+/**
+ * A date input gives `YYYY-MM-DD` with no time and no zone. Sending that
+ * straight through would make the server read it as midnight UTC, so a `to` of
+ * today would cut the day off before breakfast. Building the instant from local
+ * parts pins both ends to the operator's own day.
+ */
+function startOfDay(d: string): string {
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(y, m - 1, day, 0, 0, 0, 0).toISOString();
+}
+
+function endOfDay(d: string): string {
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(y, m - 1, day, 23, 59, 59, 999).toISOString();
 }
