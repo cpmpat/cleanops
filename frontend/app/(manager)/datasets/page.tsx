@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Snowflake,
+  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
@@ -51,6 +51,8 @@ export default function DatasetsPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [rowTops, setRowTops] = useState<number[]>([]);
 
+  const [adding, setAdding] = useState(false);
+
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [columnSearch, setColumnSearch] = useState('');
@@ -80,7 +82,7 @@ export default function DatasetsPage() {
         ...raw,
         columns: (raw.columns as unknown[]).map((c) =>
           typeof c === 'string'
-            ? { key: c, label: c, hiddenByDefault: false }
+            ? { key: c, label: c, hiddenByDefault: false, type: 'text', required: false }
             : (c as DatasetPage['columns'][number]),
         ),
       };
@@ -222,17 +224,33 @@ export default function DatasetsPage() {
             Datasets
           </h1>
           <p className="text-sm text-ink-muted mt-0.5">
-            Read-only view of the CDM spreadsheet. Changes made in the sheet appear here.
+            {data?.canCreate
+              ? 'Stored in the database. Rows added here are saved immediately.'
+              : 'Read-only view of the CDM spreadsheet. Changes made in the sheet appear here.'}
           </p>
         </div>
-        <button
-          onClick={() => load(active, true)}
-          disabled={loading || !active}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-border bg-surface text-sm font-semibold text-ink-muted hover:text-ink transition disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => load(active, true)}
+            disabled={loading || !active}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-border bg-surface text-sm font-semibold text-ink-muted hover:text-ink transition disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          {/* Only for lists that live in Postgres. A sheet-backed list cannot
+              be written to at all, so the button is absent rather than present
+              and failing on submit. */}
+          {data?.canCreate && (
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-ink-soft transition"
+            >
+              <Plus size={15} />
+              Add new
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -550,6 +568,14 @@ export default function DatasetsPage() {
         </div>
       )}
 
+      {adding && data && (
+        <AddRowDialog
+          dataset={data}
+          onClose={() => setAdding(false)}
+          onSaved={() => { setAdding(false); load(active, true); }}
+        />
+      )}
+
       {!error && !data && (
         <div className="border border-surface-border rounded-xl h-[65vh] bg-white flex items-center justify-center">
           <p className="text-sm text-ink-muted">{loading ? 'Loading…' : ''}</p>
@@ -640,5 +666,128 @@ function PanelButton({
         </span>
       )}
     </button>
+  );
+}
+
+/**
+ * Add a row to a database-backed list.
+ *
+ * The form is generated from the dataset's own column metadata rather than
+ * written per list, so the next migrated list gets this screen for free — the
+ * backend describes its columns and the inputs follow. `type` picks the input,
+ * `required` decides what blocks the save, and `description` is the same hover
+ * text the column picker shows.
+ *
+ * Blank fields are omitted from the request rather than sent as empty strings.
+ * A column left alone should end up NULL, not "".
+ */
+function AddRowDialog({
+  dataset, onClose, onSaved,
+}: {
+  dataset: DatasetPage;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const cols = dataset.columns;
+  const missing = cols.filter((c) => c.required && !(values[c.key] ?? '').trim());
+
+  async function save() {
+    if (missing.length > 0) {
+      setError(`Fill in: ${missing.map((c) => c.label).join(', ')}`);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const payload: Record<string, string> = {};
+      for (const [k, v] of Object.entries(values)) {
+        if (v.trim()) payload[k] = v.trim();
+      }
+      await api.create(dataset.key, payload);
+      onSaved();
+    } catch (e: any) {
+      setError(e?.message || 'Could not save the row.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-3xl max-h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col"
+      >
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-surface-border">
+          <div>
+            <h2 className="text-lg font-bold text-ink">New {dataset.label} record</h2>
+            <p className="text-xs text-ink-muted mt-0.5">
+              {cols.length} field{cols.length === 1 ? '' : 's'}. Anything left blank stays empty.
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center">
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {cols.map((c) => (
+            <label key={c.key} className="flex flex-col gap-1" title={c.description ?? c.key}>
+              <span className="text-[11px] font-semibold text-ink-muted">
+                {c.label}
+                {c.required && <span className="text-red-500 ml-0.5">*</span>}
+              </span>
+
+              {c.type === 'bool' ? (
+                <select
+                  value={values[c.key] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [c.key]: e.target.value }))}
+                  className="px-3 py-2 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-white"
+                >
+                  <option value="">—</option>
+                  <option value="true">TRUE</option>
+                  <option value="false">FALSE</option>
+                </select>
+              ) : (
+                <input
+                  type={c.type === 'int' ? 'number' : c.type === 'date' ? 'date' : 'text'}
+                  value={values[c.key] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [c.key]: e.target.value }))}
+                  className="px-3 py-2 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              )}
+
+              {c.description && (
+                <span className="text-[10px] text-ink-faint leading-tight">{c.description}</span>
+              )}
+            </label>
+          ))}
+        </div>
+
+        {error && (
+          <p className="px-5 pb-2 text-xs text-red-600">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-2 p-5 border-t border-surface-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl border border-surface-border text-sm font-semibold text-ink-muted hover:text-ink transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50"
+          >
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

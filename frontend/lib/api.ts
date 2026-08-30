@@ -1252,14 +1252,21 @@ export interface DatasetColumn {
   label: string;
   description?: string;
   hiddenByDefault: boolean;
+  /** text | int | bool | date — what input the create form should render. */
+  type: string;
+  /** Must be filled in before the row can be saved. */
+  required: boolean;
 }
 
 export interface DatasetPage {
   key: string;
   label: string;
-  tab: string;
+  /** The sheet tab this came from, or null for a list served from Postgres. */
+  tab: string | null;
   fetchedAt: string;
   cached: boolean;
+  /** False for sheet-backed lists — the app holds read-only scope on Sheets. */
+  canCreate?: boolean;
   /** True when a mapping<Tab> sheet supplied labels/descriptions. */
   mapped: boolean;
   /** Which tab the labels came from — names drift, so we disclose the match. */
@@ -1274,6 +1281,8 @@ export const datasets = {
   list: () => get<DatasetSummary[]>('/datasets'),
   read: (key: string, refresh = false) =>
     get<DatasetPage>(`/datasets/${key}${refresh ? '?refresh=1' : ''}`),
+  create: (key: string, values: Record<string, string>) =>
+    post<{ id: string }>(`/datasets/${key}`, values),
 };
 
 // ─── Tenant ───────────────────────────────────────────────────────────────────
