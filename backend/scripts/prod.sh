@@ -62,6 +62,27 @@ MSG
     ;;
 esac
 
+# Catch a mangled service-account JSON here rather than three seconds into a
+# Nest boot. Unquoted in the env file, the shell eats the JSON's double quotes
+# and splits on spaces, so what survives no longer starts with a brace.
+if [ -n "${GCP_SERVICE_ACCOUNT_JSON:-}" ]; then
+  case "$GCP_SERVICE_ACCOUNT_JSON" in
+    '{'*) ;;
+    *)
+      cat >&2 <<MSG
+GCP_SERVICE_ACCOUNT_JSON in backend/$ENV_FILE is not valid JSON.
+
+It almost certainly needs SINGLE quotes around the whole value:
+
+  GCP_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+
+Without them the shell strips the JSON's own quotes when this file is sourced.
+MSG
+      exit 2
+      ;;
+  esac
+fi
+
 # Show the target host with credentials stripped, so a run against the wrong
 # database is obvious before it writes anything.
 echo "→ target: ${DATABASE_URL##*@}"
