@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Bell, MessageSquare, Megaphone, Users, Building2, ArrowRight,
-  CircleX, CalendarClock, UserPlus,
+  CircleX, CalendarClock, UserPlus, Clock,
 } from 'lucide-react';
 import {
   notes as notesApi,
@@ -64,6 +64,18 @@ export default function InboxPage() {
     'event:updated': () => load(),
   });
   useRefreshOnReconnect(load);
+
+  /**
+   * Newest change at the top, oldest at the bottom.
+   *
+   * The API already returns them in that order; sorting here too means the
+   * screen does not depend on that, and an update pushed in over the socket
+   * lands where it belongs rather than wherever it was appended.
+   */
+  const sortedUpdates = useMemo(
+    () => [...updates].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    [updates],
+  );
 
   const pending = useMemo(() => notes.filter((n) => !n.acknowledged), [notes]);
   const confirmed = useMemo(() => notes.filter((n) => n.acknowledged), [notes]);
@@ -150,10 +162,10 @@ export default function InboxPage() {
           ) : (
             threads.map((t) => <ThreadRow key={t.id} thread={t} locale={locale} meId={user?.id} />)
           )
-        ) : updates.length === 0 ? (
+        ) : sortedUpdates.length === 0 ? (
           <Empty icon={<Bell size={26} />} title={m.inbox.noChanges} hint={m.inbox.noChangesHint} />
         ) : (
-          updates.map((u) => <ChangeCard key={u.id} update={u} locale={locale} />)
+          sortedUpdates.map((u) => <ChangeCard key={u.id} update={u} locale={locale} />)
         )}
       </div>
     </div>
@@ -262,14 +274,16 @@ function ChangeCard({ update, locale }: { update: TurnoverUpdate; locale: Locale
       <div className={`flex items-center gap-1.5 text-[9.5px] font-extrabold uppercase tracking-[0.09em] ${style.tone}`}>
         {style.icon}
         {style.label}
-        <span className="ml-auto text-[10px] font-semibold text-ink-faint tracking-normal normal-case">
-          {shortStamp(update.createdAt, locale)}
-        </span>
       </div>
 
       <h3 className="text-[13.5px] font-semibold mt-1.5">
         {update.payload?.propertyName ?? update.title}
       </h3>
+
+      <p className="flex items-center gap-1 text-[10.5px] text-ink-faint mt-1">
+        <Clock size={10} className="flex-shrink-0" />
+        {m.changes.received(receivedStamp(update.createdAt, locale))}
+      </p>
 
       {(from || to) && (
         <div className="flex items-center gap-2.5 mt-2 bg-surface-sunken rounded-xl px-3 py-2 text-[12px]">
@@ -343,6 +357,23 @@ function shortStamp(iso: string, locale: Locale): string {
   return new Date().toDateString() === d.toDateString()
     ? d.toLocaleTimeString(tag, { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString(tag, { day: 'numeric', month: 'numeric' });
+}
+
+/**
+ * When a change landed, in full: day, month and time.
+ *
+ * The card used to carry the same compact stamp as a chat row — "12:34", with
+ * no way to tell 12:34 of which day. For a change to work someone is holding,
+ * the day is the half that matters.
+ */
+function receivedStamp(iso: string, locale: Locale): string {
+  const d = new Date(iso);
+  const tag = localeTag(locale);
+  return (
+    d.toLocaleDateString(tag, { day: 'numeric', month: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString(tag, { hour: '2-digit', minute: '2-digit' })
+  );
 }
 
 function formatValue(v: string | number | null | undefined, locale: Locale): string {

@@ -51,6 +51,11 @@ export interface UserPreferences {
   cleaningsPoolFilter?: {
     propertyIds: string[];
   };
+  /**
+   * Implicit per-table view state — columns, filters, sort, frozen panes —
+   * keyed by scope and then by table. Shape lives in lib/table-view.ts.
+   */
+  tableViews?: Record<string, Record<string, unknown>>;
   [key: string]: any;
 }
 

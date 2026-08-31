@@ -6,6 +6,10 @@ import {
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import {
+  readSavedView, fromSavedView, toSavedView, useSaveTableView,
+} from '@/lib/table-view';
 import { cn } from '@/lib/utils';
 
 /**
@@ -49,6 +53,9 @@ const GROUP_LABEL: Record<string, string> = {
   citytax: 'City tax', contract: 'Contract', folders: 'Folders',
   ops: 'Operations', tech: 'Tech',
 };
+
+/** Namespace for this table's saved view inside user.preferences. */
+const VIEW_SCOPE = 'datasets';
 
 const COL_W = 190;
 /**
@@ -97,6 +104,15 @@ export default function DatasetsPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [adding, setAdding] = useState(false);
 
+  /**
+   * The dataset whose saved view has been applied.
+   *
+   * Until it matches `active`, what is on screen is the dataset's defaults
+   * rather than the operator's view, and saving then would overwrite the very
+   * thing we are restoring.
+   */
+  const [viewAppliedFor, setViewAppliedFor] = useState('');
+
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [columnSearch, setColumnSearch] = useState('');
@@ -115,6 +131,7 @@ export default function DatasetsPage() {
     if (!key) return;
     setLoading(true);
     setError('');
+    setViewAppliedFor('');
     try {
       const raw = await api.read(key, refresh);
 
@@ -131,10 +148,26 @@ export default function DatasetsPage() {
         ),
       };
       setData(page);
-      setHidden(new Set(page.columns.filter(c => c.hiddenByDefault).map(c => c.key)));
-      setFilters({});
-      setSort(null);
+
+      // What this operator last left on this dataset, or the dataset's own
+      // defaults the first time they open it. Saved keys for columns that have
+      // since disappeared are harmless: hiding and filtering both look a column
+      // up by key and skip what they cannot find.
+      const saved = readSavedView(useAuth.getState().user?.preferences, VIEW_SCOPE, key);
+      const restored = saved ? fromSavedView(saved) : null;
+
+      setHidden(
+        restored
+          ? restored.hidden
+          : new Set(page.columns.filter(c => c.hiddenByDefault).map(c => c.key)),
+      );
+      setFilters(restored ? restored.filters : {});
+      setSort(restored ? restored.sort : null);
+      setFrozenCols(restored?.frozenCols ?? 1);
+      setFrozenRows(restored?.frozenRows ?? 0);
+      setTint(restored?.tint ?? false);
       setFilterColumn('');
+      setViewAppliedFor(key);
     } catch (e: any) {
       setData(null);
       setError(e?.message || 'Could not read this dataset.');
@@ -144,6 +177,20 @@ export default function DatasetsPage() {
   }, []);
 
   useEffect(() => { load(active); }, [active, load]);
+
+  /**
+   * Remember the view.
+   *
+   * Search is deliberately not part of it: coming back to a table that is
+   * silently filtered by a phrase you typed last week reads as missing data,
+   * where a remembered column layout reads as your table.
+   */
+  const currentView = useMemo(
+    () => toSavedView({ hidden, filters, sort, frozenCols, frozenRows, tint }),
+    [hidden, filters, sort, frozenCols, frozenRows, tint],
+  );
+
+  useSaveTableView(VIEW_SCOPE, active, currentView, viewAppliedFor === active);
 
   const visible = useMemo(() => {
     if (!data) return [];
