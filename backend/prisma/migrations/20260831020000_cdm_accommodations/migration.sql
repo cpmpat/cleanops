@@ -195,7 +195,7 @@ CREATE TABLE "cdm_accommodations" (
     "parkingType"                                    TEXT,
     "contractVersion"                                TEXT,
     "urlFolderDesign"                                TEXT,
-    "urlFolderPPPrevzetí"                            TEXT,
+    "urlFolderPPPrevzeti"                            TEXT,
     "urlContract"                                    TEXT,
     "urlInventoryFolder"                             TEXT,
     "terraceType"                                    TEXT,

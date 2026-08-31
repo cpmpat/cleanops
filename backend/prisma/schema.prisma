@@ -1369,10 +1369,16 @@ model CdmUser {
 
 /// CDM list `Accomodation`: every unit the company operates.
 ///
-/// 164 columns, names mirroring the sheet header exactly, typos included
+/// 164 columns, names mirroring the sheet header, typos included
 /// (`cotractType`, `urlFolderphotos` beside `urlFolderPhotos`). Renaming them
 /// here would break the vocabulary operators already read; `displayName` in
 /// `dataset_fields` fixes the spelling where it is seen.
+///
+/// One exception, and it is forced: Prisma field names must match
+/// [A-Za-z][A-Za-z0-9_]*, so the sheet's `urlFolderPPPrevzetí` is stored as
+/// `urlFolderPPPrevzeti`. The importer strips diacritics from every column name
+/// for exactly this reason — a Czech company will keep producing them — and
+/// matches the data tab on the sheet's original spelling.
 ///
 /// The primary key is `rowId`, not `id`, because the sheet has its own column
 /// called `id` — the three-character internal code — which would otherwise
@@ -1538,7 +1544,7 @@ model CdmAccommodation {
   parkingType                                    String?
   contractVersion                                String?
   urlFolderDesign                                String?
-  urlFolderPPPrevzetí                            String?
+  urlFolderPPPrevzeti                            String?
   urlContract                                    String?
   urlInventoryFolder                             String?
   terraceType                                    String?

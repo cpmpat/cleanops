@@ -201,6 +201,24 @@ const LISTS: Record<string, {
   },
 };
 
+/**
+ * A sheet column name as Postgres and Prisma can take it.
+ *
+ * Prisma field names must match [A-Za-z][A-Za-z0-9_]*, and the sheet has
+ * `urlFolderPPPrevzetí`. A Czech company will keep producing names like it, so
+ * this is a rule rather than a one-off rename: strip the diacritics, drop
+ * anything still illegal, and the name stays recognisable
+ * (`urlFolderPPPrevzeti`) instead of becoming `column_153`.
+ *
+ * The sheet's own spelling is never lost — it stays in `displayName`, and the
+ * data tab is still matched on it, because that is what its header says.
+ */
+function dbName(sheetName: string): string {
+  const ascii = sheetName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const safe = ascii.replace(/[^A-Za-z0-9_]/g, '');
+  return /^[A-Za-z]/.test(safe) ? safe : `f${safe}`;
+}
+
 /** Column letters (A, B, … AA, AB) to a 1-based index. */
 function letterToIndex(letter: string): number {
   return letter
@@ -296,14 +314,21 @@ async function main() {
     const mapRows = (await sheets.readValues(row.datasetsSheetId, spec.mappingTab)) ?? [];
     const fields = mapRows
       .slice(1) // row 1 is the mapping sheet's own header
-      .map((r) => ({
-        columnOrder: letterToIndex(r[0] ?? ''),
-        field: clean(r[1]),
-        description: clean(r[2]),
-        displayName: clean(r[3]),
-      }))
-      .filter((f): f is { columnOrder: number; field: string; description: string | null; displayName: string | null } =>
-        Boolean(f.field) && f.columnOrder > 0);
+      .map((r) => {
+        // `source` is the header text in the data tab; `field` is what the
+        // column is called in Postgres. They differ only where the sheet uses
+        // a character an identifier cannot.
+        const source = clean(r[1]);
+        return {
+          columnOrder: letterToIndex(r[0] ?? ''),
+          source,
+          field: source ? dbName(source) : null,
+          description: clean(r[2]),
+          displayName: clean(r[3]),
+        };
+      })
+      .filter((f): f is { columnOrder: number; source: string; field: string; description: string | null; displayName: string | null } =>
+        Boolean(f.source) && Boolean(f.field) && f.columnOrder > 0);
 
     console.log(`Metadata: ${fields.length} column(s) described`);
 
@@ -311,7 +336,7 @@ async function main() {
     const { columns, rows } = await sheets.readTab(row.datasetsSheetId, spec.tab);
     console.log(`Data    : ${rows.length} row(s) x ${columns.length} column(s)`);
 
-    const known = new Set(fields.map((f) => f.field));
+    const known = new Set(fields.map((f) => f.source));
     const unmapped = columns.filter((c) => c && !known.has(c));
     if (unmapped.length) {
       console.log(`\n  ${unmapped.length} column(s) in the data with no mapping row, ignored:`);
@@ -356,7 +381,7 @@ async function main() {
       for (const r of rows) {
         if (!clean(r[keyIndex])) continue;
         for (const f of fields) {
-          const i = columns.indexOf(f.field);
+          const i = columns.indexOf(f.source);
           if (i >= 0) coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
         }
       }
@@ -395,7 +420,7 @@ async function main() {
           dataset: values.list!,
           columnOrder: f.columnOrder,
           field: f.field,
-          displayName: f.displayName ?? f.field,
+          displayName: f.displayName ?? f.source,
           description: f.description,
           type,
           hiddenByDefault: spec.hidden.includes(f.field),
@@ -405,7 +430,7 @@ async function main() {
         },
         update: {
           columnOrder: f.columnOrder,
-          displayName: f.displayName ?? f.field,
+          displayName: f.displayName ?? f.source,
           description: f.description,
           type,
           hiddenByDefault: spec.hidden.includes(f.field),
@@ -429,7 +454,7 @@ async function main() {
 
       const data: Record<string, unknown> = {};
       for (const f of fields) {
-        const i = columns.indexOf(f.field);
+        const i = columns.indexOf(f.source);
         if (i < 0) continue;
         data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
       }
