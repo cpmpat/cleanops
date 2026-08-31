@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
-  Folder, FileText, ExternalLink,
+  Folder, FileText, ExternalLink, Download,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
@@ -93,6 +93,8 @@ export default function DatasetsPage() {
   const [rowTops, setRowTops] = useState<number[]>([]);
 
   const [tint, setTint] = useState(false);
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
@@ -269,6 +271,51 @@ export default function DatasetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  /**
+   * Export what is on screen.
+   *
+   * The current view goes with the request — visible columns, filters, search,
+   * sort — so the file matches the table rather than the whole dataset. The
+   * server intersects all of it with what this role may read, so this can only
+   * narrow the result; it is a convenience, not a permission.
+   */
+  async function runExport(format: 'csv' | 'xlsx') {
+    if (!data) return;
+    setExportOpen(false);
+    setExporting(format);
+    setError('');
+    try {
+      const { blob, filename } = await api.exportFile(active, {
+        format,
+        columns: visible.map(c => c.key),
+        search: search.trim() || undefined,
+        filters: Object.fromEntries(
+          Object.entries(filters)
+            .filter(([, set]) => set.size > 0)
+            // Array.from, not spread: this tsconfig targets below ES2015
+            // and spreading a Set needs downlevelIteration.
+            .map(([k, set]) => [k, Array.from(set)]),
+        ),
+        sort: sort ?? undefined,
+      });
+
+      // Anchor-and-revoke: the blob lives in memory until the object URL is
+      // released, and a 165-column export is not small.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || 'Export failed.');
+    } finally {
+      setExporting(null);
+    }
+  }
+
   function cycleSort(key: string) {
     setSort(prev => {
       if (!prev || prev.key !== key) return { key, dir: 'asc' };
@@ -314,6 +361,42 @@ export default function DatasetsPage() {
           {/* Only for lists that live in Postgres. A sheet-backed list cannot
               be written to at all, so the button is absent rather than present
               and failing on submit. */}
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen(v => !v)}
+              disabled={!data || Boolean(exporting)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-border bg-surface text-sm font-semibold text-ink-muted hover:text-ink transition disabled:opacity-50"
+            >
+              {exporting
+                ? <Loader2 size={14} className="animate-spin" />
+                : <Download size={14} />}
+              {exporting ? 'Exporting…' : 'Export'}
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 z-40 mt-2 w-64 bg-white border border-surface-border rounded-xl shadow-lg p-1.5">
+                  <button
+                    onClick={() => runExport('xlsx')}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-surface-sunken"
+                  >
+                    Excel (.xlsx)
+                  </button>
+                  <button
+                    onClick={() => runExport('csv')}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-surface-sunken"
+                  >
+                    CSV (.csv)
+                  </button>
+                  <p className="text-[10.5px] text-ink-faint px-3 py-2 leading-snug border-t border-surface-border mt-1">
+                    {rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'} ×{' '}
+                    {visible.length} column{visible.length === 1 ? '' : 's'} — the table as you
+                    have it filtered right now.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
           {data?.canCreate && (
             <button
               onClick={() => setAdding(true)}

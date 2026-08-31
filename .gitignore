@@ -46,3 +46,7 @@ backend/backfill-*.json
 backend/backfill-done.txt
 backend/backfill-failed-*.txt
 backend/reconcile-*.json
+
+# Scratch for files the Cowork device bridge cannot delete, only move -
+# mostly abandoned git *.lock files. Never anything the project needs.
+_to_delete/
