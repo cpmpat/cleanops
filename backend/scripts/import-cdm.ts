@@ -35,6 +35,7 @@
 import { parseArgs } from 'node:util';
 import { bootScriptContext, resolveTenant } from './lib/script-context';
 import { GoogleSheetsClient } from '../src/datasets/google-sheets.client';
+import { squash } from '../src/datasets/datasets.service';
 
 // pnpm passes `--` through to the script, and parseArgs would reject it as an
 // unexpected positional. Every script in here strips it the same way.
@@ -107,7 +108,7 @@ const LISTS: Record<string, {
   },
 
   accommodation: {
-    tab: 'Accomodation',
+    tab: 'Accommodation',
     mappingTab: 'mappingAccommodation',
     model: 'cdmAccommodation',
     key: 'idAvantio',
@@ -200,6 +201,39 @@ const LISTS: Record<string, {
     urlMatch: [/^url/i, /Url$/, /^link/i, /^airbnbUrl/],
   },
 };
+
+/**
+ * Find a tab by name, tolerating how it is actually spelled.
+ *
+ * This is the third round trip lost to a tab name. `Accomodation` became
+ * `Accommodation`; before that the data tab and its mapping tab disagreed on
+ * how many m's the word has. An exact match is tried first — if the name is
+ * right, nothing clever happens — and only then the squashed comparison the
+ * viewer already uses.
+ *
+ * When nothing matches, the error names every tab the spreadsheet has. "Check
+ * the tab exists" is not useful advice when the reason it does not exist is a
+ * spelling you cannot see.
+ */
+async function resolveTab(
+  sheets: GoogleSheetsClient,
+  spreadsheetId: string,
+  wanted: string,
+): Promise<string> {
+  const tabs = await sheets.listTabs(spreadsheetId);
+  const exact = tabs.find((t) => t === wanted);
+  if (exact) return exact;
+
+  const near = tabs.find((t) => squash(t) === squash(wanted));
+  if (near) {
+    console.log(`  note: no tab called "${wanted}"; using "${near}"`);
+    return near;
+  }
+
+  throw new Error(
+    `No tab matching "${wanted}". The spreadsheet has: ${tabs.join(', ') || '(none)'}`,
+  );
+}
 
 /**
  * A sheet column name as Postgres and Prisma can take it.
@@ -307,11 +341,17 @@ async function main() {
 
     const sheets = new GoogleSheetsClient();
     console.log(`Tenant : ${tenant.name} (${tenant.slug})`);
-    console.log(`List   : ${values.list}  (${spec.tab} + ${spec.mappingTab})`);
+    console.log(`List   : ${values.list}`);
     console.log(`Mode   : ${values.apply ? 'APPLY' : 'DRY RUN'}\n`);
 
+    // Resolve both tab names up front, so a rename fails here with the list of
+    // real tabs rather than three steps later as a parse error.
+    const dataTab = await resolveTab(sheets, row.datasetsSheetId, spec.tab);
+    const mappingTab = await resolveTab(sheets, row.datasetsSheetId, spec.mappingTab);
+    console.log(`Tabs   : ${dataTab} + ${mappingTab}\n`);
+
     // ── metadata ───────────────────────────────────────────────────────────
-    const mapRows = (await sheets.readValues(row.datasetsSheetId, spec.mappingTab)) ?? [];
+    const mapRows = (await sheets.readValues(row.datasetsSheetId, mappingTab)) ?? [];
     const fields = mapRows
       .slice(1) // row 1 is the mapping sheet's own header
       .map((r) => {
@@ -333,7 +373,7 @@ async function main() {
     console.log(`Metadata: ${fields.length} column(s) described`);
 
     // ── data ───────────────────────────────────────────────────────────────
-    const { columns, rows } = await sheets.readTab(row.datasetsSheetId, spec.tab);
+    const { columns, rows } = await sheets.readTab(row.datasetsSheetId, dataTab);
     console.log(`Data    : ${rows.length} row(s) x ${columns.length} column(s)`);
 
     const known = new Set(fields.map((f) => f.source));

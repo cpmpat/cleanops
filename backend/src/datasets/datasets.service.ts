@@ -14,7 +14,7 @@ import { UserRole } from '@prisma/client';
  * below is the seam it plugs into.
  */
 const TABS = [
-  { key: 'accommodation', tab: 'Accomodation', label: 'Accommodation', source: 'db'    },
+  { key: 'accommodation', tab: 'Accommodation', label: 'Accommodation', source: 'db'    },
   { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
   { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
 ] as const;
@@ -71,7 +71,7 @@ const MAPPING_PREFIX = 'mapping';
  * squashed form — lowercased, non-alphanumerics dropped, repeated letters
  * collapsed — matches them without hard-coding either spelling.
  */
-function squash(name: string): string {
+export function squash(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
