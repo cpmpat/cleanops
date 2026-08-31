@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2,
+  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
@@ -16,6 +16,39 @@ import { cn } from '@/lib/utils';
  * underneath show through it. So the frozen rows are measured, once per layout,
  * and these two numbers are only the first-paint estimate.
  */
+/**
+ * One solid tint per column family.
+ *
+ * Solid, not translucent, and that is not a style choice: the frozen panes are
+ * sticky cells that must fully occlude the rows sliding under them. An alpha
+ * background would let the scrolling body show through the frozen band, which
+ * is the bug that was fixed two commits ago.
+ *
+ * Kept very light on purpose. At 164 columns the tint is a landmark for
+ * sideways navigation, not a highlight — anything stronger and the values stop
+ * being the thing you read.
+ */
+const GROUP_TINT: Record<string, string> = {
+  identity:    '#F4F6FA',
+  location:    '#F0F7F3',
+  property:    '#F3F5FF',
+  pricing:     '#FFF7ED',
+  ota:         '#EFF6FF',
+  credentials: '#FEF2F2',
+  citytax:     '#F6F3FF',
+  contract:    '#F0FDFA',
+  folders:     '#FAFAF9',
+  ops:         '#FEFCE8',
+  tech:        '#F6F9FC',
+};
+
+const GROUP_LABEL: Record<string, string> = {
+  identity: 'Identity', location: 'Location', property: 'Property',
+  pricing: 'Pricing', ota: 'Channels', credentials: 'Credentials',
+  citytax: 'City tax', contract: 'Contract', folders: 'Folders',
+  ops: 'Operations', tech: 'Tech',
+};
+
 const COL_W = 190;
 const HEAD_H = 36;
 const ROW_H = 30;
@@ -51,6 +84,7 @@ export default function DatasetsPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [rowTops, setRowTops] = useState<number[]>([]);
 
+  const [tint, setTint] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
@@ -196,6 +230,20 @@ export default function DatasetsPage() {
   const activeFilterCount = Object.values(filters).filter(s => s.size > 0).length;
   const labelFor = (key: string) => data?.columns.find(c => c.key === key)?.label ?? key;
 
+  // Families present in what is actually on screen, in column order — the
+  // legend follows the table rather than listing families it does not show.
+  const groupsPresent = useMemo(() => {
+    const seen: string[] = [];
+    for (const c of visible) {
+      const g = c.group;
+      if (g && GROUP_TINT[g] && !seen.includes(g)) seen.push(g);
+    }
+    return seen;
+  }, [visible]);
+
+  const tintOf = (c: { group?: string | null }): string | undefined =>
+    tint && c.group ? GROUP_TINT[c.group] : undefined;
+
   function cycleSort(key: string) {
     setSort(prev => {
       if (!prev || prev.key !== key) return { key, dir: 'asc' };
@@ -282,6 +330,16 @@ export default function DatasetsPage() {
           open={panel === 'freeze'}
           onClick={() => setPanel(p => (p === 'freeze' ? null : 'freeze'))}
         />
+        {/* Only offered where columns actually carry a family. A sheet-backed
+            list has none, and a button that does nothing is worse than no
+            button. */}
+        {groupsPresent.length > 0 && (
+          <PanelButton
+            icon={<Palette size={14} />} label="Colours"
+            open={tint}
+            onClick={() => setTint(v => !v)}
+          />
+        )}
 
         {data && (
           <p className="text-xs text-ink-faint ml-auto">
@@ -478,6 +536,24 @@ export default function DatasetsPage() {
       {/* min-height matches max-height so the block occupies its final space
           from the first paint. Without it the footer renders directly under the
           controls and then jumps down the moment rows arrive. */}
+      {/* A tint nobody can decode is just noise, so the key ships with it. */}
+      {tint && groupsPresent.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {groupsPresent.map((g) => (
+            <span
+              key={g}
+              className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-ink-muted border border-surface-border rounded-full pl-1.5 pr-2.5 py-0.5"
+            >
+              <span
+                className="w-3 h-3 rounded-full border border-surface-border"
+                style={{ backgroundColor: GROUP_TINT[g] }}
+              />
+              {GROUP_LABEL[g] ?? g}
+            </span>
+          ))}
+        </div>
+      )}
+
       {!error && data && (
         <div className="border border-surface-border rounded-xl overflow-auto h-[65vh] bg-white">
           {/* border-separate, not border-collapse: with collapsed borders the
@@ -503,6 +579,7 @@ export default function DatasetsPage() {
                       style={{
                         width: COL_W, minWidth: COL_W, height: HEAD_H,
                         ...(frozen ? { left: pos * COL_W } : {}),
+                        ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                       }}
                       className={cn(
                         'sticky top-0 z-40 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
@@ -539,6 +616,10 @@ export default function DatasetsPage() {
                             width: COL_W, minWidth: COL_W, height: ROW_H,
                             ...(colFrozen ? { left: pos * COL_W } : {}),
                             ...(rowFrozen ? { top: rowTops[r] ?? HEAD_H + r * ROW_H } : {}),
+                            // Wins over the bg-white class on sticky cells, and
+                            // must stay opaque for the same reason that class
+                            // exists.
+                            ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                           }}
                           className={cn(
                             'px-3 border-b border-surface-border truncate',
