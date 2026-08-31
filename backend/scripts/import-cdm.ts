@@ -63,7 +63,7 @@ if (!values.tenant) {
  * it back. `sensitive` is permission — credentials and personal data — and is
  * deliberately a different flag from `hiddenByDefault`, which is only tidiness.
  */
-type FieldType = 'int' | 'float' | 'decimal' | 'bool' | 'date';
+type FieldType = 'int' | 'float' | 'decimal' | 'bool' | 'date' | 'url';
 
 const LISTS: Record<string, {
   tab: string;
@@ -78,6 +78,13 @@ const LISTS: Record<string, {
   required: string[];
   /** Which visual family a column belongs to, first match wins. */
   groups?: Array<[string, RegExp]>;
+  /**
+   * Columns that hold a link. Stored as plain text — a URL is a string, and a
+   * side table mapping a shortcut to a URL column would be a join to look up
+   * what the cell already contains. The type exists so the viewer can render
+   * the cell as an icon and give the column 72px instead of 190.
+   */
+  urlMatch?: RegExp[];
 }> = {
   user: {
     tab: 'User',
@@ -187,6 +194,10 @@ const LISTS: Record<string, {
       ['identity',    /^(source|status|id|idBh|idAvantio|titleAvantio|nickname)$/],
       ['property',    /.*/],
     ],
+    // 19 of the 164 columns are Drive folders, Canva designs, listing pages or
+    // spreadsheets. As text they each eat 190px of a table that is already
+    // 164 columns wide; as an icon they cost 72.
+    urlMatch: [/^url/i, /Url$/, /^link/i, /^airbnbUrl/],
   },
 };
 
@@ -371,8 +382,12 @@ async function main() {
       spec.sensitive.includes(name) ||
       (spec.sensitiveMatch ?? []).some((re) => re.test(name));
 
+    const typeOf = (name: string): string =>
+      spec.types[name] ??
+      ((spec.urlMatch ?? []).some((re) => re.test(name)) ? 'url' : 'text');
+
     for (const f of fields) {
-      const type = spec.types[f.field] ?? 'text';
+      const type = typeOf(f.field);
       await prisma.datasetField.upsert({
         where: { tenantId_dataset_field: { tenantId: tenant.id, dataset: values.list!, field: f.field } },
         create: {

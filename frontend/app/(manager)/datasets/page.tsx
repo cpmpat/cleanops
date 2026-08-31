@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
+  Folder, FileText, ExternalLink,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
@@ -50,6 +51,13 @@ const GROUP_LABEL: Record<string, string> = {
 };
 
 const COL_W = 190;
+/**
+ * A link column shows one icon, so it does not need 190px.
+ *
+ * On Accommodation that is 19 columns reclaiming ~2200px of horizontal scroll,
+ * which is the difference between hunting for a column and seeing it.
+ */
+const URL_COL_W = 72;
 const HEAD_H = 36;
 const ROW_H = 30;
 
@@ -243,6 +251,23 @@ export default function DatasetsPage() {
 
   const tintOf = (c: { group?: string | null }): string | undefined =>
     tint && c.group ? GROUP_TINT[c.group] : undefined;
+
+  const widthOf = (c: { type?: string }) => (c.type === 'url' ? URL_COL_W : COL_W);
+
+  /**
+   * Left offset per column, as a running total rather than `pos * COL_W`.
+   *
+   * The moment one column is a different width, multiplying by a constant puts
+   * every frozen column after it in the wrong place — and the frozen pane is
+   * exactly where a few pixels of error become a visible seam.
+   */
+  const colLefts = useMemo(() => {
+    const out: number[] = [];
+    let x = 0;
+    for (const c of visible) { out.push(x); x += widthOf(c); }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   function cycleSort(key: string) {
     setSort(prev => {
@@ -577,8 +602,8 @@ export default function DatasetsPage() {
                       title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
                       onClick={() => cycleSort(c.key)}
                       style={{
-                        width: COL_W, minWidth: COL_W, height: HEAD_H,
-                        ...(frozen ? { left: pos * COL_W } : {}),
+                        width: widthOf(c), minWidth: widthOf(c), height: HEAD_H,
+                        ...(frozen ? { left: colLefts[pos] } : {}),
                         ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                       }}
                       className={cn(
@@ -613,8 +638,8 @@ export default function DatasetsPage() {
                           key={`${c.key}-${c.i}`}
                           title={row[c.i]}
                           style={{
-                            width: COL_W, minWidth: COL_W, height: ROW_H,
-                            ...(colFrozen ? { left: pos * COL_W } : {}),
+                            width: widthOf(c), minWidth: widthOf(c), height: ROW_H,
+                            ...(colFrozen ? { left: colLefts[pos] } : {}),
                             ...(rowFrozen ? { top: rowTops[r] ?? HEAD_H + r * ROW_H } : {}),
                             // Wins over the bg-white class on sticky cells, and
                             // must stay opaque for the same reason that class
@@ -630,9 +655,10 @@ export default function DatasetsPage() {
                             !stick && 'group-hover:bg-surface-sunken/0',
                             colFrozen && !rowFrozen && 'group-hover:bg-surface-sunken',
                             colFrozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
+                            c.type === 'url' && 'text-center',
                           )}
                         >
-                          {row[c.i]}
+                          <CellValue value={row[c.i]} />
                         </td>
                       );
                     })}
@@ -870,5 +896,40 @@ function AddRowDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A link renders as a shortcut, not as 180 characters of query string.
+ *
+ * Detected from the value rather than only from the column type, so a stray URL
+ * in a text column still becomes clickable and a sheet-backed list — which has
+ * no type metadata at all — gets this for free. The column *type* is what buys
+ * the narrow width; the value is what decides the icon.
+ *
+ * The icon says what is on the other end, because "open something in Drive" and
+ * "open a booking.com listing" are different enough decisions to be worth one
+ * glance. The full URL stays in the title, so hovering still answers "which
+ * folder is this?" without a click.
+ */
+function CellValue({ value }: { value: string }) {
+  if (!/^https?:\/\//i.test(value)) return <>{value}</>;
+
+  const Icon =
+    /drive\.google\.com\/drive\/(u\/\d+\/)?folders/.test(value) ? Folder
+    : /docs\.google\.com|drive\.google\.com\/file/.test(value) ? FileText
+    : ExternalLink;
+
+  return (
+    <a
+      href={value}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={value}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center justify-center w-6 h-6 rounded-md align-middle text-ink-muted hover:text-accent hover:bg-surface-sunken transition"
+    >
+      <Icon size={14} />
+    </a>
   );
 }
