@@ -49,7 +49,9 @@ model Tenant {
   conversations       Conversation[]
   pmsSyncFailures     PmsSyncFailure[]
   cdmUsers            CdmUser[]
+  cdmAccommodations   CdmAccommodation[]
   datasetFields       DatasetField[]
+  datasetFieldRoles   DatasetFieldRole[]
 
   @@map("tenants")
 }
@@ -1266,12 +1268,45 @@ model DatasetField {
   sensitive       Boolean @default(false)
   /// Must be present when creating a row.
   required        Boolean @default(false)
+  /// Which family of columns this belongs to — pricing, ota, credentials…
+  /// Purely visual: the viewer tints each family so a 164-column table can be
+  /// navigated sideways without counting headers.
+  group           String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  overrides DatasetFieldRole[]
 
   @@unique([tenantId, dataset, field])
   @@index([tenantId, dataset, columnOrder])
   @@map("dataset_fields")
+}
+
+/// Per-role overrides on a dataset's columns.
+///
+/// Sparse by design: a role with no rows here gets the base order from
+/// `dataset_fields`, and a row exists only for a column that role wants
+/// somewhere else or out of the way. Storing a full ordering per role would be
+/// 164 rows × every role, which nobody would keep correct for a week.
+///
+/// Note what this is NOT. It cannot reveal a column — a `sensitive` column
+/// stays hidden from a role that may not read it no matter what this table
+/// says. Ordering and tidiness only; permission stays in one place.
+model DatasetFieldRole {
+  id          String   @id @default(uuid())
+  tenantId    String
+  fieldId     String
+  role        UserRole
+  /// Where this column sits for this role. Null keeps the base position.
+  columnOrder Int?
+  /// Off in this role's default view. Null keeps the base setting.
+  hidden      Boolean?
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  field  DatasetField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, role])
+  @@index([tenantId, role])
+  @@map("dataset_field_roles")
 }
 
 /// CDM list `User`: the company's people directory.
@@ -1330,4 +1365,206 @@ model CdmUser {
   @@unique([tenantId, internalId])
   @@index([tenantId, lastName])
   @@map("cdm_users")
+}
+
+/// CDM list `Accomodation`: every unit the company operates.
+///
+/// 164 columns, names mirroring the sheet header, typos included
+/// (`cotractType`, `urlFolderphotos` beside `urlFolderPhotos`). Renaming them
+/// here would break the vocabulary operators already read; `displayName` in
+/// `dataset_fields` fixes the spelling where it is seen.
+///
+/// One exception, and it is forced: Prisma field names must match
+/// [A-Za-z][A-Za-z0-9_]*, so the sheet's `urlFolderPPPrevzetí` is stored as
+/// `urlFolderPPPrevzeti`. The importer strips diacritics from every column name
+/// for exactly this reason — a Czech company will keep producing them — and
+/// matches the data tab on the sheet's original spelling.
+///
+/// The primary key is `rowId`, not `id`, because the sheet has its own column
+/// called `id` — the three-character internal code — which would otherwise
+/// collide with Prisma's. `idAvantio` is the natural key: it is what the rest
+/// of the app already joins properties on.
+///
+/// Types come from evidence in the sample export, never from a column's name.
+/// A name that sounds boolean but has no data yet stays text, because
+/// `otaHousingAnywhere` reads exactly like a boolean and holds TRUE, FALSE and
+/// "TO BE" — which is precisely how a guessed type eats a value in silence.
+model CdmAccommodation {
+  rowId    String @id @default(uuid())
+  tenantId String
+
+  source                                         String?
+  status                                         String?
+  id                                             String?
+  idBh                                           String?
+  idAvantio                                      String?
+  titleAvantio                                   String?
+  address                                        String?
+  city                                           String?
+  nickname                                       String?
+  validFrom                                      DateTime?
+  feeFinalCleaningVatIncl                        Int?
+  feeFinalCleaningVatExl                         String?
+  feeFinalCleaningVatRate                        String?
+  maximumRelease                                 Int?
+  otaBooking                                     Boolean?
+  otaAirbnb                                      Boolean?
+  sizeM2                                         Int?
+  capacity                                       String?
+  bedrooms                                       Int?
+  bathrooms                                      Float?
+  category                                       String?
+  bedroom                                        String?
+  bathroom                                       String?
+  bedroom2                                       String?
+  bathroom2                                      String?
+  type                                           String?
+  floor                                          Int?
+  elevator                                       Boolean?
+  bed                                            String?
+  bed2                                           String?
+  layout                                         String?
+  feeAirstay                                     String?
+  feePms                                         Int?
+  feeAdmin                                       Int?
+  feeBording                                     Int?
+  feeChannelManager                              Int?
+  emailGmail                                     String?
+  passwordGmail                                  String?
+  maximumTimeRelease                             String?
+  propertyFactWifiName                           String?
+  contract                                       String?
+  mlos                                           Int?
+  contractSubject                                String?
+  cotractType                                    String?
+  checkInType                                    String?
+  petsAllowed                                    Boolean?
+  terrace                                        Boolean?
+  balcony                                        Boolean?
+  unit                                           String?
+  emailAirbnb                                    String?
+  passwordAirbnb                                 String?
+  emailBooking                                   String?
+  passwordBooking                                String?
+  emailExpedia                                   String?
+  cityTaxVariableSymbol                          String?
+  feeTransactionCityTax                          String?
+  feeExtraPerson                                 Int?
+  ubyportApiPassword                             String?
+  ubyportApiLogin                                String?
+  ubyportIdub                                    String?
+  ubyportManualLogin                             String?
+  ubyportManualPassword                          String?
+  accountIdAirbnb                                String?
+  cancelationPolicyAirbnb                        String?
+  urlHomebook                                    String?
+  urlFolderHouseRules                            String?
+  salesRentalDivision                            String?
+  keysQuantity                                   String?
+  urlFolderFacility                              String?
+  urlFolderContractAndPoa                        String?
+  urlFolderPp                                    String?
+  urlCalculation                                 String?
+  pricing                                        String?
+  urlFolderphotos                                String?
+  urlFolderUnitOld                               String?
+  urlFolderphotographer                          String?
+  codeLockBox                                    String?
+  otaExpedia                                     Boolean?
+  otaVrbo                                        Boolean?
+  listingIdAirbnb2                               String?
+  propertyIdBooking                              String?
+  petsFee                                        String?
+  pricingGroup                                   String?
+  linkListingAirbnb                              String?
+  urlListingBooking                              String?
+  listingIdAirbnbPrimary                         String?
+  parking                                        Boolean?
+  listingDescriptionAirbnb                       String?
+  pricingOffsetPriceLabs                         String?
+  pricingOffsetAirbnb                            String?
+  pricingOffsetBookingAvantio                    String?
+  stornoConditionsAirbnb                         String?
+  costPricelabs                                  String?
+  costAvantio                                    Decimal?
+  supplierFinalCleaning                          String?
+  otaAirbnbSalesStarted                          DateTime?
+  otaBookingSalesStarted                         DateTime?
+  otaExpediaSaleStarted                          DateTime?
+  otaHomeAwaySaleStarted                         DateTime?
+  buildingUnderConstruction                      String?
+  otaHousingAnywhere                             String?
+  roomIdBooking                                  String?
+  groupRd                                        String?
+  validUntil                                     DateTime?
+  rajonUserId                                    String?
+  rajonUserId1                                   String?
+  rajonUserId2                                   String?
+  airbnbUrlPriceSettingsFees                     String?
+  maxWithoutSupplement                           String?
+  notes                                          String?
+  otaVrboSalesStarted                            DateTime?
+  ownerVatPayer                                  Boolean?
+  cityTaxDistrictReportedTo                      String?
+  cityTaxEntityRegistered                        String?
+  costChekin                                     Decimal?
+  contractSigned                                 DateTime?
+  contractTerminated                             DateTime?
+  chekin                                         Boolean?
+  cityTaxConsolidateReport                       Boolean?
+  countOccuranceOfcityTaxEntityRegistredEntity   Int?
+  urlFolderUnit                                  String?
+  folderUnitPropertiesStatus                     String?
+  folderUnitPropertiesInternalId                 String?
+  folderUnitPropertiesCityTaxEntityRegistered    String?
+  folderUnitPropertiesCityTaxDistrictReportedTo  String?
+  urlFolderEvidence                              String?
+  urlFolderCityTax                               String?
+  urlSharedFolderCityTaxDistrict                 String?
+  otaBookingSalesEnded                           DateTime?
+  otaAirbnbSalesEnded                            DateTime?
+  dateOffboard                                   DateTime?
+  propertyFactWifiPassword                       String?
+  parkingLotNumber                               Int?
+  hostsName                                      String?
+  finalCleaningProvided                          Boolean?
+  routerModel                                    String?
+  intercomModel                                  String?
+  intercomOperating                              String?
+  bellLabel                                      String?
+  espId                                          String?
+  vitejBoxGateUrl                                String?
+  ownerAvantioPortalUser                         String?
+  apaPropertyId                                  String?
+  contractSubjectEqualsOwnerApiKn                String?
+  listingAirbnbTitle                             String?
+  lockboxCode                                    String?
+  tvModel                                        String?
+  allowedSpendingForRepairs                      String?
+  parkingType                                    String?
+  contractVersion                                String?
+  urlFolderDesign                                String?
+  urlFolderPPPrevzeti                            String?
+  urlContract                                    String?
+  urlInventoryFolder                             String?
+  terraceType                                    String?
+  checkInMethod                                  String?
+  standard                                       String?
+  contactBuildingManagement                      String?
+  urlTechnicalInformation                        String?
+  urlFolderPhotos                                String?
+  costCleanerPayout                              String?
+  sumUp                                          String?
+  invoicingProcess                               String?
+  additionalInvoicing                            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idAvantio])
+  @@index([tenantId, city])
+  @@index([tenantId, status])
+  @@map("cdm_accommodations")
 }

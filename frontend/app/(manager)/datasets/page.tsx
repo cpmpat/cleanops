@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2,
+  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
+  Folder, FileText, ExternalLink,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
@@ -16,7 +17,47 @@ import { cn } from '@/lib/utils';
  * underneath show through it. So the frozen rows are measured, once per layout,
  * and these two numbers are only the first-paint estimate.
  */
+/**
+ * One solid tint per column family.
+ *
+ * Solid, not translucent, and that is not a style choice: the frozen panes are
+ * sticky cells that must fully occlude the rows sliding under them. An alpha
+ * background would let the scrolling body show through the frozen band, which
+ * is the bug that was fixed two commits ago.
+ *
+ * Kept very light on purpose. At 164 columns the tint is a landmark for
+ * sideways navigation, not a highlight — anything stronger and the values stop
+ * being the thing you read.
+ */
+const GROUP_TINT: Record<string, string> = {
+  identity:    '#F4F6FA',
+  location:    '#F0F7F3',
+  property:    '#F3F5FF',
+  pricing:     '#FFF7ED',
+  ota:         '#EFF6FF',
+  credentials: '#FEF2F2',
+  citytax:     '#F6F3FF',
+  contract:    '#F0FDFA',
+  folders:     '#FAFAF9',
+  ops:         '#FEFCE8',
+  tech:        '#F6F9FC',
+};
+
+const GROUP_LABEL: Record<string, string> = {
+  identity: 'Identity', location: 'Location', property: 'Property',
+  pricing: 'Pricing', ota: 'Channels', credentials: 'Credentials',
+  citytax: 'City tax', contract: 'Contract', folders: 'Folders',
+  ops: 'Operations', tech: 'Tech',
+};
+
 const COL_W = 190;
+/**
+ * A link column shows one icon, so it does not need 190px.
+ *
+ * On Accommodation that is 19 columns reclaiming ~2200px of horizontal scroll,
+ * which is the difference between hunting for a column and seeing it.
+ */
+const URL_COL_W = 72;
 const HEAD_H = 36;
 const ROW_H = 30;
 
@@ -51,6 +92,7 @@ export default function DatasetsPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [rowTops, setRowTops] = useState<number[]>([]);
 
+  const [tint, setTint] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const [panel, setPanel] = useState<'columns' | 'rows' | 'freeze' | null>(null);
@@ -196,6 +238,37 @@ export default function DatasetsPage() {
   const activeFilterCount = Object.values(filters).filter(s => s.size > 0).length;
   const labelFor = (key: string) => data?.columns.find(c => c.key === key)?.label ?? key;
 
+  // Families present in what is actually on screen, in column order — the
+  // legend follows the table rather than listing families it does not show.
+  const groupsPresent = useMemo(() => {
+    const seen: string[] = [];
+    for (const c of visible) {
+      const g = c.group;
+      if (g && GROUP_TINT[g] && !seen.includes(g)) seen.push(g);
+    }
+    return seen;
+  }, [visible]);
+
+  const tintOf = (c: { group?: string | null }): string | undefined =>
+    tint && c.group ? GROUP_TINT[c.group] : undefined;
+
+  const widthOf = (c: { type?: string }) => (c.type === 'url' ? URL_COL_W : COL_W);
+
+  /**
+   * Left offset per column, as a running total rather than `pos * COL_W`.
+   *
+   * The moment one column is a different width, multiplying by a constant puts
+   * every frozen column after it in the wrong place — and the frozen pane is
+   * exactly where a few pixels of error become a visible seam.
+   */
+  const colLefts = useMemo(() => {
+    const out: number[] = [];
+    let x = 0;
+    for (const c of visible) { out.push(x); x += widthOf(c); }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
   function cycleSort(key: string) {
     setSort(prev => {
       if (!prev || prev.key !== key) return { key, dir: 'asc' };
@@ -282,6 +355,16 @@ export default function DatasetsPage() {
           open={panel === 'freeze'}
           onClick={() => setPanel(p => (p === 'freeze' ? null : 'freeze'))}
         />
+        {/* Only offered where columns actually carry a family. A sheet-backed
+            list has none, and a button that does nothing is worse than no
+            button. */}
+        {groupsPresent.length > 0 && (
+          <PanelButton
+            icon={<Palette size={14} />} label="Colours"
+            open={tint}
+            onClick={() => setTint(v => !v)}
+          />
+        )}
 
         {data && (
           <p className="text-xs text-ink-faint ml-auto">
@@ -478,6 +561,24 @@ export default function DatasetsPage() {
       {/* min-height matches max-height so the block occupies its final space
           from the first paint. Without it the footer renders directly under the
           controls and then jumps down the moment rows arrive. */}
+      {/* A tint nobody can decode is just noise, so the key ships with it. */}
+      {tint && groupsPresent.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {groupsPresent.map((g) => (
+            <span
+              key={g}
+              className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-ink-muted border border-surface-border rounded-full pl-1.5 pr-2.5 py-0.5"
+            >
+              <span
+                className="w-3 h-3 rounded-full border border-surface-border"
+                style={{ backgroundColor: GROUP_TINT[g] }}
+              />
+              {GROUP_LABEL[g] ?? g}
+            </span>
+          ))}
+        </div>
+      )}
+
       {!error && data && (
         <div className="border border-surface-border rounded-xl overflow-auto h-[65vh] bg-white">
           {/* border-separate, not border-collapse: with collapsed borders the
@@ -501,8 +602,9 @@ export default function DatasetsPage() {
                       title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
                       onClick={() => cycleSort(c.key)}
                       style={{
-                        width: COL_W, minWidth: COL_W, height: HEAD_H,
-                        ...(frozen ? { left: pos * COL_W } : {}),
+                        width: widthOf(c), minWidth: widthOf(c), height: HEAD_H,
+                        ...(frozen ? { left: colLefts[pos] } : {}),
+                        ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                       }}
                       className={cn(
                         'sticky top-0 z-40 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
@@ -536,9 +638,13 @@ export default function DatasetsPage() {
                           key={`${c.key}-${c.i}`}
                           title={row[c.i]}
                           style={{
-                            width: COL_W, minWidth: COL_W, height: ROW_H,
-                            ...(colFrozen ? { left: pos * COL_W } : {}),
+                            width: widthOf(c), minWidth: widthOf(c), height: ROW_H,
+                            ...(colFrozen ? { left: colLefts[pos] } : {}),
                             ...(rowFrozen ? { top: rowTops[r] ?? HEAD_H + r * ROW_H } : {}),
+                            // Wins over the bg-white class on sticky cells, and
+                            // must stay opaque for the same reason that class
+                            // exists.
+                            ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                           }}
                           className={cn(
                             'px-3 border-b border-surface-border truncate',
@@ -549,9 +655,10 @@ export default function DatasetsPage() {
                             !stick && 'group-hover:bg-surface-sunken/0',
                             colFrozen && !rowFrozen && 'group-hover:bg-surface-sunken',
                             colFrozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
+                            c.type === 'url' && 'text-center',
                           )}
                         >
-                          {row[c.i]}
+                          <CellValue value={row[c.i]} />
                         </td>
                       );
                     })}
@@ -789,5 +896,40 @@ function AddRowDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A link renders as a shortcut, not as 180 characters of query string.
+ *
+ * Detected from the value rather than only from the column type, so a stray URL
+ * in a text column still becomes clickable and a sheet-backed list — which has
+ * no type metadata at all — gets this for free. The column *type* is what buys
+ * the narrow width; the value is what decides the icon.
+ *
+ * The icon says what is on the other end, because "open something in Drive" and
+ * "open a booking.com listing" are different enough decisions to be worth one
+ * glance. The full URL stays in the title, so hovering still answers "which
+ * folder is this?" without a click.
+ */
+function CellValue({ value }: { value: string }) {
+  if (!/^https?:\/\//i.test(value)) return <>{value}</>;
+
+  const Icon =
+    /drive\.google\.com\/drive\/(u\/\d+\/)?folders/.test(value) ? Folder
+    : /docs\.google\.com|drive\.google\.com\/file/.test(value) ? FileText
+    : ExternalLink;
+
+  return (
+    <a
+      href={value}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={value}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center justify-center w-6 h-6 rounded-md align-middle text-ink-muted hover:text-accent hover:bg-surface-sunken transition"
+    >
+      <Icon size={14} />
+    </a>
   );
 }

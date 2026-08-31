@@ -1256,6 +1256,8 @@ export interface DatasetColumn {
   type: string;
   /** Must be filled in before the row can be saved. */
   required: boolean;
+  /** Visual family — pricing, ota, credentials. Null on sheet-backed lists. */
+  group?: string | null;
 }
 
 export interface DatasetPage {

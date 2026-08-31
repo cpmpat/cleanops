@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
  * below is the seam it plugs into.
  */
 const TABS = [
-  { key: 'accommodation', tab: 'Accomodation', label: 'Accommodation', source: 'sheet' },
+  { key: 'accommodation', tab: 'Accomodation', label: 'Accommodation', source: 'db'    },
   { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
   { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
 ] as const;
@@ -26,8 +26,11 @@ const TABS = [
  * that indirection is resolved, so a typo fails loudly at the first request
  * rather than silently returning nothing.
  */
-const DB_MODELS: Record<string, { model: string; key: string }> = {
-  user: { model: 'cdmUser', key: 'internalId' },
+const DB_MODELS: Record<string, { model: string; key: string; pk: string }> = {
+  user:          { model: 'cdmUser',          key: 'internalId', pk: 'id'    },
+  // The primary key is `rowId` here: the Accomodation sheet has its own column
+  // called `id`, which would otherwise collide with Prisma's.
+  accommodation: { model: 'cdmAccommodation', key: 'idAvantio',  pk: 'rowId' },
 };
 
 /**
@@ -88,6 +91,8 @@ export interface DatasetColumn {
   type: string;
   /** Must be filled in when adding a row. */
   required: boolean;
+  /** Visual family — pricing, ota, credentials. Null for sheet-backed lists. */
+  group?: string | null;
 }
 
 /** How long a fetched tab is reused before going back to Google. */
@@ -321,6 +326,7 @@ export class DatasetsService {
         hiddenByDefault: HIDDEN_BY_DEFAULT.includes(key),
         type: 'text',
         required: false,
+        group: null,
       };
     });
 
@@ -363,9 +369,12 @@ export class DatasetsService {
     const spec = DB_MODELS[key];
     if (!spec) throw new NotFoundException(`Dataset "${key}" has no table behind it`);
 
+    // Base metadata, plus this role's overrides in one round trip. The
+    // override rows are sparse — a role that has never been tuned has none.
     const all = await this.prisma.datasetField.findMany({
       where: { tenantId, dataset: key },
       orderBy: { columnOrder: 'asc' },
+      include: { overrides: { where: { role } } },
     });
 
     if (all.length === 0) {
@@ -375,7 +384,22 @@ export class DatasetsService {
       );
     }
 
-    const fields = this.visibleFields(all, role);
+    // Apply the role's overrides, then re-sort. Note what an override may do:
+    // move a column and hide it. It cannot reveal one — a `sensitive` field
+    // stays filtered out below no matter what the override says, so a
+    // reordering table can never become a back door into the passwords.
+    const tuned = all
+      .map((f) => {
+        const o = f.overrides[0];
+        return {
+          ...f,
+          columnOrder: o?.columnOrder ?? f.columnOrder,
+          hiddenByDefault: o?.hidden ?? f.hiddenByDefault,
+        };
+      })
+      .sort((a, b) => a.columnOrder - b.columnOrder || a.field.localeCompare(b.field));
+
+    const fields = this.visibleFields(tuned, role);
     const delegate = (this.prisma as any)[spec.model];
 
     const select: Record<string, true> = {};
@@ -404,6 +428,7 @@ export class DatasetsService {
         hiddenByDefault: f.hiddenByDefault,
         type: f.type,
         required: f.required,
+        group: f.group,
       })),
       rows: records.map((r) => fields.map((f) => this.render(r[f.field]))),
       totalColumns: all.length,
@@ -477,7 +502,7 @@ export class DatasetsService {
     const delegate = (this.prisma as any)[spec.model];
     const clash = await delegate.findUnique({
       where: { [`tenantId_${spec.key}`]: { tenantId, [spec.key]: naturalKey } },
-      select: { id: true },
+      select: { [spec.pk]: true },
     });
     if (clash) {
       throw new BadRequestException(`${spec.key} "${naturalKey}" already exists.`);
@@ -497,6 +522,7 @@ export class DatasetsService {
     // the commit is an audit row that sometimes does not exist.
     return this.prisma.$transaction(async (tx) => {
       const created = await (tx as any)[spec.model].create({ data });
+      const createdId: string = created[spec.pk];
 
       await tx.auditEvent.create({
         data: {
@@ -506,7 +532,7 @@ export class DatasetsService {
           actorId: actorId ?? null,
           actorEmail: actor?.email ?? null,
           targetType: `dataset:${key}`,
-          targetId: created.id,
+          targetId: createdId,
           // Values are deliberately not recorded here: this row can carry
           // mailbox passwords, and an audit log is not a second place to keep
           // them. What was created, by whom and when is the useful part.
@@ -514,8 +540,8 @@ export class DatasetsService {
         },
       });
 
-      this.logger.log(`Created ${key} row ${created.id} (${naturalKey}) by ${actor?.email ?? 'unknown'}`);
-      return { id: created.id, [spec.key]: naturalKey };
+      this.logger.log(`Created ${key} row ${createdId} (${naturalKey}) by ${actor?.email ?? 'unknown'}`);
+      return { id: createdId, [spec.key]: naturalKey };
     });
   }
 }
