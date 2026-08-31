@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { GoogleSheetsClient } from './google-sheets.client';
+import { toCsv, toXlsx } from './dataset-export';
 import { UserRole } from '@prisma/client';
 
 /**
@@ -346,6 +347,149 @@ export class DatasetsService {
       // than letting the button fail on submit.
       canCreate: false,
     };
+  }
+
+  // ─── Export ───────────────────────────────────────────────────────────────
+
+  /**
+   * Export a dataset as CSV or XLSX.
+   *
+   * The whole design is one sentence: **this calls `read()`**. Not a query of
+   * its own, not a copy of the column projection — the same method that builds
+   * the screen. That is what makes "the export contains exactly what this role
+   * may see" a structural fact instead of a promise. A second query would be a
+   * second place to forget `sensitive`, and the day those two drift is the day
+   * a spreadsheet of mailbox passwords walks out of the building.
+   *
+   * The client may send its current view — visible columns, filters, search,
+   * sort — so the file matches what is on screen. Every one of those can only
+   * ever NARROW the result: unknown column keys are dropped rather than
+   * honoured, so asking for a column the role cannot read returns nothing
+   * extra. The filtering mirrors the frontend's so the row counts agree; if
+   * they ever diverge the damage is cosmetic, because the projection above is
+   * not duplicated here.
+   */
+  async exportDataset(
+    tenantId: string,
+    key: string,
+    role: UserRole,
+    actorId: string | undefined,
+    opts: {
+      format?: string;
+      columns?: string[];
+      search?: string;
+      filters?: Record<string, string[]>;
+      sort?: { key: string; dir: 'asc' | 'desc' };
+    },
+  ): Promise<{ filename: string; contentType: string; body: Buffer }> {
+    const format = opts.format === 'xlsx' ? 'xlsx' : 'csv';
+    const page = await this.read(tenantId, key, role);
+
+    // Intersect, never union. The request picks from what came back; it cannot
+    // add to it.
+    const permitted = page.columns;
+    const wanted = opts.columns?.length
+      ? permitted.filter((c) => opts.columns!.includes(c.key))
+      : permitted.filter((c) => !c.hiddenByDefault);
+    const chosen = wanted.length > 0 ? wanted : permitted;
+    const indexes = chosen.map((c) => permitted.findIndex((p) => p.key === c.key));
+
+    // ── the same filtering the viewer does ──────────────────────────────────
+    const q = (opts.search ?? '').trim().toLowerCase();
+    const active = Object.entries(opts.filters ?? {}).filter(([, v]) => v?.length);
+
+    let rows = page.rows.filter((row) => {
+      for (const [k, allowed] of active) {
+        const i = permitted.findIndex((c) => c.key === k);
+        if (i >= 0 && !allowed.includes(row[i] ?? '')) return false;
+      }
+      if (!q) return true;
+      return row.some((cell) => cell?.toLowerCase().includes(q));
+    });
+
+    if (opts.sort) {
+      const i = permitted.findIndex((c) => c.key === opts.sort!.key);
+      if (i >= 0) {
+        const dir = opts.sort.dir === 'asc' ? 1 : -1;
+        rows = [...rows].sort((a, b) => {
+          const x = a[i] ?? '', y = b[i] ?? '';
+          if (!x && !y) return 0;
+          if (!x) return 1;
+          if (!y) return -1;
+          const nx = Number(x.replace(',', '.')), ny = Number(y.replace(',', '.'));
+          if (!Number.isNaN(nx) && !Number.isNaN(ny)) return (nx - ny) * dir;
+          return x.localeCompare(y, undefined, { numeric: true }) * dir;
+        });
+      }
+    }
+
+    const projected = rows.map((row) => indexes.map((i) => row[i] ?? ''));
+
+    // ── audit ───────────────────────────────────────────────────────────────
+    // An export is the single most consequential thing this module does: it
+    // takes data that was read one screen at a time and turns it into a file
+    // that leaves. Which sensitive columns went with it is recorded by name,
+    // because "who has a spreadsheet of the mailbox passwords" is a question
+    // that gets asked after the fact or not at all.
+    const sensitiveTaken = await this.sensitiveAmong(tenantId, key, chosen.map((c) => c.key));
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { email: true } })
+      : null;
+
+    await this.prisma.auditEvent.create({
+      data: {
+        tenantId,
+        category: 'DATA_EDIT',
+        action: `dataset.${key}.export`,
+        actorId: actorId ?? null,
+        actorEmail: actor?.email ?? null,
+        targetType: `dataset:${key}`,
+        targetId: null,
+        metadata: {
+          format,
+          rows: projected.length,
+          columns: chosen.length,
+          filtered: rows.length !== page.rows.length,
+          sensitiveColumns: sensitiveTaken,
+        },
+      },
+    });
+
+    this.logger.log(
+      `Export ${key} as ${format}: ${projected.length} row(s) x ${chosen.length} column(s) ` +
+      `by ${actor?.email ?? 'unknown'}` +
+      (sensitiveTaken.length ? ` — including ${sensitiveTaken.length} sensitive column(s)` : ''),
+    );
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const base = `${key}-${stamp}`;
+    const cols = chosen.map((c) => ({ key: c.key, label: c.label }));
+
+    return format === 'xlsx'
+      ? {
+          filename: `${base}.xlsx`,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          body: await toXlsx(cols, projected, page.label),
+        }
+      : {
+          filename: `${base}.csv`,
+          contentType: 'text/csv; charset=utf-8',
+          body: toCsv(cols, projected),
+        };
+  }
+
+  /** Which of these columns are marked sensitive. Empty for sheet-backed lists. */
+  private async sensitiveAmong(
+    tenantId: string,
+    dataset: string,
+    keys: string[],
+  ): Promise<string[]> {
+    if (keys.length === 0) return [];
+    const rows = await this.prisma.datasetField.findMany({
+      where: { tenantId, dataset, sensitive: true, field: { in: keys } },
+      select: { field: true },
+    });
+    return rows.map((r) => r.field);
   }
 
   // ─── Postgres-backed lists ────────────────────────────────────────────────

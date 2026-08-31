@@ -1285,6 +1285,52 @@ export const datasets = {
     get<DatasetPage>(`/datasets/${key}${refresh ? '?refresh=1' : ''}`),
   create: (key: string, values: Record<string, string>) =>
     post<{ id: string }>(`/datasets/${key}`, values),
+
+  /**
+   * Download an export of the current view.
+   *
+   * Not routed through `request()` because that parses JSON, and this comes
+   * back as a spreadsheet. The view state travels in the body: the server
+   * intersects it with what the role may read, so sending it can only ever
+   * narrow the file, never widen it.
+   */
+  exportFile: async (
+    key: string,
+    body: {
+      format: 'csv' | 'xlsx';
+      columns?: string[];
+      search?: string;
+      filters?: Record<string, string[]>;
+      sort?: { key: string; dir: 'asc' | 'desc' };
+    },
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const token = getToken();
+    const res = await fetch(`${BASE}/datasets/${key}/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      // An error still arrives as JSON even though the happy path does not.
+      let message = `Export failed (${res.status})`;
+      try {
+        const j = await res.json();
+        message = j?.message ?? message;
+      } catch { /* a non-JSON error body is not worth a second failure */ }
+      throw new ApiError(res.status, message);
+    }
+
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    return {
+      blob: await res.blob(),
+      filename: match?.[1] ?? `${key}.${body.format}`,
+    };
+  },
 };
 
 // ─── Tenant ───────────────────────────────────────────────────────────────────
