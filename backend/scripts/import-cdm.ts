@@ -397,6 +397,37 @@ async function main() {
       console.log(`  ${unmapped.join(', ')}`);
     }
 
+    // ── repeated column names ──────────────────────────────────────────────
+    //
+    // A spreadsheet can have two columns called the same thing; a table cannot.
+    // The importer writes `data[field] = value` as it walks the row, so a
+    // repeat does not fail — the second one silently overwrites the first, and
+    // one real column is quietly gone.
+    //
+    // This is the bug the Accommodation list started with: `status` appeared
+    // twice, meaning Valid/Invalid in one place and Listed in the other, and
+    // the sheet-era viewer papered over it well enough that nobody noticed.
+    const dupCol = (names: string[]) => {
+      const seen = new Map<string, number>();
+      for (const n of names) if (n) seen.set(n, (seen.get(n) ?? 0) + 1);
+      return [...seen.entries()].filter(([, n]) => n > 1);
+    };
+
+    const dataDupes = dupCol(columns);
+    const fieldDupes = dupCol(fields.map((f) => f.field));
+
+    if (dataDupes.length > 0 || fieldDupes.length > 0) {
+      console.log('\nRepeated column name(s) — a table cannot hold two of these:');
+      for (const [n, c] of dataDupes) console.log(`  data tab     ${n} x${c}`);
+      for (const [n, c] of fieldDupes) console.log(`  mapping tab  ${n} x${c}`);
+      console.log('  Rename one of each pair in the sheet. Left alone, the last');
+      console.log('  occurrence silently overwrites the earlier one on import.');
+      if (values.apply) {
+        console.error('\nRefusing to apply: one column would be lost without saying so.');
+        process.exit(1);
+      }
+    }
+
     // ── does the table actually have these columns? ────────────────────────
     //
     // The mapping tab and the Prisma model are two lists of column names

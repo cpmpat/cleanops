@@ -87,6 +87,8 @@ export interface MessageStrings {
     cancelledMeaning: string;
     checkIn: string;
     stayShortened: string;
+    /** When this change landed in the cleaner's inbox. */
+    received: (stamp: string) => string;
   };
   manager: {
     navLabel: string;
@@ -217,6 +219,7 @@ const en: MessageStrings = {
     cancelledMeaning: 'The cleaning is still yours and still needs doing — there is just no arrival deadline now.',
     checkIn: 'Arrival time changed',
     stayShortened: 'Stay shortened',
+    received: (stamp: string) => `Received ${stamp}`,
   },
   manager: {
     navLabel: 'Messages',
@@ -347,6 +350,7 @@ const cs: MessageStrings = {
     cancelledMeaning: 'Úklid zůstává váš a je pořád potřeba ho udělat — jen už na něj netlačí termín příjezdu.',
     checkIn: 'Změna času příjezdu',
     stayShortened: 'Pobyt zkrácen',
+    received: (stamp: string) => `Přijato ${stamp}`,
   },
   manager: {
     navLabel: 'Zprávy',
@@ -477,6 +481,7 @@ const ru: MessageStrings = {
     cancelledMeaning: 'Уборка остаётся за вами, и её нужно сделать — просто больше нет срока к приезду.',
     checkIn: 'Изменилось время приезда',
     stayShortened: 'Проживание сокращено',
+    received: (stamp: string) => `Получено ${stamp}`,
   },
   manager: {
     navLabel: 'Сообщения',
@@ -607,6 +612,7 @@ const uk: MessageStrings = {
     cancelledMeaning: 'Прибирання залишається за вами і його треба зробити — просто немає терміну до приїзду.',
     checkIn: 'Змінився час приїзду',
     stayShortened: 'Перебування скорочено',
+    received: (stamp: string) => `Отримано ${stamp}`,
   },
   manager: {
     navLabel: 'Повідомлення',
