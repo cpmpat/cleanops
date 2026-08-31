@@ -1419,13 +1419,13 @@ model CdmAccommodation {
   bedroom2                                       String?
   bathroom2                                      String?
   type                                           String?
-  floor                                          Int?
+  floor                                          String?
   elevator                                       Boolean?
   bed                                            String?
   bed2                                           String?
   layout                                         String?
   feeAirstay                                     String?
-  feePms                                         Int?
+  feePms                                         String?
   feeAdmin                                       Int?
   feeBording                                     Int?
   feeChannelManager                              Int?
@@ -1449,7 +1449,7 @@ model CdmAccommodation {
   emailExpedia                                   String?
   cityTaxVariableSymbol                          String?
   feeTransactionCityTax                          String?
-  feeExtraPerson                                 Int?
+  feeExtraPerson                                 String?
   ubyportApiPassword                             String?
   ubyportApiLogin                                String?
   ubyportIdub                                    String?
@@ -1507,7 +1507,7 @@ model CdmAccommodation {
   ownerVatPayer                                  Boolean?
   cityTaxDistrictReportedTo                      String?
   cityTaxEntityRegistered                        String?
-  costChekin                                     Decimal?
+  costChekin                                     String?
   contractSigned                                 DateTime?
   contractTerminated                             DateTime?
   chekin                                         Boolean?
