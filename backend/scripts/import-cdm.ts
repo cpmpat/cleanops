@@ -116,18 +116,18 @@ const LISTS: Record<string, {
     // Only the columns that are not text. Every type here is evidence from the
     // real export, never a guess from the name.
     //
-    // Four columns came back from the first dry run as numbers that are not:
+    // Five columns came back from the dry runs as numbers that are not.
     // `feeExtraPerson` is a fee or FALSE meaning none (77 rows), `costChekin`
-    // the same (11), `feePms` and `floor` carry manual markers like "x" and
-    // "200%". They are text now, and that costs nothing in the viewer — its
-    // sort already compares numerically whenever both values happen to be
-    // numbers, whatever the column's declared type.
+    // the same (11); `feePms`, `floor` and `feeAdmin` carry manual markers
+    // like "x" and "200%". The whole fee family turned out to be "a number, or
+    // a note about why there isn't one", so they are text — which costs
+    // nothing in the viewer, whose sort already compares numerically whenever
+    // both values happen to be numbers, whatever the declared type.
     types: {
       feeFinalCleaningVatIncl: 'int',
       maximumRelease: 'int',
       sizeM2: 'int',
       bedrooms: 'int',
-      feeAdmin: 'int',
       feeBording: 'int',
       feeChannelManager: 'int',
       mlos: 'int',

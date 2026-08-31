@@ -1426,7 +1426,7 @@ model CdmAccommodation {
   layout                                         String?
   feeAirstay                                     String?
   feePms                                         String?
-  feeAdmin                                       Int?
+  feeAdmin                                       String?
   feeBording                                     Int?
   feeChannelManager                              Int?
   emailGmail                                     String?
