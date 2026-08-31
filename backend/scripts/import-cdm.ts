@@ -33,6 +33,7 @@
 //   0  success            1  one or more rows failed            2  bad usage
 
 import { parseArgs } from 'node:util';
+import { Prisma } from '@prisma/client';
 import { bootScriptContext, resolveTenant } from './lib/script-context';
 import { GoogleSheetsClient } from '../src/datasets/google-sheets.client';
 import { squash } from '../src/datasets/datasets.service';
@@ -112,26 +113,28 @@ const LISTS: Record<string, {
     mappingTab: 'mappingAccommodation',
     model: 'cdmAccommodation',
     key: 'idAvantio',
-    // Only the 41 columns that are not text. Every type here is evidence from
-    // the export, never a guess from the name: `otaHousingAnywhere` reads like
-    // a boolean and holds TRUE, FALSE and "TO BE", so it stays text.
+    // Only the columns that are not text. Every type here is evidence from the
+    // real export, never a guess from the name.
+    //
+    // Four columns came back from the first dry run as numbers that are not:
+    // `feeExtraPerson` is a fee or FALSE meaning none (77 rows), `costChekin`
+    // the same (11), `feePms` and `floor` carry manual markers like "x" and
+    // "200%". They are text now, and that costs nothing in the viewer — its
+    // sort already compares numerically whenever both values happen to be
+    // numbers, whatever the column's declared type.
     types: {
       feeFinalCleaningVatIncl: 'int',
       maximumRelease: 'int',
       sizeM2: 'int',
       bedrooms: 'int',
-      floor: 'int',
-      feePms: 'int',
       feeAdmin: 'int',
       feeBording: 'int',
       feeChannelManager: 'int',
       mlos: 'int',
-      feeExtraPerson: 'int',
       countOccuranceOfcityTaxEntityRegistredEntity: 'int',
       parkingLotNumber: 'int',
       bathrooms: 'float',
       costAvantio: 'decimal',
-      costChekin: 'decimal',
       otaBooking: 'bool',
       otaAirbnb: 'bool',
       elevator: 'bool',
@@ -271,10 +274,17 @@ function letterToIndex(letter: string): number {
 function clean(v: string | undefined): string | null {
   if (v == null) return null;
   const t = v.replace(/[​-‏‪-‮﻿]/g, '').trim();
-  // A literal "?" is how the sheet spells "we do not know", not a value. So is
-  // a bare "string" — nine Accomodation columns are filled with that word, and
-  // importing it would make placeholder text look like a credential.
-  return t === '' || t === '?' || t === '/' || t === 'string' ? null : t;
+  // All the ways this spreadsheet says "nothing here".
+  //
+  // "?" and "/" are typed by people. "string" is placeholder text sitting in
+  // nine columns, and importing it would make it look like a credential.
+  // "null" is 34 cells of a formula that returned the word. The #-prefixed
+  // ones are Excel's own error values — a broken VLOOKUP is an absence, and
+  // storing "#N/A" as if it were a value spreads the breakage into the
+  // database.
+  const EMPTY = ['', '?', '/', 'string', 'null', 'undefined',
+                 '#N/A', 'N/A', '#REF!', '#VALUE!', '#DIV/0!', '#NAME?', '#NULL!', '#NUM!'];
+  return EMPTY.includes(t) ? null : t;
 }
 
 /**
@@ -381,6 +391,36 @@ async function main() {
     if (unmapped.length) {
       console.log(`\n  ${unmapped.length} column(s) in the data with no mapping row, ignored:`);
       console.log(`  ${unmapped.join(', ')}`);
+    }
+
+    // ── does the table actually have these columns? ────────────────────────
+    //
+    // The mapping tab and the Prisma model are two lists of column names
+    // maintained in different places, and they drift. The first Accommodation
+    // dry run described 165 columns against a table built with 164 — a gap
+    // that says nothing at all on a dry run and then throws "Unknown argument"
+    // on the first row of the apply.
+    //
+    // Read the model's real field list rather than a copy of it: the DMMF is
+    // generated from the schema, so this cannot go stale the way a hardcoded
+    // list would.
+    const modelName = spec.model.charAt(0).toUpperCase() + spec.model.slice(1);
+    const modelFields = new Set(
+      Prisma.dmmf.datamodel.models.find((m) => m.name === modelName)?.fields.map((f) => f.name) ?? [],
+    );
+    const notInTable = fields.filter((f) => !modelFields.has(f.field));
+
+    if (notInTable.length > 0) {
+      console.log(`\n${notInTable.length} mapped column(s) have no matching column on ${modelName}:`);
+      for (const f of notInTable) {
+        console.log(`  ${f.source}${f.source === f.field ? '' : ` -> ${f.field}`}`);
+      }
+      console.log('  Either the mapping tab describes a column the data tab does not have,');
+      console.log('  or the table needs a migration to add it.');
+      if (values.apply) {
+        console.error('\nRefusing to apply: every row would fail on the first unknown column.');
+        process.exit(1);
+      }
     }
 
     const keyIndex = columns.indexOf(spec.key);
@@ -495,7 +535,7 @@ async function main() {
       const data: Record<string, unknown> = {};
       for (const f of fields) {
         const i = columns.indexOf(f.source);
-        if (i < 0) continue;
+        if (i < 0 || !modelFields.has(f.field)) continue;
         data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
       }
       delete data[spec.key];
