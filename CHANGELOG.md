@@ -25,37 +25,38 @@ Entries are newest first. Dates are the merge date.
 
 ## Unreleased — branch `feat/airchat-inbox`
 
-Committed, not yet merged, not deployed.
-
-**PMS credential encrypted at rest** (2026-09-04)
-`tenants.pmsApiKey` was a plaintext column, and `GET /tenant` returned it to
-the browser so the Settings input could be pre-filled — putting it in every
-Neon backup and every HAR file. It is now AES-256-GCM under
-`CREDENTIALS_ENCRYPTION_KEY`, decrypted in one place (`pmsConfigFor`), and the
-API returns only whether a key is set and its last four characters. The
-Settings key field became write-only: blank means "keep the current key", so
-saving the sync toggle no longer touches the credential. Rotations are written
-to the audit log. Legacy plaintext values still decrypt, so there is no
-migration — a key encrypts itself the next time it is saved. The seed encrypts
-too, since its upsert refreshes the key on every run.
-*Migrations:* None. *Env:* **`CREDENTIALS_ENCRYPTION_KEY` — new, required**
-(`openssl rand -hex 32`; a different value per environment).
-
-> Without it the app still boots and still reads the existing plaintext key;
-> only *saving* a credential fails, loudly. Set it on Railway before deploying.
-
-**Saved table views + dated change notifications** (2026-08-31)
-The datasets table remembers hidden columns, value filters, sort, frozen
-rows and columns, and the group tint, per dataset, per user — stored in the
-`preferences` JSON the cleaner pool filter already uses. Search is
-deliberately not remembered. Cleaner change cards gained an explicit
-received date in all four languages, replacing a chat-style stamp that
-showed a time with no day, and the list sorts newest-first on the client.
-*Migrations:* None. *Env:* None. Frontend only.
+Nothing. Everything committed is merged.
 
 ---
 
 ## Deployed
+
+### 2026-09-04 · PR #31
+
+**PMS credential encrypted at rest.** `tenants.pmsApiKey` was a plaintext
+column, and `GET /tenant` returned it to the browser so the Settings input
+could be pre-filled — putting the key in every Neon backup and any HAR file.
+It is now AES-256-GCM under `CREDENTIALS_ENCRYPTION_KEY`, decrypted in one
+place (`pmsConfigFor`), and the API returns only whether a key is set and its
+last four characters. The Settings key field became write-only: blank means
+"keep the current key", so saving the sync toggle no longer touches the
+credential. Rotations are audited (`tenant.pms_credentials.rotated`). Legacy
+plaintext still decrypts, so there was no migration — a key encrypts itself
+the next time it is saved. The seed encrypts too, since its upsert refreshes
+the key on every run.
+
+**Saved table views.** The datasets table remembers hidden columns, value
+filters, sort, frozen rows and columns, and the group tint, per dataset, per
+user, in the `preferences` JSON. Search deliberately not remembered.
+
+**Dated change notifications.** Cleaner change cards gained an explicit
+received date in all four languages, replacing a chat-style stamp that showed
+a time with no day; the list sorts newest-first on the client.
+
+*Migrations:* None.
+*Env:* **`CREDENTIALS_ENCRYPTION_KEY` — new, required.** Set on the backend
+service before this deploy. Without it the app still boots and still reads an
+existing plaintext key; only *saving* a credential fails.
 
 ### 2026-09-01 · PR #29
 `feeAdmin` settled as a number; four more columns typed correctly; the CDM tab
