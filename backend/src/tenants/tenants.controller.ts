@@ -24,6 +24,7 @@ export class TenantsController {
 
   @Patch('pms-config')
   updatePmsConfig(@Req() req: TenantRequest, @Body() dto: any) {
-    return this.service.updatePmsConfig(req.tenantId!, dto);
+    // The actor goes with it: changing a PMS credential is an audited act.
+    return this.service.updatePmsConfig(req.tenantId!, dto, req.userId);
   }
 }

@@ -1340,8 +1340,25 @@ export const datasets = {
 
 // ─── Tenant ───────────────────────────────────────────────────────────────────
 
+export interface TenantView {
+  id: string;
+  name: string;
+  slug: string;
+  pmsProvider?: string | null;
+  pmsApiBaseUrl?: string | null;
+  pmsSyncEnabled?: boolean;
+  datasetsSheetId?: string | null;
+  /** Whether a PMS key is configured. The key itself never leaves the server. */
+  pmsApiKeySet: boolean;
+  /** Last four characters only, so an operator can recognise which key is stored. */
+  pmsApiKeyHint: string | null;
+  /** False for a key written before encryption existed; re-saving it encrypts it. */
+  pmsApiKeyEncrypted: boolean;
+  [key: string]: any;
+}
+
 export const tenant = {
-  get: () => get('/tenant'),
+  get: () => get<TenantView>('/tenant'),
   updatePmsConfig: (data: {
     pmsProvider?: string;
     pmsApiBaseUrl?: string;

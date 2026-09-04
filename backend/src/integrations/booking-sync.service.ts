@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { pmsConfigFor } from '../common/pms-config';
 import {
   PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
 } from '../common/interfaces/pms-adapter.interface';
@@ -132,10 +133,7 @@ export class BookingSyncService {
       };
     }
 
-    const config: PmsTenantConfig = {
-      apiBaseUrl: tenant.pmsApiBaseUrl,
-      apiKey: tenant.pmsApiKey,
-    };
+    const config = pmsConfigFor(tenant)!;
 
     const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
 
@@ -348,7 +346,7 @@ export class BookingSyncService {
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) {
       throw new Error('PMS not configured for this tenant');
     }
-    const config: PmsTenantConfig = { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey };
+    const config = pmsConfigFor(tenant)!;
     return this.avantioAdapter.getBooking(pmsBookingId, config);
   }
 
@@ -371,7 +369,7 @@ export class BookingSyncService {
       throw new Error('PMS not configured for this tenant');
     }
 
-    const config: PmsTenantConfig = { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey };
+    const config = pmsConfigFor(tenant)!;
 
     // Step 1: push to Avantio
     const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
@@ -1322,10 +1320,7 @@ export class BookingSyncService {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) return;
 
-    const config: PmsTenantConfig = {
-      apiBaseUrl: tenant.pmsApiBaseUrl,
-      apiKey: tenant.pmsApiKey,
-    };
+    const config = pmsConfigFor(tenant)!;
 
     const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
     await adapter.updateBookingTimes(b.pmsBookingId, {
@@ -1341,7 +1336,7 @@ export class BookingSyncService {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) return { synced: 0, created: 0, updated: 0 };
 
-    const config: PmsTenantConfig = { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey };
+    const config = pmsConfigFor(tenant)!;
     return this.syncAccommodations(tenantId, this.getAdapter(tenant.pmsProvider || 'avantio'), config);
   }
 
@@ -1376,7 +1371,7 @@ export class BookingSyncService {
     }
     return {
       tenant: { id: tenant.id, name: tenant.name },
-      config: { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey },
+      config: pmsConfigFor(tenant)!,
       adapter: this.getAdapter(tenant.pmsProvider || 'avantio'),
     };
   }
