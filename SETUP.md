@@ -73,9 +73,29 @@ cp .env.example .env
 AVANTIO_API_KEY=your-real-avantio-api-key
 JWT_SECRET=a-random-string-at-least-32-characters-long
 MAGIC_LINK_SECRET=another-random-string-at-least-32-chars
+CREDENTIALS_ENCRYPTION_KEY=  # openssl rand -hex 32
 ```
 
 For now, the email/S3/FCM keys can stay as placeholders — the app works without them in dev mode.
+
+#### `CREDENTIALS_ENCRYPTION_KEY`
+
+Secrets that have to be read back — today just the tenant's PMS API key —
+are stored in Postgres encrypted with AES-256-GCM under this key. Generate
+one with `openssl rand -hex 32`; it must decode to exactly 32 bytes, and hex
+or base64 are both accepted.
+
+Each environment gets its **own** key. A value encrypted in production cannot
+be read by a local checkout, which is the point: a copied database is not a
+copied credential.
+
+Losing the key does not lose the app. Nothing decrypts, the sync stops with a
+loud error, and the fix is to paste the PMS key into **Settings → PMS Config**
+again under a new encryption key.
+
+`AVANTIO_API_KEY` above is read **only by `prisma db seed`**, for the first-run
+tenant. At runtime everything reads `tenants.pmsApiKey` from Postgres, so
+changing the env var on a running system rotates nothing — use Settings.
 
 ---
 

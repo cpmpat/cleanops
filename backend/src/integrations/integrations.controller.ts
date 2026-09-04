@@ -9,6 +9,7 @@ import { BookingSyncService } from './booking-sync.service';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { PmsTenantConfig } from '../common/interfaces/pms-adapter.interface';
 import { PrismaService } from '../common/prisma.service';
+import { pmsConfigFor } from '../common/pms-config';
 
 @ApiTags('Integrations')
 @ApiBearerAuth()
@@ -43,7 +44,7 @@ export class IntegrationsController {
     if (!tenant?.pmsApiBaseUrl || !tenant?.pmsApiKey) {
       return { connected: false, error: 'PMS API not configured' };
     }
-    const config: PmsTenantConfig = { apiBaseUrl: tenant.pmsApiBaseUrl, apiKey: tenant.pmsApiKey };
+    const config = pmsConfigFor(tenant)!;
     const connected = await this.avantioAdapter.testConnection(config);
     return { connected };
   }

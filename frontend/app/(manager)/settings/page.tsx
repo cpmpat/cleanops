@@ -15,7 +15,18 @@ export default function SettingsPage() {
   const m = useMessageStrings(locale).manager;
 
   const [apiBaseUrl, setApiBaseUrl] = useState('');
+  /**
+   * The key input is a write-only box.
+   *
+   * The server no longer sends the key, so there is nothing to pre-fill and
+   * nothing to accidentally re-submit. Empty means "keep whatever is stored";
+   * only what is typed here is ever sent.
+   */
   const [apiKey, setApiKey] = useState('');
+  const [keySet, setKeySet] = useState(false);
+  const [keyHint, setKeyHint] = useState<string | null>(null);
+  const [keyEncrypted, setKeyEncrypted] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [datasetsSheet, setDatasetsSheet] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -36,25 +47,39 @@ export default function SettingsPage() {
   useEffect(() => {
     tenantApi.get().then((data: any) => {
       setApiBaseUrl(data.pmsApiBaseUrl ?? '');
-      setApiKey(data.pmsApiKey ?? '');
+      setKeySet(Boolean(data.pmsApiKeySet));
+      setKeyHint(data.pmsApiKeyHint ?? null);
+      setKeyEncrypted(Boolean(data.pmsApiKeyEncrypted));
       setSyncEnabled(data.pmsSyncEnabled ?? true);
       setDatasetsSheet(data.datasetsSheetId ?? '');
     }).catch(() => {});
   }, []);
 
   async function handleSave() {
-    setSaving(true); setSaved(false);
+    setSaving(true); setSaved(false); setSaveError('');
     try {
-      await tenantApi.updatePmsConfig({
+      const updated: any = await tenantApi.updatePmsConfig({
         pmsApiBaseUrl: apiBaseUrl,
-        pmsApiKey: apiKey,
+        // Only when a new one has been typed. Everything else on this card can
+        // be saved without touching the credential.
+        ...(apiKey.trim() ? { pmsApiKey: apiKey.trim() } : {}),
         pmsSyncEnabled: syncEnabled,
         pmsProvider: 'avantio',
         datasetsSheetId: datasetsSheet,
       });
+      setKeySet(Boolean(updated?.pmsApiKeySet));
+      setKeyHint(updated?.pmsApiKeyHint ?? null);
+      setKeyEncrypted(Boolean(updated?.pmsApiKeyEncrypted));
+      setApiKey('');      // a secret does not stay in a live input
+      setShowKey(false);
       setSaved(true);
+      setConnectionStatus('idle');   // the stored key changed; the old result no longer describes it
       setTimeout(() => setSaved(false), 3000);
-    } catch {}
+    } catch (err: any) {
+      // This used to be `catch {}`. A credential save that fails silently is
+      // how you find out three hours later, from the sync.
+      setSaveError(err?.message ?? 'Could not save — nothing was changed.');
+    }
     finally { setSaving(false); }
   }
 
@@ -139,7 +164,8 @@ export default function SettingsPage() {
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder="••••••••••••••••"
+                placeholder={keySet ? 'Leave blank to keep the current key' : 'Paste the Avantio API key'}
+                autoComplete="off"
                 className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-surface font-mono"
               />
               <button
@@ -149,12 +175,23 @@ export default function SettingsPage() {
                 {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
+
+            {keySet ? (
+              <p className="text-xs text-ink-muted mt-1.5">
+                Stored{keyHint ? <> and ending <span className="font-mono">{keyHint}</span></> : null}.
+                {keyEncrypted
+                  ? ' Encrypted at rest.'
+                  : ' Stored before encryption existed — save it again to encrypt it.'}
+              </p>
+            ) : (
+              <p className="text-xs text-amber-700 mt-1.5">No key configured — the sync cannot run.</p>
+            )}
           </div>
 
           <div className="flex items-center justify-between py-2">
             <div>
               <p className="text-sm font-medium text-ink">{ts.syncEnabled}</p>
-              <p className="text-xs text-ink-muted">Auto-sync every 5 minutes</p>
+              <p className="text-xs text-ink-muted">Auto-sync every 30 minutes</p>
             </div>
             <button
               onClick={() => setSyncEnabled(v => !v)}
@@ -190,7 +227,7 @@ export default function SettingsPage() {
         <div className="flex gap-2 mt-5 pt-4 border-t border-surface-border">
           <button
             onClick={handleTest}
-            disabled={testing || !apiKey}
+            disabled={testing || !keySet}
             className="flex items-center gap-2 px-4 py-2 border border-surface-border rounded-xl text-sm font-medium text-ink hover:bg-surface-sunken transition disabled:opacity-40"
           >
             {connectionStatus === 'ok' ? <Wifi size={14} className="text-emerald-500" /> :
@@ -211,6 +248,10 @@ export default function SettingsPage() {
             {saving ? t.general.saving : saved ? 'Saved ✓' : t.general.save}
           </button>
         </div>
+
+        {saveError && (
+          <p className="text-xs text-red-600 mt-3">{saveError}</p>
+        )}
       </div>
 
       {/* Manual sync */}
@@ -221,7 +262,7 @@ export default function SettingsPage() {
         </div>
         <p className="text-sm text-ink-muted mb-4">
           Force a full sync of accommodations and bookings from Avantio right now.
-          The automatic sync runs every 5 minutes.
+          The automatic sync runs every 30 minutes.
         </p>
 
         <button

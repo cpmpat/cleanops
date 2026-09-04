@@ -13,6 +13,7 @@
 
 import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { encryptSecret } from '../src/common/crypto';
 
 const prisma = new PrismaClient();
 
@@ -37,12 +38,21 @@ async function main() {
     );
   }
 
+  /**
+   * The seed writes the credential encrypted, like every other writer.
+   *
+   * This matters more than it looks: the upsert's `update` branch refreshes the
+   * key on every seed run, so a seed against a live database would otherwise
+   * quietly replace an encrypted value with plaintext and undo the whole thing.
+   */
+  const sealedApiKey = avantioApiKey ? encryptSecret(avantioApiKey) : null;
+
   const tenant = await prisma.tenant.upsert({
     where: { slug: TENANT_SLUG },
     update: {
       // Refresh Avantio config on every seed run so resets repopulate it
       pmsApiBaseUrl: avantioBaseUrl ?? null,
-      pmsApiKey: avantioApiKey ?? null,
+      pmsApiKey: sealedApiKey,
     },
     create: {
       slug: TENANT_SLUG,
@@ -51,7 +61,7 @@ async function main() {
       pmsProvider: 'avantio',
       pmsSyncEnabled: true,
       pmsApiBaseUrl: avantioBaseUrl ?? null,
-      pmsApiKey: avantioApiKey ?? null,
+      pmsApiKey: sealedApiKey,
     },
   });
   console.log(`  ✓ Tenant: ${tenant.name} (${tenant.id})`);

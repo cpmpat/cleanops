@@ -25,7 +25,24 @@ Entries are newest first. Dates are the merge date.
 
 ## Unreleased — branch `feat/airchat-inbox`
 
-Everything from 2026-08-30 onward. Not on `main`, not deployed.
+Committed, not yet merged, not deployed.
+
+**PMS credential encrypted at rest** (2026-09-04)
+`tenants.pmsApiKey` was a plaintext column, and `GET /tenant` returned it to
+the browser so the Settings input could be pre-filled — putting it in every
+Neon backup and every HAR file. It is now AES-256-GCM under
+`CREDENTIALS_ENCRYPTION_KEY`, decrypted in one place (`pmsConfigFor`), and the
+API returns only whether a key is set and its last four characters. The
+Settings key field became write-only: blank means "keep the current key", so
+saving the sync toggle no longer touches the credential. Rotations are written
+to the audit log. Legacy plaintext values still decrypt, so there is no
+migration — a key encrypts itself the next time it is saved. The seed encrypts
+too, since its upsert refreshes the key on every run.
+*Migrations:* None. *Env:* **`CREDENTIALS_ENCRYPTION_KEY` — new, required**
+(`openssl rand -hex 32`; a different value per environment).
+
+> Without it the app still boots and still reads the existing plaintext key;
+> only *saving* a credential fails, loudly. Set it on Railway before deploying.
 
 **Saved table views + dated change notifications** (2026-08-31)
 The datasets table remembers hidden columns, value filters, sort, frozen
@@ -36,24 +53,62 @@ received date in all four languages, replacing a chat-style stamp that
 showed a time with no day, and the list sorts newest-first on the client.
 *Migrations:* None. *Env:* None. Frontend only.
 
-**CDM datasets** (2026-08-30 → 08-31)
-The User list moved into Postgres; Accommodation migrated in from the CDM
-spreadsheet with column families tinted, per-role column ordering, operator
-vocabulary from the sheet's own mapping tab, link columns at 72px, row
-filters, frozen panes, sortable headers, and CSV/XLSX export through the
-same read as the screen. Stream gained unit and date-range filters.
-*Migrations:* `20260830090000_cdm_datasets_and_roles`,
-`20260831020000_cdm_accommodations`,
-`20260901010000_accommodation_text_columns` — in that order.
-*Env:* None.
-
-> Two `feeAdmin` migrations were written and then dropped (they cancelled
-> each other out). They are in `_to_delete/migrations/` and must **not** be
-> deployed.
-
 ---
 
 ## Deployed
+
+### 2026-09-01 · PR #29
+`feeAdmin` settled as a number; four more columns typed correctly; the CDM tab
+found by how it is actually spelled; import refuses a repeated column name.
+The two `feeAdmin` migrations that cancelled each other out were dropped
+before deploy.
+*Migrations:* `20260901010000_accommodation_text_columns`. *Env:* None.
+
+### 2026-09-01 · PR #28
+Datasets export to CSV and XLSX, through the same read as the screen, so the
+file matches the table rather than the whole dataset.
+*Migrations:* None. *Env:* None.
+
+### 2026-09-01 · PR #27
+Accommodation migrated in from the CDM sheet: column families tinted,
+per-role ordering, link columns at 72px instead of 190. Diacritics in a column
+name are no longer a broken identifier. `--show-keys` on the importer.
+*Migrations:* `20260831020000_cdm_accommodations`. *Env:* None.
+
+### 2026-08-31 · PR #26
+The service-account JSON needs single quotes; `prod.sh` now says so.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-31 · PR #25
+The User list moved into Postgres, with "Add new". `typecheck:scripts` stopped
+reporting two phantom errors on every run.
+*Migrations:* `20260830090000_cdm_datasets_and_roles`. *Env:* None.
+
+### 2026-08-31 · PR #24
+Stream filters by unit and date range, and opens on the first unit.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-29 · PR #23
+The frozen band is measured rather than guessed, closing the seam rows showed
+through. A repeated column name was eating its own label.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-29 · PR #22
+Freeze panes and sortable headers; the mapping tab is found by asking.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-29 · PR #21
+Survive the pre-mapping API shape during a rollout; tab bar stopped floating.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-29 · PR #20
+Operator vocabulary from the sheet's mapping tab, row filters, frozen columns.
+*Migrations:* None. *Env:* None.
+
+### 2026-08-29 · PR #19
+**Boot fix** — the datasets module never imported AuthModule, so the app died
+at startup.
+*Migrations:* None. *Env:* None.
 
 ### 2026-08-29 · PR #18
 Lockfile committed for `google-auth-library`; rebuild trigger.
