@@ -141,7 +141,25 @@ export class BookingSyncService {
     const accomResult = await this.syncAccommodations(tenantId, adapter, config);
 
     // ── Step 2: Sync bookings ──
-    const since = tenant.pmsLastSyncAt || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    //
+    // The window OVERLAPS the previous run by SYNC_OVERLAP_MS. The watermark is
+    // our wall clock; the filter is Avantio's `updatedAt`. Those are not the
+    // same clock: a booking can carry an `updatedAt` a few seconds before our
+    // list call and still not be queryable when that call runs (replication
+    // lag, or a channel import that stamps `updatedAt` before it commits).
+    // Without overlap that booking is skipped by the run that stamps the
+    // watermark past it, and every later run asks for `updatedAt_from` later
+    // than its `updatedAt` — it is excluded forever, with no error and nothing
+    // in pms_sync_failures.
+    //
+    // Measured on 14 Sep 2026: of 2,493 bookings Avantio touched in 30 days,
+    // 7 were never created here, and all 7 had `updatedAt` 0–22 s after a
+    // */30 cron firing (population: uniform). Re-reading a few bookings per
+    // run is free — processBooking is idempotent and emits nothing when
+    // nothing changed — losing one is not.
+    const since = tenant.pmsLastSyncAt
+      ? new Date(tenant.pmsLastSyncAt.getTime() - BookingSyncService.SYNC_OVERLAP_MS)
+      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     // Stamped BEFORE the pull, not after it.
     //
@@ -709,6 +727,14 @@ export class BookingSyncService {
 
   /** Give up asking after this many runs (~6 hours at the 30-minute cadence). */
   private static readonly MAX_SYNC_ATTEMPTS = 12;
+
+  /**
+   * How far behind the watermark each run re-reads. Must exceed the longest
+   * gap between a booking's Avantio `updatedAt` and the moment it becomes
+   * queryable; the measured losses sat within ~25 s of a run, so 15 minutes is
+   * generous and still only a handful of already-known bookings per run.
+   */
+  private static readonly SYNC_OVERLAP_MS = 15 * 60 * 1000;
 
   private async rememberSyncFailure(
     tenantId: string,

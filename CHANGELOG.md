@@ -23,9 +23,29 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/airchat-inbox`
+## Unreleased — branch `fix/sync-window-overlap`
 
-Nothing. Everything committed is merged.
+**Bookings lost at the cron boundary — fixed.** Seven bookings Avantio had
+and we never created (one found by a cleaner) all carried an `updatedAt`
+0–22 s after a `*/30` sync firing; the population is uniform. The watermark
+(our clock) and the filter (`updatedAt_from`, Avantio's clock) had no
+overlap, so a booking not yet queryable at the instant of the list call was
+skipped and then excluded by every later window. The same race dropped
+cancellations (3 ghosts) and modifications (107 stale rows). Two changes: the
+window now starts 15 min behind `pmsLastSyncAt`
+(`BookingSyncService.SYNC_OVERLAP_MS`; the watermark itself is unchanged and
+`processBooking` is idempotent), and the cron fires at `:07` and `:37` instead
+of on the half hour, when Avantio's own job stamps `updatedAt`. Operator-visible
+effect: none, except that the "why is this booking missing" call stops coming.
+Data already repaired on 15 Sep by `backfill:bookings` + `reconcile:turnovers`
+(runbook operation log, 13–15 Sep).
+
+**Read-only diagnostics:** `pnpm diag:booking`, `pnpm diag:boundary`,
+`pnpm diag:list-sort` (see `backend/docs/SYNC-BACKFILL-RUNBOOK.md`).
+
+*Migrations:* None. *Env:* None — but every maintenance script that talks to
+Avantio now needs Railway's `CREDENTIALS_ENCRYPTION_KEY` in
+`backend/.env.production` (runbook §0).
 
 ---
 
