@@ -16,6 +16,9 @@
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
     "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
     "backfill:checkin-times": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-times.ts",
+    "diag:booking": "ts-node -P tsconfig.scripts.json scripts/diag-booking.ts",
+    "diag:list-sort": "ts-node -P tsconfig.scripts.json scripts/diag-list-sort.ts",
+    "diag:boundary": "ts-node -P tsconfig.scripts.json scripts/diag-boundary.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts"
   },

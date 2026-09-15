@@ -49,3 +49,5 @@ coverage/
 # Backup files
 *_BU
 *.backup
+_diag/
+.env.production.bak*

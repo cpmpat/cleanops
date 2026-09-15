@@ -23,6 +23,16 @@ npm run typecheck:scripts          # scripts are outside tsconfig.json's include
 `backend/.env` — a local run defaults to off, and the reconciler prints a note
 saying so. That note reflects *your shell*, not the server.
 
+**Since PR #31 (4 Sep 2026) `tenants.pmsApiKey` is encrypted at rest**, so any
+script that talks to Avantio (`backfill:bookings`, `diag:booking`) also needs
+Railway's `CREDENTIALS_ENCRYPTION_KEY` in `backend/.env.production`. Without
+it, Nest's `ConfigModule` silently falls through to the dev key in
+`backend/.env`, and the script dies at `pmsConfigFor()` with *"Stored secret
+could not be decrypted"* — which reads like a corrupted row and is not. Copy
+the value out of the Railway backend service's Variables. (The
+`AVANTIO_API_KEY` in `backend/.env` is stale — it returns 401 — so it is not a
+fallback either.)
+
 ---
 
 ## 1. Measure the existing drift (do this first)
@@ -164,8 +174,103 @@ Notable findings from that run:
   windowed branch's first execution was on the cron. Fixed with `::int`
   (PR #2). Lesson: exercise both branches of a conditional SQL fragment.
 
+**13–15 Sep 2026 — bookings lost at the cron boundary (A203-HMED24DNKZ, A203-HMMXNMKQSY, +5)**
+
+Two bookings reported as present in Avantio and absent from `bookings`; a
+cleaner found the second one. Both Airbnb, both `UNPAID`/`CONFIRMED` (a UI
+"Pre-booking" is `UNPAID` in the API — active, not skipped), both on properties
+that resolve, neither in `pms_sync_failures`, no audit row, no `Cleaning`, no
+`Turnover`. Sync healthy throughout: watermark minutes old, 38–82 bookings
+created per day.
+
+Two earlier drafts of this entry blamed the Pre-booking status and then cursor
+pagination. Both were wrong and are gone; what follows is what the data showed.
+
+*Census* (`backfill:bookings --updated-since 30d --find-missing`, dry run):
+2,493 ids touched in 30 days, 513 with no local row, of which **506 are
+correctly absent** (cancelled / inquiries / owner blocks) and **7 are real
+misses** — 0.3%, six different units, arrivals 9 Sep to 11 Nov. Same order as
+the 0.54% measured on 22 Aug, so this leak predates the watermark fixes and
+is a separate mechanism.
+
+*Window test* (`diag:booking --id … --window-test`): both reported bookings
+are returned by `GET /bookings` for `updatedAt_from` windows the cron would
+have asked for. So Avantio offered them; the app never listed them; nothing
+was queued (anything that reaches `pullBookings` and fails is queued). The
+loss is inside `collectBookingIds`' *window*, not in fetching or processing.
+
+*The proof* (`diag:boundary`): for all 8,730 bookings updated in 120 days,
+the distance of `updatedAt` from a `*/30` cron firing is uniform (7.19%
+within 60 s; uniform is 6.67%). **All 7 lost bookings sit 0.0–22.3 s after a
+firing.** Under the null that is ~6×10⁻⁹. Two of them (`33900567`, `33877165`)
+have `updatedAt` of exactly `hh:00:00.000` / `hh:30:00.000` — Avantio runs a
+scheduled job on the half hour that touches bookings, at the same instant our
+cron fires.
+
+*Mechanism.* `pmsLastSyncAt` is our wall clock; `updatedAt_from` filters on
+Avantio's clock. A booking stamped `updatedAt = 13:00:09` that is not yet
+queryable when the run's list call goes out at ~13:00:30 (replication lag, or
+a channel import that stamps before it commits) is missed by that run, which
+then writes `pmsLastSyncAt = 13:00:30`. Every later run asks
+`updatedAt_from = 13:00:30` — later than the booking's `updatedAt`. It is
+excluded forever unless Avantio touches it again, which a settled Airbnb
+booking never is. No error, no queue entry, no log line.
+
+*Fix* (both halves, `booking-sync.service.ts` + `jobs.module.ts`):
+
+1. **Overlap.** `since = pmsLastSyncAt − SYNC_OVERLAP_MS` (15 min). The
+   watermark itself is unchanged. `processBooking` is idempotent and emits
+   nothing when nothing changed, so the cost is a handful of re-reads per run.
+2. **Move off the half hour.** `@Cron('7,37 * * * *')` instead of
+   `*/30`, so we no longer fire at the instant Avantio's own job stamps
+   `updatedAt`.
+
+*Remediation, as run on 15 Sep:*
+
+1. `backfill:bookings --updated-since 120d --find-missing` (dry run): still
+   exactly the same 7 — no older backlog.
+2. `backfill:bookings --updated-since 30d --find-missing --apply`: 7 created,
+   7 `previousGuestCheckOutTime` rows corrected; the trailing reconcile
+   reported 9 drift items on 5 properties (mid-chain inserts — expected).
+3. `reconcile:turnovers --all-history --apply --verify`: MISSING 3 +
+   STALE_ENDPOINT 3 applied and verified. 3 IMPOSSIBLE_WINDOW left for
+   review — ghosts (cancelled in Avantio, CONFIRMED here) on Studentská 4/55
+   and Nebozízek 23/2. **A missed cancellation is the same boundary race**,
+   so it was fixed the same way:
+4. `backfill:bookings --updated-since 30d --apply` (no `--find-missing`, so
+   present rows are re-synced): **updated 107, cancelled 3**, 5 timeouts
+   retried from `backfill-failed-prague-stays.txt`; trailing reconcile:
+   *Chains are consistent.* The 107 are lost *modifications* — the third
+   costume of the same bug.
+
+Order matters: the reconciler cannot fix a ghost, only report it; the re-sync
+turns the ghost into a real cancellation and the chain heals itself.
+
+*Also learned:* `GET /bookings` accepts only `sort` ∈ {`creationDate`,
+`updatedAt`, `arrivalDate`, `departureDate`, `createdAt`} (± prefix) and
+`pagination_size` ≥ 10 — `sort=id` is a 400. The 120-day enumeration returned
+8,730 unique ids with 0 duplicates, so cursor pagination on `-updatedAt` is
+sound.
+
+*Tooling:* `diag:booking` (one booking, every local key, Avantio detail,
+property mapping, window test), `diag:boundary` (the cadence test above),
+`diag:list-sort` (sort comparison; superseded by the sort list above), and
+`_diag/run-missing-diag.sh` (all of it for N references plus the census).
+
+---
+
 ## Still open
 
+- **Deploy the cron-boundary fix and backfill the 7** (see 13–15 Sep entry).
+  After deploy, confirm in the Railway log that runs fire at :07/:37 and that
+  each `Bookings list page 1 since …` timestamp is ~15 min behind the previous
+  run's start.
+- **Nightly `--find-missing` sweep as a `@Cron`** (7-day window,
+  notifications suppressed). The overlap closes the measured hole; the sweep
+  is the guard that is indifferent to the cause — it found all 7 before the
+  cause was known. Log every `'skipped'` with reference and raw status.
+- **`--find-missing` over 120 days, dry run**, to size the backlog older than
+  the 30-day census.
 - Deploy verification: confirm the cron logs
   `Reconciled previousGuestCheckOutTime on N cleanings` rather than a warning.
 - Standing health check not yet wired:

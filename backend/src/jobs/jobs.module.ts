@@ -24,11 +24,15 @@ export class PmsSyncJob {
   ) {}
 
   /**
-   * Runs every 5 minutes.
+   * Runs every 30 minutes, at :07 and :37 — deliberately NOT on the half hour.
+   * Avantio has its own scheduled job that touches bookings at exactly :00 and
+   * :30 (updatedAt lands on hh:00:00.000 / hh:30:00.000); firing at the same
+   * instant raced it and lost bookings. See BookingSyncService.SYNC_OVERLAP_MS
+   * for the other half of that fix.
    * Pulls new/updated bookings from Avantio for all active tenants.
    * Skips the run if the previous one is still in progress.
    */
-  @Cron('*/30 * * * *', { timeZone: APP_TIME_ZONE })
+  @Cron('7,37 * * * *', { timeZone: APP_TIME_ZONE })
   async syncAllTenants() {
     if (this.isSyncing) {
       this.logger.warn('PMS sync already in progress — skipping this run');
