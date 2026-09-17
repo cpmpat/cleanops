@@ -23,7 +23,15 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/sync-window-overlap`
+## Unreleased
+
+Nothing. Everything committed is merged.
+
+---
+
+## Deployed
+
+### 2026-09-15 · PR #32
 
 **Bookings lost at the cron boundary — fixed.** Seven bookings Avantio had
 and we never created (one found by a cleaner) all carried an `updatedAt`
@@ -46,10 +54,6 @@ Data already repaired on 15 Sep by `backfill:bookings` + `reconcile:turnovers`
 *Migrations:* None. *Env:* None — but every maintenance script that talks to
 Avantio now needs Railway's `CREDENTIALS_ENCRYPTION_KEY` in
 `backend/.env.production` (runbook §0).
-
----
-
-## Deployed
 
 ### 2026-09-04 · PR #31
 
