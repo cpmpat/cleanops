@@ -8,7 +8,7 @@ import {
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
 import { CleanOpsGateway } from '../websocket/websocket.module';
-import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus } from '@prisma/client';
+import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus, TurnoverStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
 
 export interface SyncResult {
@@ -29,7 +29,7 @@ export interface PlanningFilters {
   arrivalTo?: string;        // filters by checkInTime <=
   creationDateFrom?: string; // filters by event createdAt >=
   creationDateTo?: string;   // filters by event createdAt <=
-  status?: string;           // CleaningStatus value
+  status?: string;           // TurnoverStatus value — the arrival turnover's status
 }
 
 @Injectable()
@@ -321,28 +321,47 @@ export class BookingSyncService {
       if (filters.creationDateTo) Object.assign(where.createdAt, toBound(filters.creationDateTo));
     }
 
-    if (filters.status) where.status = filters.status;
+    // `status` is applied after the read, against the arrival turnover — see
+    // below. It used to be applied to `bookings.status` (CONFIRMED/CANCELLED)
+    // with a cleaning-status value, which matched nothing.
 
     const bookings = await this.prisma.booking.findMany({
       where,
       include: {
         property: { select: { id: true, name: true, pmsPropertyId: true } },
-        cleaning: {
+        cleaning: { select: { id: true, timeSlot: true } },
+        // The cleaning *before this guest arrives* — the live turnover whose
+        // `toBooking` is this booking. This is what cleaners take, start and
+        // mark done, so it is what the desk needs to see. The legacy
+        // `cleaning.status` stayed PENDING forever once cleaners moved to
+        // turnovers, which showed every row as "In pool · Unassigned".
+        turnoversAsTo: {
+          where: {
+            supersededById: null,
+            status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
+          },
           include: {
             assignments: {
-              where: { status: { not: AssignmentStatus.REASSIGNED } },
+              where: { status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.STARTED, AssignmentStatus.COMPLETED] } },
               include: { user: { select: { id: true, name: true } } },
-              orderBy: { isPrimary: 'desc' },
+              orderBy: [{ isPrimary: 'desc' }, { assignedAt: 'asc' }],
             },
           },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
         },
       },
       orderBy: { checkInTime: 'asc' },
     });
 
-    return bookings.map(b => ({
+    const rows = bookings.map(b => {
+      const turnover = b.turnoversAsTo[0] ?? null;
+      return {
       id: b.id,
       cleaningId: b.cleaning?.id,
+      turnoverId: turnover?.id ?? null,
+      /** When the arrival turnover was created — the cleaner's card calls it last-minute if this and the arrival fall on the same day. */
+      turnoverCreatedAt: turnover?.createdAt ?? null,
       pmsBookingId: b.pmsBookingId,
       bookingRef: b.bookingRef,
       accommodationName: b.accommodationName,
@@ -363,17 +382,21 @@ export class BookingSyncService {
       numAdults: b.numAdults,
       numChildren: b.numChildren,
       channel: b.channel,
-      status: b.cleaning?.status,
+      /** Arrival turnover status: PENDING (in pool) → ASSIGNED → IN_PROGRESS → COMPLETED / FLAGGED. Null when no turnover exists yet. */
+      status: turnover?.status ?? null,
       bookingStatus: b.status,
       bookingCancelledAt: b.cancelledAt,
-      assignments: (b.cleaning?.assignments ?? []).map((a: any) => ({
+      assignments: (turnover?.assignments ?? []).map((a) => ({
         id: a.id,
         userId: a.userId,
         userName: a.user.name,
         isPrimary: a.isPrimary,
         status: a.status,
       })),
-    }));
+      };
+    });
+
+    return filters.status ? rows.filter((r) => r.status === filters.status) : rows;
   }
 
   /**

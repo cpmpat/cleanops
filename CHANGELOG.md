@@ -23,9 +23,24 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased
+## Unreleased — branch `feat/planning-turnover-status`
 
-Nothing. Everything committed is merged.
+**Planning shows what the cleaner actually did.** The row's status badge and
+assignees now come from the live *arrival* turnover (the cleaning before this
+guest checks in) instead of the legacy `Cleaning` row, which stayed
+`PENDING · Unassigned` forever once cleaners moved to turnovers. So *In pool
+→ Assigned → In progress → Completed* is finally visible to the desk, and
+completed rows stay listed (muted). Assigning from Planning writes to the
+turnover (`POST /turnovers/:id/assign` / `unassign`), so the cleaner sees it
+and the audit trail has it. The status filter, which compared a cleaning
+status against `bookings.status` and matched nothing, now filters on the
+turnover status. Retirement plan, item 6.
+
+**Last-minute mark for the desk.** Same rule as the cleaner's card — guest
+arrives today and the turnover was created today — shown as a red *Last
+minute* chip and a red left edge on the row.
+
+*Migrations:* None. *Env:* None.
 
 ---
 

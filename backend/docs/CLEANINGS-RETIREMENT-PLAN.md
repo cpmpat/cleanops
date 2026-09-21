@@ -80,7 +80,10 @@ Safe to ship incrementally; the app keeps working throughout.
 5. Manager **schedule** and **dashboard** from `events`/`/cleanings/*` to
    turnover endpoints.
 6. **Planning view** (`getBookingsForPlanning`) returns turnover id/status
-   instead of `cleaning`.
+   instead of `cleaning`. *Done 22 Sep 2026* — status, assignments and
+   `turnoverCreatedAt` come from the live arrival turnover; assign/unassign
+   from Planning go to `/turnovers/:id/*`. `cleaningId` is still returned for
+   incident creation.
 7. **`OverdueCheckJob`** onto turnovers — and give it the lower bound it lacks,
    so a past `ASSIGNED` row stops notifying managers hourly forever.
 8. **`MorningSummaryJob`** onto turnovers, plus `{ timeZone: 'Europe/Prague' }`.

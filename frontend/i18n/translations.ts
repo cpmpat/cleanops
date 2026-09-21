@@ -282,6 +282,7 @@ const _translationsBase = {
       inlineHint: 'Edit the times directly in the list, then push all changes at once.',
       pendingOne: '1 change', pendingMany: 'changes',
       pushAll: 'Push to Avantio', discard: 'Discard', pushFailed: 'Failed — try again',
+      lastMinute: 'Last minute', noTurnover: 'No cleaning', assignFailed: 'Could not assign',
       guests: 'Guests', crib: 'Crib', separateBeds: 'Separate beds', localOnly: 'Recorded here only — not sent to Avantio. Cleaners see it on the card.', saveFailed: 'Could not save',
     },
     dashboard: {
@@ -590,6 +591,7 @@ const _translationsBase = {
       inlineHint: 'Časy upravte přímo v seznamu a pak odešlete všechny změny najednou.',
       pendingOne: '1 změna', pendingMany: 'změn',
       pushAll: 'Odeslat do Avantio', discard: 'Zahodit', pushFailed: 'Nepodařilo se — zkuste znovu',
+      lastMinute: 'Na poslední chvíli', noTurnover: 'Bez úklidu', assignFailed: 'Nepodařilo se přiřadit',
       guests: 'Hosté', crib: 'Postýlka', separateBeds: 'Oddělené postele', localOnly: 'Jen zde — neodesílá se do Avantio. Uklízečka to uvidí na kartě.', saveFailed: 'Nepodařilo se uložit',
     },
     dashboard: {
@@ -861,6 +863,7 @@ const _translationsBase = {
       inlineHint: 'Редактируйте время прямо в списке, затем отправьте все изменения разом.',
       pendingOne: '1 изменение', pendingMany: 'изменений',
       pushAll: 'Отправить в Avantio', discard: 'Отменить', pushFailed: 'Ошибка — попробуйте снова',
+      lastMinute: 'В последний момент', noTurnover: 'Без уборки', assignFailed: 'Не удалось назначить',
       guests: 'Гости', crib: 'Кроватка', separateBeds: 'Раздельные кровати', localOnly: 'Только здесь — в Avantio не отправляется. Уборщица увидит на карточке.', saveFailed: 'Не удалось сохранить',
     },
     dashboard: {
@@ -1132,6 +1135,7 @@ const _translationsBase = {
       inlineHint: 'Редагуйте час прямо у списку, потім надішліть усі зміни разом.',
       pendingOne: '1 зміна', pendingMany: 'змін',
       pushAll: 'Надіслати в Avantio', discard: 'Відхилити', pushFailed: 'Помилка — спробуйте ще раз',
+      lastMinute: 'В останній момент', noTurnover: 'Без прибирання', assignFailed: 'Не вдалося призначити',
       guests: 'Гості', crib: 'Ліжечко', separateBeds: 'Окремі ліжка', localOnly: 'Лише тут — в Avantio не надсилається. Прибиральниця побачить на картці.', saveFailed: 'Не вдалося зберегти',
     },
     dashboard: {
