@@ -17,6 +17,29 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-21 — the browser never builds an instant; times cross the API as `HH:mm` in Prague
+
+**Decision.** Anything a person types as a time is sent to the backend as
+`HH:mm` and resolved there, on the record's own day, in `Europe/Prague`,
+through `backend/src/common/time.ts` (`atTimeInAppZone`). The frontend shows
+times with `formatTime()`, which is pinned to Europe/Prague, 24-hour. No
+frontend code constructs an ISO instant from a date and a time.
+
+**Why.** Check-in Planning built `${date}T${HH:mm}:00.000Z` — Prague wall-clock
+labelled as UTC — so 15:10 was pushed to Avantio, stored and shown as 17:10.
+The July review found the identical fault in the old sync script (§2.1). Two
+occurrences of the same mistake in one codebase is a convention problem, not
+a typo: the convention is now that only `time.ts` converts wall-clock to
+instants. The same rule fixed the arrival-range filter, where a bare `To`
+date was midnight UTC and dropped the last day.
+
+**Not done.** `todayISO()` / `dayKeyISO()` in `frontend/lib/utils.ts` still
+use the browser's date; they seed the default "from" date and the day
+buckets in the cleaner calendar. Correct for a device in Prague, off by one
+day between 22:00 and midnight UTC elsewhere. Same fix when it bites.
+
+---
+
 ## 2026-09-15 — the incremental sync overlaps its window by 15 minutes
 
 **Decision.** `BookingSyncService` asks Avantio for bookings updated since

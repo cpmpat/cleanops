@@ -5,9 +5,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** The zone the business runs in. Times are shown in it regardless of the device's setting. */
+export const APP_TIME_ZONE = 'Europe/Prague';
+
+/**
+ * HH:mm in Europe/Prague, 24-hour.
+ *
+ * Used to follow the browser's zone, so a phone set to another zone — or a
+ * laptop on a trip — showed a different arrival time from the desk next to it.
+ * Backend `timeInAppZone()` is the same function; keep them identical.
+ */
 export function formatTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleTimeString('sv-SE', {
+      timeZone: APP_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
   } catch { return iso; }
 }
 

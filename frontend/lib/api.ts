@@ -189,6 +189,8 @@ export interface PlanningBooking {
   pmsPropertyId?: string;
   checkInTime: string;
   checkOutTime?: string;
+  /** Guest name from the PMS payload; present on the planning list only. */
+  guestName?: string;
   /** Where the stored check-in time came from — FALLBACK means we assumed it. */
   checkInSource?: TimeSource;
   checkOutSource?: TimeSource;
@@ -1238,6 +1240,7 @@ export const integrations = {
     },
     detail: (pmsBookingId: string) =>
       get(`/integrations/planning/bookings/${pmsBookingId}`),
+    /** Times are "HH:mm" in Europe/Prague; the backend anchors them on the booking's own day. */
     updateTimes: (pmsBookingId: string, data: { checkInTime?: string; checkOutTime?: string }) =>
       patch(`/integrations/planning/bookings/${pmsBookingId}`, data),
   },

@@ -23,9 +23,32 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased
+## Unreleased — branch `feat/planning-inline-times`
 
-Nothing. Everything committed is merged.
+**Check-in Planning: typed times are the times Avantio gets.** Editing a
+check-in to 15:10 pushed 17:10 to Avantio and showed 17:10 in the list — the
+page built the instant as `${date}T${HH:mm}:00.000Z`, Prague wall-clock
+labelled as UTC (the same fault as §2.1 of the July script review, in a second
+place). The page now sends plain `HH:mm`; the backend resolves it on the
+booking's own day in Europe/Prague with `atTimeInAppZone`, the one helper the
+sync already uses. `PATCH /integrations/planning/bookings/:id` accepts `HH:mm`
+or an ISO instant.
+
+**Times display in Europe/Prague everywhere.** `formatTime()` no longer follows
+the device's zone, so a phone set to another zone shows the same arrival time
+as the desk. Fixes the "Frontend timezone" item from the runbook's Still open.
+
+**Planning view for the front desk.** *Next 24 / 48 / 72 h* quick filters,
+measured from now; check-in and check-out editable inline on every row, with a
+sticky *N changes → Push to Avantio* bar (three at a time, per-row result,
+failed rows stay marked) and per-row push / undo; the guest's name under the
+unit; ref search also matches the guest. The edit modal is gone.
+
+**Arrival date range fixed.** A bare date bound was midnight UTC, so
+`To = 30 Sep` silently dropped nearly every arrival on the 30th. Bare dates now
+mean the whole Prague day; ISO instants (the quick filters) are taken as-is.
+
+*Migrations:* None. *Env:* None.
 
 ---
 

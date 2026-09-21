@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
+import { atTimeInAppZone, startOfDayInAppZone, todayInAppZone } from '../common/time';
 import {
   PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
 } from '../common/interfaces/pms-adapter.interface';
@@ -294,16 +295,30 @@ export class BookingSyncService {
   async getBookingsForPlanning(tenantId: string, filters: PlanningFilters) {
     const where: any = { tenantId };
 
+    // A bare date ("2026-09-30") means that calendar day in Prague, whole. It
+    // used to become `new Date('2026-09-30')` — midnight UTC — so an arrival
+    // range ending on the 30th silently dropped nearly every arrival on the
+    // 30th, and one starting on the 1st missed arrivals before 02:00. A full
+    // ISO instant (the "next 24 h" quick filters) is taken as-is.
+    const dayOnly = /^\d{4}-\d{2}-\d{2}$/;
+    const fromBound = (v: string) => (dayOnly.test(v) ? startOfDayInAppZone(v) : new Date(v));
+    const toBound = (v: string): { lt: Date } | { lte: Date } => {
+      if (!dayOnly.test(v)) return { lte: new Date(v) };
+      const d = new Date(`${v}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      return { lt: startOfDayInAppZone(d.toISOString().slice(0, 10)) };
+    };
+
     if (filters.arrivalFrom || filters.arrivalTo) {
       where.checkInTime = {};
-      if (filters.arrivalFrom) where.checkInTime.gte = new Date(filters.arrivalFrom);
-      if (filters.arrivalTo) where.checkInTime.lte = new Date(filters.arrivalTo);
+      if (filters.arrivalFrom) where.checkInTime.gte = fromBound(filters.arrivalFrom);
+      if (filters.arrivalTo) Object.assign(where.checkInTime, toBound(filters.arrivalTo));
     }
 
     if (filters.creationDateFrom || filters.creationDateTo) {
       where.createdAt = {};
-      if (filters.creationDateFrom) where.createdAt.gte = new Date(filters.creationDateFrom);
-      if (filters.creationDateTo) where.createdAt.lte = new Date(filters.creationDateTo);
+      if (filters.creationDateFrom) where.createdAt.gte = fromBound(filters.creationDateFrom);
+      if (filters.creationDateTo) Object.assign(where.createdAt, toBound(filters.creationDateTo));
     }
 
     if (filters.status) where.status = filters.status;
@@ -336,6 +351,9 @@ export class BookingSyncService {
       pmsPropertyId: (b.property as any)?.pmsPropertyId,
       checkInTime: b.checkInTime,
       checkOutTime: b.checkOutTime,
+      // The guest, from the stored Avantio payload — the front desk works by
+      // name, not by reference. Managers only; this never reaches a cleaner.
+      guestName: guestNameFromRaw(b.pmsRawData),
       // Lets the Planning view flag times we assumed (FALLBACK) vs. confirmed ones.
       checkInSource: (b as any).checkInSource,
       checkOutSource: (b as any).checkOutSource,
@@ -389,12 +407,6 @@ export class BookingSyncService {
 
     const config = pmsConfigFor(tenant)!;
 
-    // Step 1: push to Avantio
-    const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
-    await adapter.updateBookingTimes(pmsBookingId, data, config);
-    this.logger.log(`Planning: pushed updated times for booking ${pmsBookingId} to Avantio`);
-
-    // Step 2: update local Booking + propagate to Cleaning
     const b = await this.prisma.booking.findFirst({
       where: { tenantId, pmsBookingId },
       include: {
@@ -402,10 +414,36 @@ export class BookingSyncService {
       },
     });
 
+    // The body carries either a wall-clock "HH:mm" or an ISO instant. HH:mm is
+    // what a person typed and means Prague time on the booking's own arrival
+    // (or departure) day; it is resolved here, with the same helper the sync
+    // uses, and nowhere else. The client used to build the instant itself as
+    // `${date}T${HH:mm}:00.000Z` — Prague wall-clock labelled as UTC — so a
+    // typed 15:10 was pushed to Avantio, stored and displayed as 17:10.
+    const resolve = (value: string | undefined, anchor: Date | null | undefined): string | undefined => {
+      if (!value) return undefined;
+      if (!/^\d{1,2}:\d{2}$/.test(value)) return value;
+      // No local row to anchor a date on: hand Avantio the bare HH:mm, which is
+      // the format it wants anyway; the next sync creates the row from it.
+      if (!anchor) return value;
+      return atTimeInAppZone(todayInAppZone(anchor), value).toISOString();
+    };
+    const resolved = {
+      checkInTime: resolve(data.checkInTime, b?.checkInTime),
+      checkOutTime: resolve(data.checkOutTime, b?.checkOutTime ?? b?.checkInTime),
+    };
+
+    // Step 1: push to Avantio
+    const adapter = this.getAdapter(tenant.pmsProvider || 'avantio');
+    await adapter.updateBookingTimes(pmsBookingId, resolved, config);
+    this.logger.log(`Planning: pushed updated times for booking ${pmsBookingId} to Avantio`);
+
+    // Step 2: update local Booking + propagate to Cleaning
     if (!b) {
       // No local booking yet — next sync will create it with the correct times
       return { success: true };
     }
+    data = resolved;
 
     // The audit row should name a person, not a service account.
     const actor = actorId
@@ -1694,4 +1732,15 @@ export class BookingSyncService {
     if (l.includes('direct')) return 'DIRECT';
     return 'OTHER';
   }
+}
+
+/** "Name Surname" from a stored Avantio payload, or undefined. */
+function guestNameFromRaw(raw: unknown): string | undefined {
+  const c = (raw as any)?.customer;
+  if (!c) return undefined;
+  const name = [c.name, ...(Array.isArray(c.surnames) ? c.surnames : [])]
+    .filter((x) => typeof x === 'string' && x.trim())
+    .join(' ')
+    .trim();
+  return name || undefined;
 }

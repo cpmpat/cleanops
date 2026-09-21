@@ -1,15 +1,30 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { integrations, users as usersApi, assignments as assignApi, type PlanningBooking, type User } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
-import { translations, type Locale } from '@/i18n/translations';
+import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, Edit2, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw } from 'lucide-react';
 import type { EventStatus } from '@/lib/api';
 
 const STATUSES: EventStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+
+/** Quick arrival windows, measured from *now* — not from midnight. */
+type QuickWindow = 24 | 48 | 72;
+
+/**
+ * One row's unsaved edit. Values are "HH:mm" in Europe/Prague — exactly what
+ * the input shows and exactly what the backend receives. The date is the
+ * booking's own arrival / departure day and is resolved server-side; the
+ * client never builds an instant, because the last time it did it labelled
+ * Prague wall-clock as UTC and 15:10 became 17:10 everywhere.
+ */
+type Draft = { checkIn: string; checkOut: string };
+type RowState = 'pushing' | 'ok' | 'error';
+
+/** How many rows are pushed to Avantio at once. Small: Avantio rate-limits, and one PUT is ~1 s. */
+const PUSH_CONCURRENCY = 3;
 
 export default function PlanningPage() {
   const { locale } = useLocale();
@@ -25,6 +40,8 @@ export default function PlanningPage() {
   const [refSearch, setRefSearch] = useState('');
   // Bookings whose check-in time we assumed (15:00) because the PMS sent 00:00 / nothing.
   const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
+  // A quick window overrides the date inputs while it is active.
+  const [quick, setQuick] = useState<QuickWindow | null>(null);
 
   // ── Data ──
   const [bookings, setBookings] = useState<PlanningBooking[]>([]);
@@ -32,12 +49,10 @@ export default function PlanningPage() {
   const [loading, setLoading] = useState(false);
   const [cleaners, setCleaners] = useState<User[]>([]);
 
-  // ── Edit time modal ──
-  const [editing, setEditing] = useState<PlanningBooking | null>(null);
-  const [editCheckIn, setEditCheckIn] = useState('');
-  const [editCheckOut, setEditCheckOut] = useState('');
-  const [pushing, setPushing] = useState(false);
-  const [pushResult, setPushResult] = useState<'success' | 'error' | null>(null);
+  // ── Inline time edits ──
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [rowState, setRowState] = useState<Record<string, RowState>>({});
+  const [pushingAll, setPushingAll] = useState(false);
 
   // ── Assign modal ──
   const [assigning, setAssigning] = useState<PlanningBooking | null>(null);
@@ -52,73 +67,128 @@ export default function PlanningPage() {
       .catch(() => {});
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (window: QuickWindow | null = quick) => {
     setLoading(true);
     try {
+      const now = new Date();
       const data = await integrations.planning.list({
-        arrivalFrom: arrivalFrom || undefined,
-        arrivalTo: arrivalTo || undefined,
+        arrivalFrom: window ? now.toISOString() : (arrivalFrom || undefined),
+        arrivalTo: window ? new Date(now.getTime() + window * 3_600_000).toISOString() : (arrivalTo || undefined),
         creationDateFrom: creationFrom || undefined,
         status: statusFilter || undefined,
       });
       setBookings(data);
+      setDrafts({});
+      setRowState({});
       setLoaded(true);
     } catch {}
     finally { setLoading(false); }
-  }, [arrivalFrom, arrivalTo, creationFrom, statusFilter]);
+  }, [quick, arrivalFrom, arrivalTo, creationFrom, statusFilter]);
+
+  function pickQuick(w: QuickWindow) {
+    const next = quick === w ? null : w;
+    setQuick(next);
+    if (next) void load(next);
+  }
 
   const unconfirmedCount = bookings.filter(b => b.checkInSource === 'FALLBACK').length;
 
   const filtered = bookings.filter(b => {
     const matchUnit = !unitSearch || b.accommodationName.toLowerCase().includes(unitSearch.toLowerCase());
-    const matchRef = !refSearch || b.bookingRef.toLowerCase().includes(refSearch.toLowerCase());
+    const matchRef = !refSearch || b.bookingRef.toLowerCase().includes(refSearch.toLowerCase())
+      || (b.guestName ?? '').toLowerCase().includes(refSearch.toLowerCase());
     const matchUnconfirmed = !onlyUnconfirmed || b.checkInSource === 'FALLBACK';
     return matchUnit && matchRef && matchUnconfirmed;
   });
 
-  function openEdit(b: PlanningBooking) {
-    setEditing(b);
-    setEditCheckIn(b.checkInTime ? formatTime(b.checkInTime) : '');
-    setEditCheckOut(b.checkOutTime ? formatTime(b.checkOutTime) : '');
-    setPushResult(null);
+  // ── Draft bookkeeping ──
+  const stored = (b: PlanningBooking): Draft => ({
+    checkIn: formatTime(b.checkInTime),
+    checkOut: b.checkOutTime ? formatTime(b.checkOutTime) : '',
+  });
+
+  function isDirty(b: PlanningBooking): boolean {
+    const d = drafts[b.id];
+    if (!d) return false;
+    const s = stored(b);
+    return d.checkIn !== s.checkIn || d.checkOut !== s.checkOut;
   }
 
+  function setDraft(b: PlanningBooking, patch: Partial<Draft>) {
+    setDrafts(prev => ({ ...prev, [b.id]: { ...(prev[b.id] ?? stored(b)), ...patch } }));
+    setRowState(prev => without(prev, b.id));
+  }
+
+  function discardDraft(b: PlanningBooking) {
+    setDrafts(prev => without(prev, b.id));
+    setRowState(prev => without(prev, b.id));
+  }
+
+  const dirtyRows = useMemo(
+    () => bookings.filter(b => b.pmsBookingId && isDirty(b)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bookings, drafts],
+  );
+
+  /** Push one row. Sends only the fields that changed; HH:mm, Prague. */
+  async function pushRow(b: PlanningBooking): Promise<boolean> {
+    const d = drafts[b.id];
+    if (!d || !b.pmsBookingId) return false;
+    const s = stored(b);
+    const body: { checkInTime?: string; checkOutTime?: string } = {};
+    if (d.checkIn && d.checkIn !== s.checkIn) body.checkInTime = d.checkIn;
+    if (d.checkOut && d.checkOut !== s.checkOut) body.checkOutTime = d.checkOut;
+    if (!body.checkInTime && !body.checkOutTime) { discardDraft(b); return true; }
+
+    setRowState(prev => ({ ...prev, [b.id]: 'pushing' }));
+    try {
+      await integrations.planning.updateTimes(b.pmsBookingId, body);
+      // Reflect what the server now holds. Re-anchor on the booking's own day
+      // in Prague — the same rule the backend applied — so the row shows the
+      // typed time without a reload and without inventing a UTC instant.
+      setBookings(prev => prev.map(x => x.id !== b.id ? x : {
+        ...x,
+        checkInTime: body.checkInTime ? withPragueTime(x.checkInTime, body.checkInTime) : x.checkInTime,
+        checkOutTime: body.checkOutTime ? withPragueTime(x.checkOutTime ?? x.checkInTime, body.checkOutTime) : x.checkOutTime,
+        checkInSource: body.checkInTime ? ('MANAGER' as const) : x.checkInSource,
+        checkOutSource: body.checkOutTime ? ('MANAGER' as const) : x.checkOutSource,
+      }));
+      setDrafts(prev => without(prev, b.id));
+      setRowState(prev => ({ ...prev, [b.id]: 'ok' }));
+      setTimeout(() => setRowState(prev => (prev[b.id] === 'ok' ? without(prev, b.id) : prev)), 2500);
+      return true;
+    } catch {
+      setRowState(prev => ({ ...prev, [b.id]: 'error' }));
+      return false;
+    }
+  }
+
+  /** Push every dirty row, a few at a time. Failed rows stay dirty and marked. */
+  async function pushAll() {
+    if (pushingAll || dirtyRows.length === 0) return;
+    setPushingAll(true);
+    try {
+      const queue = [...dirtyRows];
+      const workers = Array.from({ length: Math.min(PUSH_CONCURRENCY, queue.length) }, async () => {
+        for (let b = queue.shift(); b; b = queue.shift()) await pushRow(b);
+      });
+      await Promise.all(workers);
+    } finally {
+      setPushingAll(false);
+    }
+  }
+
+  function discardAll() {
+    setDrafts({});
+    setRowState({});
+  }
+
+  // ── Assign ──
   function openAssign(b: PlanningBooking, oldUserId?: string) {
     setAssigning(b);
     setReassigningUserId(oldUserId ?? null);
     setSelectedCleaner('');
     setAssignError('');
-  }
-
-  async function handlePush() {
-    if (!editing?.pmsBookingId) return;
-    setPushing(true);
-    setPushResult(null);
-    try {
-      const arrDate = editing.checkInTime.split('T')[0];
-      const depDate = editing.checkOutTime?.split('T')[0] ?? arrDate;
-      await integrations.planning.updateTimes(editing.pmsBookingId, {
-        checkInTime: editCheckIn ? `${arrDate}T${editCheckIn}:00.000Z` : undefined,
-        checkOutTime: editCheckOut ? `${depDate}T${editCheckOut}:00.000Z` : undefined,
-      });
-      setPushResult('success');
-      setBookings(prev => prev.map(b =>
-        b.pmsBookingId === editing.pmsBookingId
-          ? {
-              ...b,
-              checkInTime: `${arrDate}T${editCheckIn}:00.000Z`,
-              checkOutTime: editCheckOut ? `${depDate}T${editCheckOut}:00.000Z` : b.checkOutTime,
-              // Manager just confirmed these — drop the amber "assumed" marker immediately.
-              checkInSource: editCheckIn ? ('MANAGER' as const) : b.checkInSource,
-              checkOutSource: editCheckOut ? ('MANAGER' as const) : b.checkOutSource,
-            }
-          : b
-      ));
-    } catch {
-      setPushResult('error');
-    } finally {
-      setPushing(false);
-    }
   }
 
   async function handleAssign() {
@@ -160,25 +230,49 @@ export default function PlanningPage() {
     }
   }
 
+  const quickBtn = (w: QuickWindow, label: string) => (
+    <button
+      key={w}
+      type="button"
+      onClick={() => pickQuick(w)}
+      className={cn(
+        'px-3 py-2 rounded-xl text-sm font-semibold border transition',
+        quick === w
+          ? 'bg-ink text-white border-ink'
+          : 'bg-surface border-surface-border text-ink-muted hover:text-ink'
+      )}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="p-6 max-w-6xl">
+    <div className="p-6 max-w-6xl pb-28">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-ink">{tp.title}</h1>
-        <p className="text-sm text-ink-muted mt-0.5">{tp.subtitle}</p>
+        <p className="text-sm text-ink-muted mt-0.5">{tp.subtitle} · {tp.inlineHint}</p>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-surface-border p-4 mb-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        {/* Quick windows */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider mr-1">{tp.filterArrival}</span>
+          {quickBtn(24, tp.next24)}
+          {quickBtn(48, tp.next48)}
+          {quickBtn(72, tp.next72)}
+        </div>
+
+        <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 transition', quick && 'opacity-50')}>
           <div>
             <label className="block text-xs font-semibold text-ink-muted mb-1">{tp.filterArrival} {tp.filterFrom}</label>
-            <input type="date" value={arrivalFrom} onChange={e => setArrivalFrom(e.target.value)}
+            <input type="date" value={arrivalFrom} onChange={e => { setQuick(null); setArrivalFrom(e.target.value); }}
               className="w-full text-sm px-3 py-2 rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-ink-muted mb-1">{tp.filterArrival} {tp.filterTo}</label>
-            <input type="date" value={arrivalTo} onChange={e => setArrivalTo(e.target.value)}
+            <input type="date" value={arrivalTo} onChange={e => { setQuick(null); setArrivalTo(e.target.value); }}
               className="w-full text-sm px-3 py-2 rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent" />
           </div>
           <div>
@@ -212,7 +306,7 @@ export default function PlanningPage() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
             <input
               type="text"
-              placeholder="Filter by booking ref"
+              placeholder="Filter by booking ref or guest"
               value={refSearch}
               onChange={e => setRefSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
@@ -241,7 +335,7 @@ export default function PlanningPage() {
             )}
           </button>
           <button
-            onClick={load}
+            onClick={() => void load(null)}
             disabled={loading}
             className="flex items-center gap-2 px-5 py-2 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50"
           >
@@ -263,139 +357,170 @@ export default function PlanningPage() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
-          <div className="px-4 py-3 border-b border-surface-border">
+          <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
+            <p className="text-xs text-ink-faint">{tp.checkInTime} ↓ · {tp.checkOutTime} ↑ · Europe/Prague</p>
           </div>
           <div className="divide-y divide-surface-border">
-            {filtered.map(b => (
-              <div key={b.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-surface-sunken transition group">
-                {b.status && <StatusBadge status={b.status} t={t} size="sm" />}
+            {filtered.map(b => {
+              const d = drafts[b.id] ?? stored(b);
+              const dirty = isDirty(b);
+              const state = rowState[b.id];
+              const editable = !!b.pmsBookingId;
+              return (
+                <div
+                  key={b.id}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-3 transition group',
+                    dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
+                    state === 'error' && 'bg-red-50',
+                  )}
+                >
+                  {b.status && <StatusBadge status={b.status} t={t} size="sm" />}
 
-                {/* Unit + ref */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="font-mono text-xs text-ink-faint">{b.bookingRef}</span>
-                    <ChannelDot channel={b.channel} label={t.channel[b.channel] ?? b.channel} />
+                  {/* Unit + guest + ref */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
+                    <div className="flex items-center gap-3 mt-0.5 min-w-0">
+                      {b.guestName && (
+                        <span className="text-xs text-ink-soft truncate max-w-[220px]" title={`${tp.guest}: ${b.guestName}`}>
+                          {b.guestName}
+                        </span>
+                      )}
+                      <span className="font-mono text-xs text-ink-faint">{b.bookingRef}</span>
+                      <ChannelDot channel={b.channel} label={t.channel[b.channel] ?? b.channel} />
+                    </div>
                   </div>
-                </div>
 
-                {/* Times */}
-                <div className="text-right flex-shrink-0 w-28">
-                  <p className="text-xs font-semibold text-ink flex items-center justify-end gap-1.5">
-                    {b.checkInSource === 'FALLBACK' && (
-                      <span
-                        title={tp.unconfirmedHint}
-                        className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"
-                      />
+                  {/* Times — inline */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {b.checkInSource === 'FALLBACK' && !dirty && (
+                      <span title={tp.unconfirmedHint} className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                     )}
-                    ↓ {formatTime(b.checkInTime)}
-                  </p>
-                  {b.checkOutTime && <p className="text-xs text-ink-muted">↑ {formatTime(b.checkOutTime)}</p>}
-                </div>
+                    <label className="flex items-center gap-1 text-xs text-ink-muted">
+                      <span aria-hidden>↓</span>
+                      <input
+                        type="time"
+                        value={d.checkIn}
+                        disabled={!editable || state === 'pushing'}
+                        onChange={e => setDraft(b, { checkIn: e.target.value })}
+                        onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
+                        aria-label={tp.checkInTime}
+                        className={cn(
+                          'w-[5.5rem] px-2 py-1.5 rounded-lg border text-sm font-semibold text-ink tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          dirty && d.checkIn !== stored(b).checkIn ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
+                        )}
+                      />
+                    </label>
+                    <label className="flex items-center gap-1 text-xs text-ink-muted">
+                      <span aria-hidden>↑</span>
+                      <input
+                        type="time"
+                        value={d.checkOut}
+                        disabled={!editable || state === 'pushing'}
+                        onChange={e => setDraft(b, { checkOut: e.target.value })}
+                        onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
+                        aria-label={tp.checkOutTime}
+                        className={cn(
+                          'w-[5.5rem] px-2 py-1.5 rounded-lg border text-sm text-ink-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          dirty && d.checkOut !== stored(b).checkOut ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
+                        )}
+                      />
+                    </label>
 
-                {/* Assignees */}
-                <div className="flex items-center gap-2 flex-shrink-0 w-52 justify-end">
-                  {b.assignments.length === 0 ? (
-                    <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      {b.assignments.slice(0, 2).map(a => (
-                        <div key={a.id} className="flex items-center gap-1 bg-surface-sunken rounded-full pl-1 pr-2.5 py-1">
-                          <div className="w-5 h-5 rounded-full bg-ink text-white text-[10px] flex items-center justify-center font-bold">
-                            {a.userName[0]}
-                          </div>
-                          <span className="text-xs text-ink-soft max-w-[60px] truncate">{a.userName.split(' ')[0]}</span>
-                          {/* Reassign button */}
+                    {/* Row action: push / undo / result */}
+                    <div className="w-16 flex items-center justify-end gap-1">
+                      {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
+                      {state === 'ok' && <Check size={15} className="text-emerald-600" />}
+                      {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
+                      {dirty && state !== 'pushing' && (
+                        <>
                           <button
-                            onClick={() => openAssign(b, a.userId)}
-                            title={`Reassign ${a.userName}`}
-                            className="ml-0.5 text-ink-faint hover:text-accent transition"
+                            onClick={() => void pushRow(b)}
+                            title={tp.pushToAvantio}
+                            className="p-1.5 rounded-lg text-ink hover:text-accent hover:bg-accent-soft transition"
                           >
-                            <ArrowLeftRight size={11} />
+                            <Send size={14} />
                           </button>
-                        </div>
-                      ))}
-                      {b.assignments.length > 2 && (
-                        <span className="text-xs text-ink-faint">+{b.assignments.length - 2}</span>
+                          <button
+                            onClick={() => discardDraft(b)}
+                            title={tp.discard}
+                            className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-surface-sunken transition"
+                          >
+                            <RotateCcw size={13} />
+                          </button>
+                        </>
                       )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Add cleaner */}
-                  {b.assignments.length < 3 && (
-                    <button
-                      onClick={() => openAssign(b)}
-                      title="Assign cleaner"
-                      className="p-1.5 rounded-lg text-ink-muted hover:text-accent hover:bg-accent-soft transition"
-                    >
-                      <UserPlus size={15} />
-                    </button>
-                  )}
-
-                  {/* Edit times */}
-                  {b.pmsBookingId && (
-                    <button
-                      onClick={() => openEdit(b)}
-                      title="Edit check-in/out times"
-                      className="p-1.5 rounded-lg text-ink-muted hover:text-accent hover:bg-accent-soft transition opacity-0 group-hover:opacity-100"
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                  )}
+                  {/* Assignees */}
+                  <div className="flex items-center gap-2 flex-shrink-0 w-48 justify-end">
+                    {b.assignments.length === 0 ? (
+                      <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        {b.assignments.slice(0, 2).map(a => (
+                          <div key={a.id} className="flex items-center gap-1 bg-surface-sunken rounded-full pl-1 pr-2.5 py-1">
+                            <div className="w-5 h-5 rounded-full bg-ink text-white text-[10px] flex items-center justify-center font-bold">
+                              {a.userName[0]}
+                            </div>
+                            <span className="text-xs text-ink-soft max-w-[60px] truncate">{a.userName.split(' ')[0]}</span>
+                            <button
+                              onClick={() => openAssign(b, a.userId)}
+                              title={`Reassign ${a.userName}`}
+                              className="ml-0.5 text-ink-faint hover:text-accent transition"
+                            >
+                              <ArrowLeftRight size={11} />
+                            </button>
+                          </div>
+                        ))}
+                        {b.assignments.length > 2 && (
+                          <span className="text-xs text-ink-faint">+{b.assignments.length - 2}</span>
+                        )}
+                      </div>
+                    )}
+                    {b.assignments.length < 3 && (
+                      <button
+                        onClick={() => openAssign(b)}
+                        title="Assign cleaner"
+                        className="p-1.5 rounded-lg text-ink-muted hover:text-accent hover:bg-accent-soft transition"
+                      >
+                        <UserPlus size={15} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* ── Edit times modal ── */}
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditing(null)} />
-          <div className="relative bg-white rounded-2xl shadow-modal w-full max-w-sm mx-4 p-6 animate-scale-in">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="font-bold text-ink">{tp.editTimes}</h3>
-                <p className="text-xs text-ink-muted mt-0.5 truncate max-w-[220px]">{editing.accommodationName}</p>
-              </div>
-              <button onClick={() => setEditing(null)} className="p-1.5 rounded-lg hover:bg-surface-sunken text-ink-muted">
-                <X size={16} />
+      {/* ── Sticky push bar ── */}
+      {dirtyRows.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
+          <div className="max-w-6xl mx-auto px-6 pb-5">
+            <div className="pointer-events-auto flex items-center gap-3 bg-ink text-white rounded-2xl shadow-modal px-5 py-3 animate-scale-in">
+              <span className="text-sm font-semibold flex-1">
+                {dirtyRows.length === 1 ? tp.pendingOne : `${dirtyRows.length} ${tp.pendingMany}`}
+              </span>
+              <button
+                onClick={discardAll}
+                disabled={pushingAll}
+                className="px-3 py-2 rounded-xl text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 transition disabled:opacity-50"
+              >
+                {tp.discard}
+              </button>
+              <button
+                onClick={() => void pushAll()}
+                disabled={pushingAll}
+                className="flex items-center gap-2 px-4 py-2 bg-white text-ink rounded-xl text-sm font-semibold hover:bg-surface transition disabled:opacity-50"
+              >
+                <Send size={14} />
+                {pushingAll ? tp.pushing : tp.pushAll}
               </button>
             </div>
-            {editing.checkInSource === 'FALLBACK' && (
-              <p className="mb-4 flex items-start gap-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-                {tp.unconfirmedHint}
-              </p>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-ink-muted mb-1.5">{tp.checkInTime}</label>
-                <input type="time" value={editCheckIn} onChange={e => setEditCheckIn(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-ink-muted mb-1.5">{tp.checkOutTime}</label>
-                <input type="time" value={editCheckOut} onChange={e => setEditCheckOut(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
-              </div>
-            </div>
-            {pushResult === 'success' && (
-              <p className="mt-4 text-sm text-emerald-600 bg-emerald-50 rounded-xl px-3 py-2.5 font-medium">{tp.pushed}</p>
-            )}
-            {pushResult === 'error' && (
-              <p className="mt-4 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2.5">{t.general.error}</p>
-            )}
-            <button
-              onClick={handlePush}
-              disabled={pushing || (!editCheckIn && !editCheckOut)}
-              className="mt-5 w-full flex items-center justify-center gap-2 py-3 bg-ink text-white rounded-xl font-semibold text-sm hover:bg-ink-soft transition disabled:opacity-50"
-            >
-              <Send size={15} />
-              {pushing ? tp.pushing : tp.pushToAvantio}
-            </button>
           </div>
         </div>
       )}
@@ -417,7 +542,6 @@ export default function PlanningPage() {
               </button>
             </div>
 
-            {/* Current assignees */}
             {assigning.assignments.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Currently assigned</p>
@@ -439,7 +563,6 @@ export default function PlanningPage() {
               </div>
             )}
 
-            {/* Cleaner picker */}
             <div className="mb-4">
               <label className="block text-xs font-semibold text-ink-muted mb-1.5">
                 {reassigningUserId ? 'Select replacement cleaner' :
@@ -480,4 +603,27 @@ export default function PlanningPage() {
       )}
     </div>
   );
+}
+
+/** A copy of `obj` without `key`. */
+function without<T>(obj: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in obj)) return obj;
+  const copy = { ...obj };
+  delete copy[key];
+  return copy;
+}
+
+/**
+ * The instant that reads `hhmm` in Europe/Prague on the same Prague day as
+ * `iso`. Mirrors backend `atTimeInAppZone(todayInAppZone(anchor), time)`; used
+ * only to update the row optimistically after a successful push, so the
+ * server's value and the row agree without a reload. DST-safe: the offset is
+ * resolved at the target time, not at midnight.
+ */
+function withPragueTime(iso: string, hhmm: string): string {
+  const day = new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
+  const [h = '00', m = '00'] = hhmm.split(':');
+  const probe = new Date(`${day}T${h.padStart(2, '0')}:${m.padStart(2, '0')}:00Z`);
+  const asZoned = new Date(probe.toLocaleString('sv-SE', { timeZone: 'Europe/Prague' }).replace(' ', 'T') + 'Z');
+  return new Date(probe.getTime() - (asZoned.getTime() - probe.getTime())).toISOString();
 }
