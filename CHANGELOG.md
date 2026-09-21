@@ -23,7 +23,15 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/planning-inline-times`
+## Unreleased
+
+Nothing. Everything committed is merged.
+
+---
+
+## Deployed
+
+### 2026-09-21 · PR #33
 
 **Check-in Planning: typed times are the times Avantio gets.** Editing a
 check-in to 15:10 pushed 17:10 to Avantio and showed 17:10 in the list — the
@@ -49,10 +57,6 @@ unit; ref search also matches the guest. The edit modal is gone.
 mean the whole Prague day; ISO instants (the quick filters) are taken as-is.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-15 · PR #32
 
