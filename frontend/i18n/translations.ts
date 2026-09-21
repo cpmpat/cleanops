@@ -282,6 +282,7 @@ const _translationsBase = {
       inlineHint: 'Edit the times directly in the list, then push all changes at once.',
       pendingOne: '1 change', pendingMany: 'changes',
       pushAll: 'Push to Avantio', discard: 'Discard', pushFailed: 'Failed — try again',
+      guests: 'Guests', crib: 'Crib', separateBeds: 'Separate beds', localOnly: 'Recorded here only — not sent to Avantio. Cleaners see it on the card.', saveFailed: 'Could not save',
     },
     dashboard: {
       title: "Today's Overview",
@@ -589,6 +590,7 @@ const _translationsBase = {
       inlineHint: 'Časy upravte přímo v seznamu a pak odešlete všechny změny najednou.',
       pendingOne: '1 změna', pendingMany: 'změn',
       pushAll: 'Odeslat do Avantio', discard: 'Zahodit', pushFailed: 'Nepodařilo se — zkuste znovu',
+      guests: 'Hosté', crib: 'Postýlka', separateBeds: 'Oddělené postele', localOnly: 'Jen zde — neodesílá se do Avantio. Uklízečka to uvidí na kartě.', saveFailed: 'Nepodařilo se uložit',
     },
     dashboard: {
       title: 'Přehled dne', total: 'Celkem', completed: 'Hotovo',
@@ -859,6 +861,7 @@ const _translationsBase = {
       inlineHint: 'Редактируйте время прямо в списке, затем отправьте все изменения разом.',
       pendingOne: '1 изменение', pendingMany: 'изменений',
       pushAll: 'Отправить в Avantio', discard: 'Отменить', pushFailed: 'Ошибка — попробуйте снова',
+      guests: 'Гости', crib: 'Кроватка', separateBeds: 'Раздельные кровати', localOnly: 'Только здесь — в Avantio не отправляется. Уборщица увидит на карточке.', saveFailed: 'Не удалось сохранить',
     },
     dashboard: {
       title: 'Обзор дня', total: 'Всего', completed: 'Готово',
@@ -1129,6 +1132,7 @@ const _translationsBase = {
       inlineHint: 'Редагуйте час прямо у списку, потім надішліть усі зміни разом.',
       pendingOne: '1 зміна', pendingMany: 'змін',
       pushAll: 'Надіслати в Avantio', discard: 'Відхилити', pushFailed: 'Помилка — спробуйте ще раз',
+      guests: 'Гості', crib: 'Ліжечко', separateBeds: 'Окремі ліжка', localOnly: 'Лише тут — в Avantio не надсилається. Прибиральниця побачить на картці.', saveFailed: 'Не вдалося зберегти',
     },
     dashboard: {
       title: 'Огляд дня', total: 'Всього', completed: 'Готово',
