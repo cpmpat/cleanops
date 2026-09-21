@@ -98,7 +98,8 @@ export class IntegrationsController {
     description:
       'Pushes the updated times to Avantio via PUT /bookings/{id}, then ' +
       'updates the local cleaning event and notifies any assigned cleaners. ' +
-      'Body: { checkInTime?: string (ISO), checkOutTime?: string (ISO) }',
+      'Body: { checkInTime?: string, checkOutTime?: string } — each either "HH:mm" ' +
+      '(wall-clock time in Europe/Prague on the booking\'s own day; preferred) or an ISO instant.',
   })
   async updateBookingTimes(
     @Req() req: TenantRequest,
