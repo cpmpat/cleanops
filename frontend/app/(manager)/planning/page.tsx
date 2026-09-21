@@ -1,14 +1,29 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { integrations, bookings as bookingsApi, users as usersApi, assignments as assignApi, type PlanningBooking, type User } from '@/lib/api';
+import { integrations, bookings as bookingsApi, users as usersApi, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle } from 'lucide-react';
-import type { EventStatus } from '@/lib/api';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame } from 'lucide-react';
+import type { TurnoverStatus } from '@/lib/api';
 
-const STATUSES: EventStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+/** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
+const STATUSES: TurnoverStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'FLAGGED'];
+
+/** YYYY-MM-DD in Europe/Prague — the day a cleaner would call "today". */
+const pragueDay = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
+
+/**
+ * Same rule as the cleaner's card: the guest arrives today and the turnover
+ * was only created today — so nobody planned for it yesterday. Kept identical
+ * so the desk and the cleaner never disagree about which job is the fire.
+ */
+function isLastMinute(b: PlanningBooking): boolean {
+  if (!b.turnoverCreatedAt || b.status === 'COMPLETED') return false;
+  const today = pragueDay(new Date().toISOString());
+  return pragueDay(b.checkInTime) === today && pragueDay(b.turnoverCreatedAt) === today;
+}
 
 /** Quick arrival windows, measured from *now* — not from midnight. */
 type QuickWindow = 24 | 48 | 72;
@@ -214,14 +229,20 @@ export default function PlanningPage() {
 
   async function handleAssign() {
     if (!assigning || !selectedCleaner) return;
+    if (!assigning.turnoverId) { setAssignError(tp.noTurnover); return; }
     setAssignBusy(true);
     setAssignError('');
     try {
+      // Assignments live on the turnover — the row the cleaner claims, starts
+      // and marks done. The old /assignments/* calls wrote to the legacy
+      // Cleaning row, which the cleaner app no longer reads.
       if (reassigningUserId) {
-        await assignApi.reassign(assigning.id, reassigningUserId, selectedCleaner);
-      } else {
-        await assignApi.assign(assigning.id, selectedCleaner);
+        await turnoversApi.unassign(assigning.turnoverId, reassigningUserId);
       }
+      const isPrimary = reassigningUserId
+        ? assigning.assignments.find(a => a.userId === reassigningUserId)?.isPrimary
+        : assigning.assignments.length === 0;
+      await turnoversApi.assign(assigning.turnoverId, selectedCleaner, isPrimary);
       const cleaner = cleaners.find(c => c.id === selectedCleaner);
       setBookings(prev => prev.map(b => {
         if (b.id !== assigning.id) return b;
@@ -243,9 +264,11 @@ export default function PlanningPage() {
           ],
         };
       }));
+      // A fresh assignment moves the turnover out of the pool.
+      setBookings(prev => prev.map(b => (b.id === assigning.id && b.status === 'PENDING' ? { ...b, status: 'ASSIGNED' } : b)));
       setAssigning(null);
     } catch (e: any) {
-      setAssignError(e.message ?? 'Failed to assign');
+      setAssignError(e.message ?? tp.assignFailed);
     } finally {
       setAssignBusy(false);
     }
@@ -306,7 +329,7 @@ export default function PlanningPage() {
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
               className="w-full text-sm px-3 py-2 rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent">
               <option value="">{tp.allStatuses}</option>
-              {STATUSES.map(s => <option key={s} value={s}>{t.status[s]}</option>)}
+              {STATUSES.map(s => <option key={s} value={s}>{t.status[s as keyof typeof t.status] ?? s}</option>)}
             </select>
           </div>
         </div>
@@ -388,6 +411,8 @@ export default function PlanningPage() {
               const dirty = isDirty(b);
               const state = rowState[b.id];
               const editable = !!b.pmsBookingId;
+              const lastMinute = isLastMinute(b);
+              const done = b.status === 'COMPLETED';
               return (
                 <div
                   key={b.id}
@@ -395,13 +420,28 @@ export default function PlanningPage() {
                     'flex items-center gap-3 px-4 py-3 transition group',
                     dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-red-50',
+                    lastMinute && !dirty && 'border-l-4 border-l-red-400',
+                    done && 'opacity-70',
                   )}
                 >
-                  {b.status && <StatusBadge status={b.status} t={t} size="sm" />}
+                  {/* Arrival-turnover status: what the cleaner did with it. */}
+                  {b.status ? (
+                    <StatusBadge status={b.status as any} t={t} size="sm" />
+                  ) : (
+                    <span className="text-[11px] text-ink-faint w-16 text-center" title={tp.noTurnover}>—</span>
+                  )}
 
                   {/* Unit + guest + ref */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
+                    <p className="text-sm font-semibold text-ink truncate flex items-center gap-2">
+                      {b.accommodationName}
+                      {lastMinute && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 text-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide flex-shrink-0">
+                          <Flame size={10} />
+                          {tp.lastMinute}
+                        </span>
+                      )}
+                    </p>
                     <div className="flex items-center gap-3 mt-0.5 min-w-0">
                       {b.guestName && (
                         <span className="text-xs text-ink-soft truncate max-w-[220px]" title={`${tp.guest}: ${b.guestName}`}>
@@ -524,7 +564,9 @@ export default function PlanningPage() {
                   {/* Assignees */}
                   <div className="flex items-center gap-2 flex-shrink-0 w-44 justify-end">
                     {b.assignments.length === 0 ? (
-                      <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
+                      b.turnoverId && !done
+                        ? <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
+                        : <span className="text-xs text-ink-faint" />
                     ) : (
                       <div className="flex items-center gap-1.5">
                         {b.assignments.slice(0, 2).map(a => (
@@ -547,7 +589,7 @@ export default function PlanningPage() {
                         )}
                       </div>
                     )}
-                    {b.assignments.length < 3 && (
+                    {b.turnoverId && !done && b.assignments.length < 3 && (
                       <button
                         onClick={() => openAssign(b)}
                         title="Assign cleaner"

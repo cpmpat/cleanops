@@ -181,6 +181,9 @@ export interface Notification {
 export interface PlanningBooking {
   id: string;
   cleaningId?: string;
+  /** The live turnover before this guest arrives — what cleaners take and mark done. Null when none exists yet. */
+  turnoverId?: string | null;
+  turnoverCreatedAt?: string | null;
   pmsBookingId?: string;
   bookingRef: string;
   accommodationName: string;
@@ -201,7 +204,8 @@ export interface PlanningBooking {
   numAdults: number;
   numChildren: number;
   channel: BookingChannel;
-  status?: CleaningStatus;
+  /** Arrival turnover status; null when no turnover exists yet. */
+  status?: TurnoverStatus | null;
   bookingStatus: BookingStatus;
   bookingCancelledAt?: string | null;
   assignments: {
@@ -747,6 +751,12 @@ export const turnovers = {
     },
   ) => patch<TurnoverMarkDoneResponse>(`/turnovers/${turnoverId}/done`, body),
 
+  /** Manager puts a cleaner on a turnover. Notifies them, writes an audit event. */
+  assign: (turnoverId: string, userId: string, isPrimary?: boolean) =>
+    post<Turnover>(`/turnovers/${turnoverId}/assign`, { userId, isPrimary }),
+  /** Manager takes a cleaner off. Marked REASSIGNED, not deleted; back to the pool if nobody is left. */
+  unassign: (turnoverId: string, userId: string) =>
+    post<Turnover>(`/turnovers/${turnoverId}/unassign`, { userId }),
   releaseToPool: (turnoverId: string) =>
     post<{ released: true; affectedUserIds: string[]; turnover: Turnover }>(
       `/turnovers/${turnoverId}/release-to-pool`,
