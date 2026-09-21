@@ -22,6 +22,9 @@ interface UpdateBookingDto {
   accommodationName?: string;
   numAdults?: number;
   numChildren?: number;
+  /** Setup requests from the front desk — local only, never sent to the PMS. */
+  needsCrib?: boolean;
+  separateBeds?: boolean;
 }
 
 const DETAIL_INCLUDE = {
@@ -202,6 +205,8 @@ export class BookingsService {
     if (dto.accommodationName !== undefined) data.accommodationName = dto.accommodationName;
     if (dto.numAdults !== undefined) data.numAdults = dto.numAdults;
     if (dto.numChildren !== undefined) data.numChildren = dto.numChildren;
+    if (dto.needsCrib !== undefined) data.needsCrib = !!dto.needsCrib;
+    if (dto.separateBeds !== undefined) data.separateBeds = !!dto.separateBeds;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const booking = await tx.booking.update({

@@ -90,6 +90,8 @@ const TURNOVER_INCLUDE = {
       numAdults: true,
       numChildren: true,
       channel: true,
+      needsCrib: true,
+      separateBeds: true,
     },
   },
   toBooking: {
@@ -109,6 +111,8 @@ const TURNOVER_INCLUDE = {
       numAdults: true,
       numChildren: true,
       channel: true,
+      needsCrib: true,
+      separateBeds: true,
     },
   },
   assignments: {

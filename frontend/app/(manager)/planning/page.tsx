@@ -1,11 +1,11 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { integrations, users as usersApi, assignments as assignApi, type PlanningBooking, type User } from '@/lib/api';
+import { integrations, bookings as bookingsApi, users as usersApi, assignments as assignApi, type PlanningBooking, type User } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
-import { formatTime, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw } from 'lucide-react';
+import { formatTime, formatOccupancy, todayISO, cn } from '@/lib/utils';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle } from 'lucide-react';
 import type { EventStatus } from '@/lib/api';
 
 const STATUSES: EventStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
@@ -53,6 +53,8 @@ export default function PlanningPage() {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [pushingAll, setPushingAll] = useState(false);
+  // Setup-request toggles save on click; this holds the ids mid-flight / failed.
+  const [flagBusy, setFlagBusy] = useState<Record<string, 'saving' | 'error'>>({});
 
   // ── Assign modal ──
   const [assigning, setAssigning] = useState<PlanningBooking | null>(null);
@@ -181,6 +183,25 @@ export default function PlanningPage() {
   function discardAll() {
     setDrafts({});
     setRowState({});
+  }
+
+  /**
+   * Crib / separate beds. These are ours, not Avantio's: saved straight to the
+   * booking row via PATCH /bookings/:id, never pushed to the PMS, never
+   * overwritten by the sync. Optimistic, reverted on failure.
+   */
+  async function toggleFlag(b: PlanningBooking, key: 'needsCrib' | 'separateBeds') {
+    const next = !b[key];
+    setBookings(prev => prev.map(x => (x.id === b.id ? { ...x, [key]: next } : x)));
+    setFlagBusy(prev => ({ ...prev, [b.id]: 'saving' }));
+    try {
+      await bookingsApi.update(b.id, { [key]: next });
+      setFlagBusy(prev => without(prev, b.id));
+    } catch {
+      setBookings(prev => prev.map(x => (x.id === b.id ? { ...x, [key]: !next } : x)));
+      setFlagBusy(prev => ({ ...prev, [b.id]: 'error' }));
+      setTimeout(() => setFlagBusy(prev => (prev[b.id] === 'error' ? without(prev, b.id) : prev)), 3000);
+    }
   }
 
   // ── Assign ──
@@ -392,6 +413,52 @@ export default function PlanningPage() {
                     </div>
                   </div>
 
+                  {/* Guests — same "adults+children" reading the cleaner's card uses */}
+                  <span
+                    className="flex items-center gap-1 text-xs text-ink-soft tabular-nums flex-shrink-0 w-12"
+                    title={`${tp.guests}: ${b.numAdults} + ${b.numChildren}`}
+                  >
+                    <Users size={13} className="text-ink-faint" />
+                    {formatOccupancy(b.numAdults, b.numChildren)}
+                  </span>
+
+                  {/* Setup requests — local only, cleaner sees them on the card */}
+                  <div className="flex items-center gap-1 flex-shrink-0" title={tp.localOnly}>
+                    <button
+                      type="button"
+                      onClick={() => void toggleFlag(b, 'needsCrib')}
+                      disabled={flagBusy[b.id] === 'saving'}
+                      aria-pressed={!!b.needsCrib}
+                      title={`${tp.crib} — ${tp.localOnly}`}
+                      className={cn(
+                        'p-1.5 rounded-lg border transition disabled:opacity-60',
+                        b.needsCrib
+                          ? 'bg-sky-50 border-sky-300 text-sky-800'
+                          : 'border-transparent text-ink-faint hover:text-ink hover:bg-surface-sunken',
+                      )}
+                    >
+                      <Baby size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void toggleFlag(b, 'separateBeds')}
+                      disabled={flagBusy[b.id] === 'saving'}
+                      aria-pressed={!!b.separateBeds}
+                      title={`${tp.separateBeds} — ${tp.localOnly}`}
+                      className={cn(
+                        'p-1.5 rounded-lg border transition disabled:opacity-60',
+                        b.separateBeds
+                          ? 'bg-violet-50 border-violet-300 text-violet-800'
+                          : 'border-transparent text-ink-faint hover:text-ink hover:bg-surface-sunken',
+                      )}
+                    >
+                      <BedSingle size={15} />
+                    </button>
+                    {flagBusy[b.id] === 'error' && (
+                      <span className="text-[11px] text-red-600 font-medium" title={tp.saveFailed}>!</span>
+                    )}
+                  </div>
+
                   {/* Times — inline */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {b.checkInSource === 'FALLBACK' && !dirty && (
@@ -407,7 +474,7 @@ export default function PlanningPage() {
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkInTime}
                         className={cn(
-                          'w-[5.5rem] px-2 py-1.5 rounded-lg border text-sm font-semibold text-ink tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          'w-[7.25rem] px-2.5 py-1.5 rounded-lg border text-sm font-semibold text-ink tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
                           dirty && d.checkIn !== stored(b).checkIn ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
                         )}
                       />
@@ -422,7 +489,7 @@ export default function PlanningPage() {
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkOutTime}
                         className={cn(
-                          'w-[5.5rem] px-2 py-1.5 rounded-lg border text-sm text-ink-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          'w-[7.25rem] px-2.5 py-1.5 rounded-lg border text-sm text-ink-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
                           dirty && d.checkOut !== stored(b).checkOut ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
                         )}
                       />
@@ -455,7 +522,7 @@ export default function PlanningPage() {
                   </div>
 
                   {/* Assignees */}
-                  <div className="flex items-center gap-2 flex-shrink-0 w-48 justify-end">
+                  <div className="flex items-center gap-2 flex-shrink-0 w-44 justify-end">
                     {b.assignments.length === 0 ? (
                       <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
                     ) : (

@@ -17,6 +17,25 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-21 — operational booking attributes live on `bookings`, are ours, and are never synced either way
+
+**Decision.** Things the front desk knows about a stay that the PMS does not
+model — today a crib and separate beds — are columns on `bookings`, written
+through the manager `PATCH /bookings/:id`, read by the turnover card through
+`toBooking`. They are not pushed to Avantio and the sync never writes them.
+
+**Why.** Avantio has no field for them, and the alternative (a manager note)
+is prose the cleaner has to read. A column is a chip on the card. The sync
+already only updates the PMS-owned columns it compares, so a local column
+survives every resync without a `manuallyOverridden` flag — unlike guest
+counts, which the runbook still lists as unprotected.
+
+**Rule for the next one.** A new attribute of this kind is a column with a
+default, exposed in `TURNOVER_BOOKING_SELECT` and on the planning DTO, with a
+chip on `TurnoverCard`. Not a JSON bag, not a note.
+
+---
+
 ## 2026-09-21 — the browser never builds an instant; times cross the API as `HH:mm` in Prague
 
 **Decision.** Anything a person types as a time is sent to the backend as

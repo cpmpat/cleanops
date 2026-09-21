@@ -191,6 +191,9 @@ export interface PlanningBooking {
   checkOutTime?: string;
   /** Guest name from the PMS payload; present on the planning list only. */
   guestName?: string;
+  /** Setup requests recorded by the front desk — local only, never sent to the PMS. */
+  needsCrib?: boolean;
+  separateBeds?: boolean;
   /** Where the stored check-in time came from — FALLBACK means we assumed it. */
   checkInSource?: TimeSource;
   checkOutSource?: TimeSource;
@@ -613,6 +616,9 @@ export interface TurnoverBookingRef {
   numAdults: number;
   numChildren: number;
   channel: BookingChannel;
+  /** Front-desk setup requests; shown as icons on the card. */
+  needsCrib?: boolean;
+  separateBeds?: boolean;
 }
 
 export interface Turnover {
@@ -793,7 +799,7 @@ export const bookings = {
     );
   },
   byId: (id: string) => get<BookingDetail>(`/bookings/${id}`),
-  update: (id: string, data: { checkInTime?: string; checkOutTime?: string; accommodationName?: string; numAdults?: number; numChildren?: number }) =>
+  update: (id: string, data: { checkInTime?: string; checkOutTime?: string; accommodationName?: string; numAdults?: number; numChildren?: number; needsCrib?: boolean; separateBeds?: boolean }) =>
     patch<Booking>(`/bookings/${id}`, data),
   cancel: (id: string) =>
     post<Booking>(`/bookings/${id}/cancel`),

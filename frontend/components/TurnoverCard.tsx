@@ -3,6 +3,7 @@ import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
   LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare, AlertCircle,
+  Baby, BedSingle,
 } from 'lucide-react';
 import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
@@ -278,6 +279,27 @@ export function TurnoverCard({
               <Users size={12} />
               {guestCount}
             </span>
+            {/* Setup requests from the front desk. Loud on purpose: a crib or
+                a split bed changes the linen and the layout, and the cleaner
+                should not have to read a note to find out. */}
+            {toBooking.needsCrib && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-200 text-sky-800 px-2 py-0.5 text-[11px] font-semibold"
+                title={m.card.crib}
+              >
+                <Baby size={12} />
+                {m.card.crib}
+              </span>
+            )}
+            {toBooking.separateBeds && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-200 text-violet-800 px-2 py-0.5 text-[11px] font-semibold"
+                title={m.card.separateBeds}
+              >
+                <BedSingle size={12} />
+                {m.card.separateBeds}
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <LogIn size={12} className="text-ink-faint" />
               <span className="text-ink-faint">Guest arrives</span>

@@ -295,6 +295,12 @@ model Booking {
   numChildren       Int            @default(0)
   channel           BookingChannel @default(OTHER)
 
+  // Setup requests, recorded by the front desk. Ours, not the PMS's: never
+  // pushed to Avantio and never overwritten by the sync. The cleaner sees them
+  // as icons on the turnover card.
+  needsCrib         Boolean        @default(false)
+  separateBeds      Boolean        @default(false)
+
   // PMS sync
   pmsLastSyncedAt   DateTime?
   pmsRawData        Json?

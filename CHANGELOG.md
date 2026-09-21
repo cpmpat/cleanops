@@ -23,9 +23,22 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased
+## Unreleased — branch `feat/planning-setup-requests`
 
-Nothing. Everything committed is merged.
+**Crib and separate beds, from the desk to the cleaner.** Two setup requests
+on the booking — *crib* and *separate beds* — toggled per row in Check-in
+Planning. They are ours, not Avantio's: stored on `bookings`
+(`needsCrib`, `separateBeds`), never pushed to the PMS, never touched by the
+sync (`processBooking` writes only PMS-owned columns). The cleaner sees them
+as labelled chips on the turnover card next to the guest count, in all four
+languages.
+
+**Planning shows the party.** Guest count per row in the cleaner's own
+reading (`2+1` = two adults, one child). Time inputs widened so `00:00` and
+the clock glyph no longer overlap.
+
+*Migrations:* `20260921200000_booking_setup_requests` (two boolean columns,
+default false). *Env:* None.
 
 ---
 
