@@ -194,6 +194,8 @@ export interface PlanningBooking {
   checkOutTime?: string;
   /** Guest name from the PMS payload; present on the planning list only. */
   guestName?: string;
+  /** The owner is arriving, not a guest — same flag the cleaner's card crowns. */
+  isOwnerStay?: boolean;
   /** Setup requests recorded by the front desk — local only, never sent to the PMS. */
   needsCrib?: boolean;
   separateBeds?: boolean;

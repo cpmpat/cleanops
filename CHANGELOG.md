@@ -23,7 +23,22 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/planning-turnover-status`
+## Unreleased — branch `feat/planning-polish`
+
+**Planning: owner stays, sorting, room to breathe.** Owner arrivals carry the
+same crown the cleaner's card shows, plus an amber left edge; the last-minute
+chip is now list-sized and sits on the meta line so it never clips. Rows sort
+by unit (A→Z, numeric-aware, default) or by check-in, either direction, from
+the list header. The page uses the full width up to 1600 px instead of
+stopping at 1152.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-09-22 · PR #35
 
 **Planning shows what the cleaner actually did.** The row's status badge and
 assignees now come from the live *arrival* turnover (the cleaning before this
@@ -41,10 +56,6 @@ arrives today and the turnover was created today — shown as a red *Last
 minute* chip and a red left edge on the row.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-21 · PR #34
 
