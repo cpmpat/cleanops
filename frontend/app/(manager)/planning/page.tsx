@@ -5,7 +5,7 @@ import { integrations, bookings as bookingsApi, users as usersApi, turnovers as 
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, ArrowUpDown } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
@@ -57,6 +57,9 @@ export default function PlanningPage() {
   const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>(null);
+  // Default: by unit name, so the desk reads the list the way the building is laid out.
+  const [sortKey, setSortKey] = useState<'unit' | 'checkIn'>('unit');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // ── Data ──
   const [bookings, setBookings] = useState<PlanningBooking[]>([]);
@@ -116,7 +119,17 @@ export default function PlanningPage() {
       || (b.guestName ?? '').toLowerCase().includes(refSearch.toLowerCase());
     const matchUnconfirmed = !onlyUnconfirmed || b.checkInSource === 'FALLBACK';
     return matchUnit && matchRef && matchUnconfirmed;
+  }).sort((a, b) => {
+    const cmp = sortKey === 'unit'
+      ? a.accommodationName.localeCompare(b.accommodationName, 'cs', { numeric: true, sensitivity: 'base' })
+      : a.checkInTime.localeCompare(b.checkInTime);
+    return sortDir === 'asc' ? cmp : -cmp;
   });
+
+  function toggleSort(key: 'unit' | 'checkIn') {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  }
 
   // ── Draft bookkeeping ──
   const stored = (b: PlanningBooking): Draft => ({
@@ -291,7 +304,7 @@ export default function PlanningPage() {
   );
 
   return (
-    <div className="p-6 max-w-6xl pb-28">
+    <div className="p-6 max-w-[1600px] pb-28">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-ink">{tp.title}</h1>
@@ -401,9 +414,26 @@ export default function PlanningPage() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
-          <div className="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+          <div className="px-4 py-2.5 border-b border-surface-border flex items-center justify-between gap-3">
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
-            <p className="text-xs text-ink-faint">{tp.checkInTime} ↓ · {tp.checkOutTime} ↑ · Europe/Prague</p>
+            <div className="flex items-center gap-1 text-xs">
+              <ArrowUpDown size={12} className="text-ink-faint mr-1" />
+              {(['unit', 'checkIn'] as const).map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => toggleSort(k)}
+                  className={cn(
+                    'px-2 py-1 rounded-lg font-medium transition',
+                    sortKey === k ? 'bg-ink text-white' : 'text-ink-muted hover:text-ink hover:bg-surface-sunken',
+                  )}
+                >
+                  {k === 'unit' ? tp.sortUnit : tp.sortCheckIn}
+                  {sortKey === k && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+                </button>
+              ))}
+              <span className="text-ink-faint ml-2">↓ {tp.checkInTime} · ↑ {tp.checkOutTime} · Europe/Prague</span>
+            </div>
           </div>
           <div className="divide-y divide-surface-border">
             {filtered.map(b => {
@@ -421,6 +451,7 @@ export default function PlanningPage() {
                     dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-red-50',
                     lastMinute && !dirty && 'border-l-4 border-l-red-400',
+                    b.isOwnerStay && !lastMinute && !dirty && 'border-l-4 border-l-amber-400',
                     done && 'opacity-70',
                   )}
                 >
@@ -433,22 +464,27 @@ export default function PlanningPage() {
 
                   {/* Unit + guest + ref */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate flex items-center gap-2">
-                      {b.accommodationName}
+                    <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
+                    <div className="flex items-center gap-2 mt-0.5 min-w-0 whitespace-nowrap">
+                      {/* Same two flags the cleaner's card wears, at list size. */}
+                      {b.isOwnerStay && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-900 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.ownerStay}>
+                          <Crown size={10} />
+                          {tp.ownerStay}
+                        </span>
+                      )}
                       {lastMinute && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 text-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide flex-shrink-0">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 text-red-600 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.lastMinute}>
                           <Flame size={10} />
                           {tp.lastMinute}
                         </span>
                       )}
-                    </p>
-                    <div className="flex items-center gap-3 mt-0.5 min-w-0">
                       {b.guestName && (
-                        <span className="text-xs text-ink-soft truncate max-w-[220px]" title={`${tp.guest}: ${b.guestName}`}>
+                        <span className="text-xs text-ink-soft truncate max-w-[180px]" title={`${tp.guest}: ${b.guestName}`}>
                           {b.guestName}
                         </span>
                       )}
-                      <span className="font-mono text-xs text-ink-faint">{b.bookingRef}</span>
+                      <span className="font-mono text-xs text-ink-faint truncate max-w-[170px]" title={b.bookingRef}>{b.bookingRef}</span>
                       <ChannelDot channel={b.channel} label={t.channel[b.channel] ?? b.channel} />
                     </div>
                   </div>
@@ -609,7 +645,7 @@ export default function PlanningPage() {
       {/* ── Sticky push bar ── */}
       {dirtyRows.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
-          <div className="max-w-6xl mx-auto px-6 pb-5">
+          <div className="max-w-[1600px] mx-auto px-6 pb-5">
             <div className="pointer-events-auto flex items-center gap-3 bg-ink text-white rounded-2xl shadow-modal px-5 py-3 animate-scale-in">
               <span className="text-sm font-semibold flex-1">
                 {dirtyRows.length === 1 ? tp.pendingOne : `${dirtyRows.length} ${tp.pendingMany}`}

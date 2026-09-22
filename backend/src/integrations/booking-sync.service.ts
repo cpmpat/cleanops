@@ -373,6 +373,7 @@ export class BookingSyncService {
       // The guest, from the stored Avantio payload — the front desk works by
       // name, not by reference. Managers only; this never reaches a cleaner.
       guestName: guestNameFromRaw(b.pmsRawData),
+      isOwnerStay: b.isOwnerStay,
       needsCrib: (b as any).needsCrib ?? false,
       separateBeds: (b as any).separateBeds ?? false,
       // Lets the Planning view flag times we assumed (FALLBACK) vs. confirmed ones.
