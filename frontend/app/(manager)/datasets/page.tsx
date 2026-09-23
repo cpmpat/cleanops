@@ -1,11 +1,12 @@
 'use client';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
   Folder, FileText, ExternalLink, Download,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   readSavedView, fromSavedView, toSavedView, useSaveTableView,
@@ -78,7 +79,7 @@ type SortDir = 'asc' | 'desc';
  * per-column value filters. Column labels and hover descriptions come from the
  * sheet's own mapping tab, so the table speaks the operator's vocabulary.
  */
-export default function DatasetsPage() {
+function DatasetsPageInner() {
   const [tabs, setTabs] = useState<DatasetSummary[]>([]);
   const [active, setActive] = useState<string>('');
   const [data, setData] = useState<DatasetPage | null>(null);
@@ -118,14 +119,34 @@ export default function DatasetsPage() {
   const [columnSearch, setColumnSearch] = useState('');
   const [valueSearch, setValueSearch] = useState('');
 
+  // `?d=<key>` is the address of a list — the sidebar links to it, and the
+  // footer tabs write it, so a reload or a shared link lands on the same list.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const wanted = searchParams?.get('d') ?? '';
+
   useEffect(() => {
     api.list()
       .then(list => {
         setTabs(list);
-        if (list.length) setActive(list[0].key);
+        if (list.length) setActive(list.some(l => l.key === wanted) ? wanted : list[0].key);
       })
       .catch(() => setError('Could not load the dataset list.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sidebar navigation changes the param while this page is already mounted.
+  useEffect(() => {
+    if (wanted && tabs.some(l => l.key === wanted) && wanted !== active) {
+      setActive(wanted); setSearch(''); setPanel(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, tabs]);
+
+  function selectList(key: string) {
+    setActive(key); setSearch(''); setPanel(null);
+    router.replace(`/datasets?d=${encodeURIComponent(key)}`);
+  }
 
   const load = useCallback(async (key: string, refresh = false) => {
     if (!key) return;
@@ -828,7 +849,7 @@ export default function DatasetsPage() {
           {tabs.map(t => (
             <button
               key={t.key}
-              onClick={() => { setActive(t.key); setSearch(''); setPanel(null); }}
+              onClick={() => selectList(t.key)}
               className={cn(
                 'px-4 py-2 rounded-xl text-sm font-semibold border transition',
                 active === t.key
@@ -1061,5 +1082,14 @@ function CellValue({ value }: { value: string }) {
     >
       <Icon size={14} />
     </a>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary above it for the build to prerender this route. */
+export default function DatasetsPage() {
+  return (
+    <Suspense fallback={null}>
+      <DatasetsPageInner />
+    </Suspense>
   );
 }

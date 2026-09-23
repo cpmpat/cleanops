@@ -23,7 +23,27 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/planning-polish`
+## Unreleased — branch `feat/planning-columns-data-nav`
+
+**Planning is a table now.** One column grid shared by the heading row and
+every booking row, so each heading sits over the cell it names: Status ·
+Unit / Guest · party · Setup · Check-in · Check-out · actions · Cleaner.
+Click *Unit* or *Check-in* in the heading to sort; the separate sort buttons
+are gone.
+
+**Datasets → Data, with the lists in the sidebar.** The nav item is now
+*Data* and unfolds into *CDM* and the lists under it (Accommodation, User,
+Owner), each a direct link. `/datasets?d=<key>` is the address of a list: the
+sidebar links to it, the footer tabs write it, and a reload or a shared link
+lands on the same list.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-09-22 · PR #36
 
 **Planning: owner stays, sorting, room to breathe.** Owner arrivals carry the
 same crown the cleaner's card shows, plus an amber left edge; the last-minute
@@ -33,10 +53,6 @@ the list header. The page uses the full width up to 1600 px instead of
 stopping at 1152.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-22 · PR #35
 
