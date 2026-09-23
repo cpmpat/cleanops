@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -64,7 +64,6 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   }, [user, loading]);
 
   const t = translations[locale];
-  const searchParams = useSearchParams();
 
   // The Data item unfolds into its source (CDM) and the lists under it, so a
   // manager can go straight to Owner without landing on Accommodation first.
@@ -77,7 +76,6 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     if (!user || DESK_ONLY_ROLES.includes(user.role ?? '')) return;
     datasetsApi.list().then(setDataLists).catch(() => {});
   }, [user]);
-  const activeList = searchParams?.get('d') ?? dataLists[0]?.key ?? '';
 
   const navItems = [
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
@@ -155,25 +153,9 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
                 {/* Data → CDM → the lists in it */}
                 {isData && dataOpen && dataLists.length > 0 && (
-                  <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
-                    <p className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">CDM</p>
-                    {dataLists.map(d => {
-                      const on = onData && activeList === d.key;
-                      return (
-                        <Link
-                          key={d.key}
-                          href={`/datasets?d=${encodeURIComponent(d.key)}`}
-                          className={cn(
-                            'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
-                            on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
-                          )}
-                        >
-                          <Table2 size={13} className="flex-shrink-0 opacity-70" />
-                          {d.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
+                  <Suspense fallback={null}>
+                    <DataSubnav lists={dataLists} onData={onData} />
+                  </Suspense>
                 )}
               </div>
             );
@@ -224,6 +206,38 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 ml-56 min-h-screen overflow-y-auto">
         {children}
       </main>
+    </div>
+  );
+}
+
+/**
+ * The CDM lists under the Data item. Lives in its own component because
+ * useSearchParams() must sit under a Suspense boundary — reading it in the
+ * layout itself would force every manager page to bail out of prerendering,
+ * which is what failed the Vercel build.
+ */
+function DataSubnav({ lists, onData }: { lists: DatasetSummary[]; onData: boolean }) {
+  const searchParams = useSearchParams();
+  const activeList = searchParams?.get('d') ?? lists[0]?.key ?? '';
+  return (
+    <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
+      <p className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">CDM</p>
+      {lists.map(d => {
+        const on = onData && activeList === d.key;
+        return (
+          <Link
+            key={d.key}
+            href={`/datasets?d=${encodeURIComponent(d.key)}`}
+            className={cn(
+              'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
+              on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
+            )}
+          >
+            <Table2 size={13} className="flex-shrink-0 opacity-70" />
+            {d.label}
+          </Link>
+        );
+      })}
     </div>
   );
 }

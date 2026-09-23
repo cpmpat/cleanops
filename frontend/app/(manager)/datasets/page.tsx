@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
   Folder, FileText, ExternalLink, Download,
@@ -79,7 +79,7 @@ type SortDir = 'asc' | 'desc';
  * per-column value filters. Column labels and hover descriptions come from the
  * sheet's own mapping tab, so the table speaks the operator's vocabulary.
  */
-export default function DatasetsPage() {
+function DatasetsPageInner() {
   const [tabs, setTabs] = useState<DatasetSummary[]>([]);
   const [active, setActive] = useState<string>('');
   const [data, setData] = useState<DatasetPage | null>(null);
@@ -1082,5 +1082,14 @@ function CellValue({ value }: { value: string }) {
     >
       <Icon size={14} />
     </a>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary above it for the build to prerender this route. */
+export default function DatasetsPage() {
+  return (
+    <Suspense fallback={null}>
+      <DatasetsPageInner />
+    </Suspense>
   );
 }
