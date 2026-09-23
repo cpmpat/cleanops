@@ -1,18 +1,19 @@
 'use client';
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { translations, type Locale } from '@/i18n/translations';
 import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
-  AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare,
+  AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
+import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
 
 /**
  * Office roles that are not managers. They may open Airchat and nothing else —
@@ -63,6 +64,20 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   }, [user, loading]);
 
   const t = translations[locale];
+  const searchParams = useSearchParams();
+
+  // The Data item unfolds into its source (CDM) and the lists under it, so a
+  // manager can go straight to Owner without landing on Accommodation first.
+  // The list is three rows and never changes during a session; one fetch.
+  const [dataLists, setDataLists] = useState<DatasetSummary[]>([]);
+  const onData = pathname?.startsWith('/datasets') ?? false;
+  const [dataOpen, setDataOpen] = useState(onData);
+  useEffect(() => { if (onData) setDataOpen(true); }, [onData]);
+  useEffect(() => {
+    if (!user || DESK_ONLY_ROLES.includes(user.role ?? '')) return;
+    datasetsApi.list().then(setDataLists).catch(() => {});
+  }, [user]);
+  const activeList = searchParams?.get('d') ?? dataLists[0]?.key ?? '';
 
   const navItems = [
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
@@ -75,7 +90,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/messages',   icon: Mail,            label: messageStrings[locale].manager.navLabel },
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
-    { href: '/datasets',   icon: Database,        label: (t.nav as any).datasets ?? 'Datasets' },
+    { href: '/datasets',   icon: Database,        label: (t.nav as any).data ?? 'Data' },
     { href: '/settings',   icon: Settings,        label: t.nav.settings },
   ];
 
@@ -111,19 +126,56 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
           {visibleNav.map(({ href, icon: Icon, label }) => {
             const active = pathname === href || pathname?.startsWith(href + '/');
+            const isData = href === '/datasets';
             return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                  active ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white hover:bg-white/10',
+              <div key={href}>
+                <div
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                    active ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white hover:bg-white/10',
+                  )}
+                >
+                  <Link href={href} className="flex items-center gap-3 flex-1 min-w-0">
+                    <Icon size={17} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
+                    {label}
+                  </Link>
+                  {isData ? (
+                    <button
+                      type="button"
+                      onClick={() => setDataOpen(o => !o)}
+                      aria-expanded={dataOpen}
+                      className="ml-auto -mr-1 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition"
+                    >
+                      <ChevronDown size={14} className={cn('transition-transform', dataOpen ? 'rotate-180' : '')} />
+                    </button>
+                  ) : (
+                    active && <ChevronRight size={14} className="ml-auto opacity-40" />
+                  )}
+                </div>
+
+                {/* Data → CDM → the lists in it */}
+                {isData && dataOpen && dataLists.length > 0 && (
+                  <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
+                    <p className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">CDM</p>
+                    {dataLists.map(d => {
+                      const on = onData && activeList === d.key;
+                      return (
+                        <Link
+                          key={d.key}
+                          href={`/datasets?d=${encodeURIComponent(d.key)}`}
+                          className={cn(
+                            'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
+                            on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
+                          )}
+                        >
+                          <Table2 size={13} className="flex-shrink-0 opacity-70" />
+                          {d.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-              >
-                <Icon size={17} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
-                {label}
-                {active && <ChevronRight size={14} className="ml-auto opacity-40" />}
-              </Link>
+              </div>
             );
           })}
         </nav>

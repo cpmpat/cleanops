@@ -5,7 +5,7 @@ import { integrations, bookings as bookingsApi, users as usersApi, turnovers as 
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn } from '@/lib/utils';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
@@ -40,6 +40,13 @@ type RowState = 'pushing' | 'ok' | 'error';
 
 /** How many rows are pushed to Avantio at once. Small: Avantio rate-limits, and one PUT is ~1 s. */
 const PUSH_CONCURRENCY = 3;
+
+/**
+ * One column template for the header and every row, so a heading sits over
+ * the cell it names. Columns: status · unit/guest · party · setup · check-in ·
+ * check-out · row actions · cleaner.
+ */
+const GRID = 'grid grid-cols-[6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 
 export default function PlanningPage() {
   const { locale } = useLocale();
@@ -414,26 +421,24 @@ export default function PlanningPage() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-surface-border flex items-center justify-between gap-3">
+          <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3">
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
-            <div className="flex items-center gap-1 text-xs">
-              <ArrowUpDown size={12} className="text-ink-faint mr-1" />
-              {(['unit', 'checkIn'] as const).map(k => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => toggleSort(k)}
-                  className={cn(
-                    'px-2 py-1 rounded-lg font-medium transition',
-                    sortKey === k ? 'bg-ink text-white' : 'text-ink-muted hover:text-ink hover:bg-surface-sunken',
-                  )}
-                >
-                  {k === 'unit' ? tp.sortUnit : tp.sortCheckIn}
-                  {sortKey === k && (sortDir === 'asc' ? ' ↑' : ' ↓')}
-                </button>
-              ))}
-              <span className="text-ink-faint ml-2">↓ {tp.checkInTime} · ↑ {tp.checkOutTime} · Europe/Prague</span>
-            </div>
+            <p className="text-[11px] text-ink-faint">Europe/Prague</p>
+          </div>
+          {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
+          <div className={cn(GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
+            <span>{tp.filterStatus}</span>
+            <button type="button" onClick={() => toggleSort('unit')} className="text-left hover:text-ink transition">
+              {tp.sortUnit} · {tp.guest}{sortKey === 'unit' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            </button>
+            <span title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>
+            <span>{tp.setup}</span>
+            <button type="button" onClick={() => toggleSort('checkIn')} className="text-left hover:text-ink transition">
+              ↓ {tp.checkInTime}{sortKey === 'checkIn' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            </button>
+            <span>↑ {tp.checkOutTime}</span>
+            <span />
+            <span className="text-right">{tp.cleaner}</span>
           </div>
           <div className="divide-y divide-surface-border">
             {filtered.map(b => {
@@ -447,7 +452,7 @@ export default function PlanningPage() {
                 <div
                   key={b.id}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-3 transition group',
+                    GRID, 'px-4 py-2.5 transition group',
                     dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-red-50',
                     lastMinute && !dirty && 'border-l-4 border-l-red-400',
@@ -456,14 +461,16 @@ export default function PlanningPage() {
                   )}
                 >
                   {/* Arrival-turnover status: what the cleaner did with it. */}
-                  {b.status ? (
-                    <StatusBadge status={b.status as any} t={t} size="sm" />
-                  ) : (
-                    <span className="text-[11px] text-ink-faint w-16 text-center" title={tp.noTurnover}>—</span>
-                  )}
+                  <div className="min-w-0">
+                    {b.status ? (
+                      <StatusBadge status={b.status as any} t={t} size="sm" />
+                    ) : (
+                      <span className="text-[11px] text-ink-faint pl-2" title={tp.noTurnover}>—</span>
+                    )}
+                  </div>
 
                   {/* Unit + guest + ref */}
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0 whitespace-nowrap">
                       {/* Same two flags the cleaner's card wears, at list size. */}
@@ -491,7 +498,7 @@ export default function PlanningPage() {
 
                   {/* Guests — same "adults+children" reading the cleaner's card uses */}
                   <span
-                    className="flex items-center gap-1 text-xs text-ink-soft tabular-nums flex-shrink-0 w-12"
+                    className="flex items-center gap-1 text-xs text-ink-soft tabular-nums"
                     title={`${tp.guests}: ${b.numAdults} + ${b.numChildren}`}
                   >
                     <Users size={13} className="text-ink-faint" />
@@ -499,7 +506,7 @@ export default function PlanningPage() {
                   </span>
 
                   {/* Setup requests — local only, cleaner sees them on the card */}
-                  <div className="flex items-center gap-1 flex-shrink-0" title={tp.localOnly}>
+                  <div className="flex items-center gap-1" title={tp.localOnly}>
                     <button
                       type="button"
                       onClick={() => void toggleFlag(b, 'needsCrib')}
@@ -535,13 +542,13 @@ export default function PlanningPage() {
                     )}
                   </div>
 
-                  {/* Times — inline */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {b.checkInSource === 'FALLBACK' && !dirty && (
-                      <span title={tp.unconfirmedHint} className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                    )}
+                  {/* Check-in — inline; the amber dot means we assumed the time */}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      title={b.checkInSource === 'FALLBACK' ? tp.unconfirmedHint : undefined}
+                      className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', b.checkInSource === 'FALLBACK' && !dirty ? 'bg-amber-500' : 'bg-transparent')}
+                    />
                     <label className="flex items-center gap-1 text-xs text-ink-muted">
-                      <span aria-hidden>↓</span>
                       <input
                         type="time"
                         value={d.checkIn}
@@ -550,13 +557,16 @@ export default function PlanningPage() {
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkInTime}
                         className={cn(
-                          'w-[7.25rem] px-2.5 py-1.5 rounded-lg border text-sm font-semibold text-ink tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          'w-[7.25rem] px-2 py-1.5 rounded-lg border text-sm font-semibold text-ink tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
                           dirty && d.checkIn !== stored(b).checkIn ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
                         )}
                       />
                     </label>
+                  </div>
+
+                  {/* Check-out */}
+                  <div className="flex items-center">
                     <label className="flex items-center gap-1 text-xs text-ink-muted">
-                      <span aria-hidden>↑</span>
                       <input
                         type="time"
                         value={d.checkOut}
@@ -565,14 +575,15 @@ export default function PlanningPage() {
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkOutTime}
                         className={cn(
-                          'w-[7.25rem] px-2.5 py-1.5 rounded-lg border text-sm text-ink-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
+                          'w-[7.25rem] px-2 py-1.5 rounded-lg border text-sm text-ink-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60',
                           dirty && d.checkOut !== stored(b).checkOut ? 'border-amber-400 bg-white' : 'border-surface-border bg-transparent',
                         )}
                       />
                     </label>
+                  </div>
 
-                    {/* Row action: push / undo / result */}
-                    <div className="w-16 flex items-center justify-end gap-1">
+                  {/* Row action: push / undo / result */}
+                  <div className="flex items-center justify-end gap-1">
                       {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
                       {state === 'ok' && <Check size={15} className="text-emerald-600" />}
                       {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
@@ -594,11 +605,10 @@ export default function PlanningPage() {
                           </button>
                         </>
                       )}
-                    </div>
                   </div>
 
                   {/* Assignees */}
-                  <div className="flex items-center gap-2 flex-shrink-0 w-44 justify-end">
+                  <div className="flex items-center gap-2 justify-end min-w-0">
                     {b.assignments.length === 0 ? (
                       b.turnoverId && !done
                         ? <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
