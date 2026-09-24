@@ -23,6 +23,8 @@ export interface PmsBooking {
   guestEmail?: string;
   rawData?: any;                 // full PMS response for debugging
   isOwnerStay?: boolean;
+  /** When the guest booked, per the PMS — ISO. Drives the last-minute mark. */
+  pmsCreatedAt?: string;
 }
 
 export interface PmsAccommodation {

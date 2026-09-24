@@ -5,7 +5,7 @@ import {
   LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare, AlertCircle,
   Baby, BedSingle,
 } from 'lucide-react';
-import { formatTime, formatOccupancy } from '@/lib/utils';
+import { formatTime, formatOccupancy, APP_TIME_ZONE } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
 import type { Translations, Locale } from '@/i18n/translations';
 import { useMessageStrings } from '@/i18n/messages';
@@ -54,13 +54,13 @@ function mineAccent(turnover: Turnover): string {
   return 'bg-amber-400';
 }
 
+/** Calendar day in the app's zone (Europe/Prague), not the phone's — a cleaner
+ *  whose phone is still on a holiday time zone must see the same "today". */
+const pragueDay = (d: Date) =>
+  new Intl.DateTimeFormat('sv-SE', { timeZone: APP_TIME_ZONE }).format(d);
+
 function isToday(d: Date): boolean {
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  return pragueDay(d) === pragueDay(new Date());
 }
 
 function calcNights(checkIn?: string, checkOut?: string | null): number | null {
@@ -150,12 +150,13 @@ export function TurnoverCard({
   const arrivesToday =
     !!toBooking?.checkInTime && isToday(new Date(toBooking.checkInTime)) && !isCompleted;
 
-  // Last minute: next guest arrives today AND turnover was created today
+  // Last minute: the guest booked today AND arrives today. Keyed to the PMS
+  // booking date — turnover.createdAt is the row's birth, and every time
+  // edit or neighbour change supersedes the row, so a booking from August
+  // would read as "created today" the morning someone adjusts its arrival.
   const isLastMinute = (() => {
-    if (!toBooking?.checkInTime || isCompleted) return false;
-    const checkIn = new Date(toBooking.checkInTime);
-    const created = new Date(turnover.createdAt);
-    return isToday(checkIn) && isToday(created);
+    if (!toBooking?.checkInTime || !toBooking.pmsCreatedAt || isCompleted) return false;
+    return isToday(new Date(toBooking.checkInTime)) && isToday(new Date(toBooking.pmsCreatedAt));
   })();
 
   // ─── Display fields ───

@@ -304,6 +304,9 @@ model Booking {
   // PMS sync
   pmsLastSyncedAt   DateTime?
   pmsRawData        Json?
+  /// When the guest booked, per the PMS (Avantio `createdAt`). The row's own
+  /// createdAt is when *we* first saw it, which a backfill makes meaningless.
+  pmsCreatedAt      DateTime?
 
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

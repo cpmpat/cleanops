@@ -23,7 +23,31 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/planning-columns-data-nav`
+## Unreleased — branch `fix/last-minute-by-booking-date`
+
+**"Last minute" means booked today, not touched today.** The cleaner's card
+and the planning list keyed the mark to the turnover row's `createdAt`, and a
+turnover gets a fresh row on every change — a time edit in Planning, a
+neighbour booking inserted or cancelled, a reconcile — so a stay booked in
+August lit up as last-minute the morning its arrival time was adjusted. Both
+now read the booking's PMS creation date (`bookings.pmsCreatedAt`, from
+Avantio's `createdAt`, backfilled from the stored payload for every existing
+row). The card's "today" is now the Prague day, not the phone's.
+
+**Planning time edits reach open cleaner apps at once.** Saving a check-in
+time in Planning now broadcasts `event:updated`, so a cleaner with the pool
+open sees the new time within a second instead of at her next reload (the
+PMS sync would not have refreshed it — it finds nothing changed locally).
+
+*Migrations:* `20260924120000_booking_pms_created_at` (adds
+`bookings.pmsCreatedAt`, backfills it from `pmsRawData->>'createdAt'`).
+*Env:* None.
+
+---
+
+## Deployed
+
+### 2026-09-24 · PR #37
 
 **Planning is a table now.** One column grid shared by the heading row and
 every booking row, so each heading sits over the cell it names: Status ·
@@ -38,10 +62,6 @@ sidebar links to it, the footer tabs write it, and a reload or a shared link
 lands on the same list.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-22 · PR #36
 

@@ -184,6 +184,8 @@ export interface PlanningBooking {
   /** The live turnover before this guest arrives — what cleaners take and mark done. Null when none exists yet. */
   turnoverId?: string | null;
   turnoverCreatedAt?: string | null;
+  /** When the guest booked, per the PMS. Last-minute = booked and arriving on the same Prague day. */
+  pmsCreatedAt?: string | null;
   pmsBookingId?: string;
   bookingRef: string;
   accommodationName: string;
@@ -625,6 +627,8 @@ export interface TurnoverBookingRef {
   /** Front-desk setup requests; shown as icons on the card. */
   needsCrib?: boolean;
   separateBeds?: boolean;
+  /** When the guest booked, per the PMS. Null for rows that never carried it. */
+  pmsCreatedAt?: string | null;
 }
 
 export interface Turnover {
