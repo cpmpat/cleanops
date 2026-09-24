@@ -23,7 +23,9 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/last-minute-by-booking-date`
+## Deployed
+
+### 2026-09-24 · PR #38
 
 **"Last minute" means booked today, not touched today.** The cleaner's card
 and the planning list keyed the mark to the turnover row's `createdAt`, and a
@@ -42,10 +44,6 @@ PMS sync would not have refreshed it — it finds nothing changed locally).
 *Migrations:* `20260924120000_booking_pms_created_at` (adds
 `bookings.pmsCreatedAt`, backfills it from `pmsRawData->>'createdAt'`).
 *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-24 · PR #37
 
