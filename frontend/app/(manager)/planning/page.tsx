@@ -19,10 +19,16 @@ const pragueDay = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { t
  * was only created today — so nobody planned for it yesterday. Kept identical
  * so the desk and the cleaner never disagree about which job is the fire.
  */
+/**
+ * Last-minute = the guest booked today and arrives today (both Prague days).
+ * Keyed to the PMS booking date, not the turnover row's createdAt: a turnover
+ * gets a fresh row on every change (time edit, neighbour re-threaded), so its
+ * createdAt says when it was last touched, not when the guest booked.
+ */
 function isLastMinute(b: PlanningBooking): boolean {
-  if (!b.turnoverCreatedAt || b.status === 'COMPLETED') return false;
+  if (!b.pmsCreatedAt || b.status === 'COMPLETED') return false;
   const today = pragueDay(new Date().toISOString());
-  return pragueDay(b.checkInTime) === today && pragueDay(b.turnoverCreatedAt) === today;
+  return pragueDay(b.checkInTime) === today && pragueDay(b.pmsCreatedAt) === today;
 }
 
 /** Quick arrival windows, measured from *now* — not from midnight. */

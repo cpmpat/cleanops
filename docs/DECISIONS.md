@@ -17,6 +17,26 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-24 — "last minute" is decided by the PMS booking date, never by a turnover row's age
+
+**Decision.** A turnover is last-minute when the guest *booked* and *arrives*
+on the same Prague day, read from `bookings.pmsCreatedAt` (Avantio's
+`createdAt`). Neither `turnovers.createdAt` nor `bookings.createdAt` may be
+used for this.
+
+**Why.** `supersede()` gives a turnover a fresh row on every change (time
+edit, neighbour inserted/cancelled/extended, reconcile), so its `createdAt`
+is "last touched", and an August booking showed as last-minute the morning
+its arrival was adjusted in Planning. `bookings.createdAt` is when *we* first
+saw the booking, which for the seven backfilled on 15 Sep is weeks after the
+guest booked. Only the PMS date answers the question the mark asks.
+
+**Corollary.** Anything that means "when did this happen in the world" needs
+its own column filled from the PMS payload; a row timestamp is always about
+our own bookkeeping.
+
+---
+
 ## 2026-09-21 — operational booking attributes live on `bookings`, are ours, and are never synced either way
 
 **Decision.** Things the front desk knows about a stay that the PMS does not

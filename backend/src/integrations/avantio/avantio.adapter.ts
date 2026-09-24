@@ -554,6 +554,7 @@ export class AvantioAdapter implements PmsAdapter {
       isOwnerStay: (raw.status || '').toUpperCase() === 'OWNER',
       guestName,
       guestEmail,
+      pmsCreatedAt: raw.createdAt || undefined,
       rawData: raw,
     };
   }

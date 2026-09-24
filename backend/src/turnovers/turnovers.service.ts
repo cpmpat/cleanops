@@ -92,6 +92,7 @@ const TURNOVER_INCLUDE = {
       channel: true,
       needsCrib: true,
       separateBeds: true,
+      pmsCreatedAt: true,
     },
   },
   toBooking: {
@@ -113,6 +114,7 @@ const TURNOVER_INCLUDE = {
       channel: true,
       needsCrib: true,
       separateBeds: true,
+      pmsCreatedAt: true,
     },
   },
   assignments: {

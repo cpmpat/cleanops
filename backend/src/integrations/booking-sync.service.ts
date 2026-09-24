@@ -360,8 +360,9 @@ export class BookingSyncService {
       id: b.id,
       cleaningId: b.cleaning?.id,
       turnoverId: turnover?.id ?? null,
-      /** When the arrival turnover was created — the cleaner's card calls it last-minute if this and the arrival fall on the same day. */
       turnoverCreatedAt: turnover?.createdAt ?? null,
+      /** When the guest booked (PMS clock). Last-minute = booked and arriving on the same Prague day. */
+      pmsCreatedAt: b.pmsCreatedAt ?? null,
       pmsBookingId: b.pmsBookingId,
       bookingRef: b.bookingRef,
       accommodationName: b.accommodationName,
@@ -545,6 +546,15 @@ export class BookingSyncService {
         await this.turnoverSync.onBookingModified(b.id, oldCheckInTime, tx);
       });
     }
+
+    // The turnover's dueBy just moved (or its window did). Cleaners with the
+    // pool open would otherwise keep the old time until they reloaded — the
+    // PMS sync will not rescue them, since it finds nothing changed here.
+    this.gateway?.emitToTenant(tenantId, 'event:updated', {
+      source: 'planning',
+      bookingId: b.id,
+      at: new Date().toISOString(),
+    });
 
     // A manager editing times in Planning is the other way these change, and
     // for the cleaner it is the same event as a PMS edit.
@@ -954,6 +964,7 @@ export class BookingSyncService {
               channel: this.mapChannel(booking.channel),
               pmsLastSyncedAt: now,
               pmsRawData: booking.rawData,
+              pmsCreatedAt: booking.pmsCreatedAt ? new Date(booking.pmsCreatedAt) : undefined,
               isOwnerStay: incomingOwnerFlag,
             },
           });
@@ -1075,6 +1086,7 @@ export class BookingSyncService {
           channel: this.mapChannel(booking.channel),
           pmsLastSyncedAt: syncedAt,
           pmsRawData: booking.rawData,
+          pmsCreatedAt: booking.pmsCreatedAt ? new Date(booking.pmsCreatedAt) : undefined,
           isOwnerStay: booking.isOwnerStay ?? false,
         },
       });
