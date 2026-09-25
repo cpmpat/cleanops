@@ -23,7 +23,9 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/agent-availability`
+## Deployed
+
+### 2026-09-25 · PR #41
 
 **Agents declare their availability; the desk sees it against arrivals.**
 Users with the `AGENT` role get their own app tabs — *Availability* and the
@@ -49,9 +51,7 @@ desk; re-reads when the tab regains focus.
 *Migrations:* `20260925120000_agent_availability` (new table
 `agent_availability`). *Env:* None.
 
----
-
-## Unreleased — branch `feat/planning-check-out-tab`
+### 2026-09-25 · PR #40
 
 **Planning has two tabs.** The sidebar item unfolds into *Check-In* (the
 existing page, now at `/planning/check-in`; `/planning` redirects there) and
@@ -82,10 +82,6 @@ tab — the two dashes reported on 25 Sep were July/August cancellations
 carrying a stale 00:00 check-in from before the midnight-time fix.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-24 · PR #38
 
