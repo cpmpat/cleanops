@@ -40,7 +40,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.replace(user.role === 'MANAGER' ? '/dashboard' : '/cleanings');
+      router.replace(user.role === 'MANAGER' ? '/dashboard' : user.role === 'AGENT' ? '/availability' : '/cleanings');
     }
   }, [user, loading, router]);
 
@@ -57,7 +57,7 @@ export default function LoginPage() {
     try {
       const { accessToken, user } = await authApi.login(email, password);
       setAuth(accessToken, user);
-      router.replace(user.role === 'MANAGER' ? '/dashboard' : '/cleanings');
+      router.replace(user.role === 'MANAGER' ? '/dashboard' : user.role === 'AGENT' ? '/availability' : '/cleanings');
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(t.invalidCredentials);

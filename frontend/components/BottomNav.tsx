@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListChecks, CalendarDays, Bookmark, Bell } from 'lucide-react';
+import { ListChecks, CalendarDays, Bookmark, Bell, Clock } from 'lucide-react';
+import { useAvailabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
 import type { Translations } from '@/i18n/translations';
 import { useMessageStrings } from '@/i18n/messages';
@@ -14,6 +15,8 @@ interface BottomNavProps {
   unconfirmedNotes?: number;
   /** Unclaimed turnovers with a guest arriving today — red. */
   todayArrivals?: number;
+  /** The signed-in user's role. AGENT gets its own tabs. */
+  role?: string;
 }
 
 /**
@@ -23,20 +26,30 @@ interface BottomNavProps {
  * Notifikace is something to read. Same colour for both would flatten that
  * difference, and red already means "urgent" everywhere else in the app.
  */
-export function BottomNav({ t, locale, unconfirmedNotes = 0, todayArrivals = 0 }: BottomNavProps) {
+export function BottomNav({ t, locale, unconfirmedNotes = 0, todayArrivals = 0, role }: BottomNavProps) {
   const pathname = usePathname();
   const m = useMessageStrings(locale);
+  const av = useAvailabilityStrings(locale);
 
-  const links = [
-    { href: '/cleanings', icon: ListChecks, label: t.nav.cleanings, badge: todayArrivals, tone: 'red' as const },
-    { href: '/calendar', icon: CalendarDays, label: t.nav.calendar, badge: 0, tone: 'red' as const },
-    { href: '/mine', icon: Bookmark, label: t.nav.mine, badge: 0, tone: 'red' as const },
-    { href: '/notifications', icon: Bell, label: m.section.navLabel, badge: unconfirmedNotes, tone: 'blue' as const },
-  ];
+  // Agents do not clean: the pool, the calendar of cleanings and "Mine" are
+  // cleaner work (claiming is CLEANER-only on the API). They get their
+  // Availability and the same inbox. Their check-in jobs will take the first
+  // slot when that module exists.
+  const links = role === 'AGENT'
+    ? [
+        { href: '/availability', icon: Clock, label: av.navLabel, badge: 0, tone: 'red' as const },
+        { href: '/notifications', icon: Bell, label: m.section.navLabel, badge: unconfirmedNotes, tone: 'blue' as const },
+      ]
+    : [
+        { href: '/cleanings', icon: ListChecks, label: t.nav.cleanings, badge: todayArrivals, tone: 'red' as const },
+        { href: '/calendar', icon: CalendarDays, label: t.nav.calendar, badge: 0, tone: 'red' as const },
+        { href: '/mine', icon: Bookmark, label: t.nav.mine, badge: 0, tone: 'red' as const },
+        { href: '/notifications', icon: Bell, label: m.section.navLabel, badge: unconfirmedNotes, tone: 'blue' as const },
+      ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-surface-border safe-area-pb">
-      <div className="grid grid-cols-4 items-center px-2 pt-2 pb-safe">
+      <div className={cn('grid items-center px-2 pt-2 pb-safe', links.length === 2 ? 'grid-cols-2' : 'grid-cols-4')}>
         {links.map(({ href, icon: Icon, label, badge, tone }) => {
           const active = pathname === href || pathname?.startsWith(href + '/');
           return (

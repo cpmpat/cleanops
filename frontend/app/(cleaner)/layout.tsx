@@ -36,6 +36,18 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         router.replace('/dashboard');
         return;
       }
+      // Agents have Availability instead of the cleaning screens; cleaners
+      // have no Availability. Everything else (inbox, chats, help, settings)
+      // is shared.
+      const CLEANING_SCREENS = ['/cleanings', '/calendar', '/mine'];
+      if (user.role === 'AGENT' && CLEANING_SCREENS.some(p => pathname === p || pathname?.startsWith(p + '/'))) {
+        router.replace('/availability');
+        return;
+      }
+      if (user.role !== 'AGENT' && pathname?.startsWith('/availability')) {
+        router.replace('/cleanings');
+        return;
+      }
     }
   }, [user, loading, pathname]);
 
@@ -123,6 +135,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         locale={locale}
         unconfirmedNotes={unconfirmedNotes}
         todayArrivals={todayArrivals}
+        role={user.role}
       />
     </div>
   );

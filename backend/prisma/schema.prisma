@@ -52,6 +52,7 @@ model Tenant {
   cdmAccommodations   CdmAccommodation[]
   datasetFields       DatasetField[]
   datasetFieldRoles   DatasetFieldRole[]
+  agentAvailability   AgentAvailability[]
 
   @@map("tenants")
 }
@@ -157,6 +158,7 @@ model User {
   conversationMessages       ConversationMessage[] @relation("ConversationMessageAuthor")
   noteTargets                NoteTarget[]
   noteAcks                   NoteAck[]
+  agentAvailability          AgentAvailability[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -1576,4 +1578,33 @@ model CdmAccommodation {
   @@index([tenantId, city])
   @@index([tenantId, status])
   @@map("cdm_accommodations")
+}
+
+// ─── AGENT AVAILABILITY ───────────────────────────
+/// One block of time an agent says they can work. Declared by the agent in
+/// their app; the desk reads it in Planning → Agents. No block = not available.
+///
+/// Stored as Prague wall-clock, not instants: `day` is the calendar day the
+/// block starts on and the minutes count from that day's midnight. A block
+/// past midnight keeps its evening's day — 21:00 → 01:00 is startMinute 1260,
+/// endMinute 1500 — so "Friday evening" stays one row on Friday.
+model AgentAvailability {
+  id          String   @id @default(uuid())
+  tenantId    String
+  userId      String
+  /// YYYY-MM-DD, Europe/Prague.
+  day         String
+  /// Minutes after the day's midnight, 0–1439, 30-minute steps.
+  startMinute Int
+  /// Minutes after the day's midnight; may exceed 1440 (past midnight), at most 1800 (06:00 next day).
+  endMinute   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, day])
+  @@index([userId, day])
+  @@map("agent_availability")
 }

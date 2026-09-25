@@ -8,8 +8,9 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
-  LogIn,
+  LogIn, Clock,
 } from 'lucide-react';
+import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
@@ -87,6 +88,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   const planningTabs = [
     { href: '/planning/check-in',  icon: LogIn,  label: (t.planning as any).tabCheckIn  ?? 'Check-In' },
     { href: '/planning/check-out', icon: LogOut, label: (t.planning as any).tabCheckOut ?? 'Check-Out' },
+    { href: '/planning/agents',    icon: Clock,  label: availabilityStrings[locale]?.tabLabel ?? 'Agents' },
   ];
 
   const navItems = [

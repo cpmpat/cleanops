@@ -17,6 +17,29 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-25 — agent availability is stored as Prague wall-clock, per real date
+
+**Decision.** `agent_availability` rows are `day` (YYYY-MM-DD, Prague) plus
+`startMinute`/`endMinute` from that day's midnight; a block past midnight
+keeps its evening's day (21:00 → 01:00 = 1260 → 1500, max 1800). No recurring
+"usual week" — agents enter real dates and can copy a week forward. Today's
+blocks may be extended but never shrunk or removed by the agent; from
+tomorrow on they are free to edit. The desk only reads (no desk edits yet).
+
+**Why.** The question the desk asks is "who is free on Friday evening", which
+is a Prague wall-clock question; instants would drag DST and the browser's
+clock into every read and write (the 15:10 → 17:10 lesson). Keeping the
+overnight block on its evening's day matches how agents think and keeps one
+row per shift. Locking today protects the plan the desk already made; a
+change inside today goes through a phone call. A recurring template was
+declined for now — real dates are unambiguous and "Copy this week" covers the
+repetition.
+
+**Also.** "Available" means the agent declared it. No row = not available,
+by design; the UI says *Not available* in words.
+
+---
+
 ## 2026-09-24 — each Planning tab owns one time; the other is read-only
 
 **Decision.** `/planning/check-in` edits and pushes only `checkInTime`;
