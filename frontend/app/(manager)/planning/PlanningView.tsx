@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { integrations, bookings as bookingsApi, users as usersApi, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
-import { formatTime, formatOccupancy, todayISO, cn } from '@/lib/utils';
+import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
+import { useSocket } from '@/lib/socket';
 import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 
@@ -52,7 +53,19 @@ const PUSH_CONCURRENCY = 3;
  * the cell it names. Columns: status · unit/guest · party · setup · check-in ·
  * check-out · row actions · cleaner.
  */
-const GRID = 'grid grid-cols-[6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+
+/** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
+const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
+
+/** "Thu 25 Sep", Prague calendar — the day this row's time belongs to. */
+function dayLabel(iso: string, locale: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(LOCALE_TAG[locale] ?? 'en-GB', {
+      weekday: 'short', day: 'numeric', month: 'short', timeZone: APP_TIME_ZONE,
+    });
+  } catch { return iso.slice(0, 10); }
+}
 
 /**
  * Which side of the stay this tab plans. Check-In bounds the list by arrival,
@@ -82,7 +95,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   // Bookings whose check-in time we assumed (15:00) because the PMS sent 00:00 / nothing.
   const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
   // A quick window overrides the date inputs while it is active.
-  const [quick, setQuick] = useState<QuickWindow | null>(null);
+  const [quick, setQuick] = useState<QuickWindow | null>(24);
   // Default: by unit name, so the desk reads the list the way the building is laid out.
   const [sortKey, setSortKey] = useState<'unit' | 'time'>('unit');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -113,7 +126,11 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
       .catch(() => {});
   }, []);
 
-  const load = useCallback(async (window: QuickWindow | null = quick) => {
+  /**
+   * `keepDrafts`: a background refresh (socket event) must not wipe what the
+   * operator is typing; an explicit Apply starts clean.
+   */
+  const load = useCallback(async (window: QuickWindow | null = quick, keepDrafts = false) => {
     setLoading(true);
     try {
       const now = new Date();
@@ -125,12 +142,23 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         status: statusFilter || undefined,
       });
       setBookings(data);
-      setDrafts({});
-      setRowState({});
+      if (!keepDrafts) { setDrafts({}); setRowState({}); }
       setLoaded(true);
     } catch {}
     finally { setLoading(false); }
   }, [mode, quick, arrivalFrom, arrivalTo, creationFrom, statusFilter]);
+
+  // Each tab opens on the next 24 h — the desk's working window — so the
+  // list is there before anyone touches a filter.
+  useEffect(() => { void load(24); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleaners claiming, starting and finishing jobs broadcast event:updated;
+  // so does the PMS sync and a push from the other planning tab. Refresh in
+  // place so the Status column is live, keeping any unsaved edits.
+  useSocket({
+    'event:updated': () => { if (loaded) void load(undefined, true); },
+    'event:cancelled': () => { if (loaded) void load(undefined, true); },
+  });
 
   function pickQuick(w: QuickWindow) {
     const next = quick === w ? null : w;
@@ -448,26 +476,37 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           </div>
           {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
           <div className={cn(GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
+            {/* Day: the calendar day this tab's time falls on — sorts with the time column. */}
+            <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
+              {tp.day}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            </button>
             <span>{tp.filterStatus}</span>
             <button type="button" onClick={() => toggleSort('unit')} className="text-left hover:text-ink transition">
               {tp.sortUnit} · {tp.guest}{sortKey === 'unit' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
             </button>
-            <span title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>
-            <span>{tp.setup}</span>
-            {byCheckOut ? (
-              <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkInTime}</span>
-            ) : (
-              <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
-                ↓ {tp.checkInTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
-              </button>
-            )}
-            {byCheckOut ? (
-              <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
-                ↑ {tp.checkOutTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
-              </button>
-            ) : (
-              <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkOutTime}</span>
-            )}
+            <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>
+            <span className="text-center">{tp.setup}</span>
+            {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 flex-shrink-0" />
+              {byCheckOut ? (
+                <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkInTime}</span>
+              ) : (
+                <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
+                  ↓ {tp.checkInTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+                </button>
+              )}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 flex-shrink-0" />
+              {byCheckOut ? (
+                <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
+                  ↑ {tp.checkOutTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+                </button>
+              ) : (
+                <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkOutTime}</span>
+              )}
+            </span>
             <span />
             <span className="text-right">{tp.cleaner}</span>
           </div>
@@ -491,12 +530,23 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     done && 'opacity-70',
                   )}
                 >
-                  {/* Arrival-turnover status: what the cleaner did with it. */}
+                  {/* The day this tab's time falls on. Today is set in bold so the desk sees the line between today and tomorrow. */}
+                  {(() => {
+                    const iso = ownTime(b);
+                    const isTodayRow = pragueDay(iso) === pragueDay(new Date().toISOString());
+                    return (
+                      <span className={cn('text-xs tabular-nums whitespace-nowrap', isTodayRow ? 'font-bold text-ink' : 'text-ink-soft')}>
+                        {dayLabel(iso, locale)}
+                      </span>
+                    );
+                  })()}
+
+                  {/* Turnover status: before arrival (Check-In) or after departure (Check-Out) — what the cleaner did with it. */}
                   <div className="min-w-0">
                     {b.status ? (
                       <StatusBadge status={b.status as any} t={t} size="sm" />
                     ) : (
-                      <span className="text-[11px] text-ink-faint pl-2" title={tp.noTurnover}>—</span>
+                      <span className="text-[11px] text-ink-faint italic" title={tp.noTurnover}>{tp.noTurnover}</span>
                     )}
                   </div>
 
@@ -529,7 +579,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   {/* Guests — same "adults+children" reading the cleaner's card uses */}
                   <span
-                    className="flex items-center gap-1 text-xs text-ink-soft tabular-nums"
+                    className="flex items-center justify-center gap-1 text-xs text-ink-soft tabular-nums"
                     title={`${tp.guests}: ${b.numAdults} + ${b.numChildren}`}
                   >
                     <Users size={13} className="text-ink-faint" />
@@ -537,7 +587,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   </span>
 
                   {/* Setup requests — local only, cleaner sees them on the card */}
-                  <div className="flex items-center gap-1" title={tp.localOnly}>
+                  <div className="flex items-center justify-center gap-1" title={tp.localOnly}>
                     <button
                       type="button"
                       onClick={() => void toggleFlag(b, 'needsCrib')}

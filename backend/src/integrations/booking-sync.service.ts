@@ -301,7 +301,10 @@ export class BookingSyncService {
    * response is instant. Each record includes the assignment summary.
    */
   async getBookingsForPlanning(tenantId: string, filters: PlanningFilters) {
-    const where: any = { tenantId };
+    // Cancelled bookings have nothing to plan: their turnovers are SKIPPED or
+    // superseded, so they surfaced as a dash with a stale 00:00 check-in
+    // (two cancelled July/August stays on the Check-out tab, 25 Sep).
+    const where: any = { tenantId, status: BookingStatus.CONFIRMED };
 
     // A bare date ("2026-09-30") means that calendar day in Prague, whole. It
     // used to become `new Date('2026-09-30')` — midnight UTC — so an arrival

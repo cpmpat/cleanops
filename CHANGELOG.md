@@ -41,6 +41,18 @@ PMS carried a real one, and plain weight when it is the 15:00 house default
 we filled in — the same distinction the amber "not confirmed" chip makes,
 now visible in the number itself.
 
+**Planning opens on the next 24 h, shows the day, and stays live.** Both
+tabs load "Next 24 h" on entry with the button shown selected. A *Day*
+column leads every row ("Thu 25 Sep", Prague calendar, today in bold) so a
+window that crosses midnight still reads unambiguously. The list refreshes
+in place on `event:updated` / `event:cancelled` — a cleaner starting a job
+shows as *In progress* without Apply — keeping unsaved edits. Column headings
+now sit on the same baseline as their cells (time headings carry the dot
+spacer, party and setup are centred). A row with no turnover says *No
+cleaning* instead of a dash. Cancelled bookings no longer appear in either
+tab — the two dashes reported on 25 Sep were July/August cancellations
+carrying a stale 00:00 check-in from before the midnight-time fix.
+
 *Migrations:* None. *Env:* None.
 
 ---
