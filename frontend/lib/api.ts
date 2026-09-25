@@ -1249,7 +1249,9 @@ export const integrations = {
   syncAccommodations: () => post('/integrations/sync/accommodations'),
   testConnection: () => post<{ connected: boolean; error?: string }>('/integrations/test-connection'),
   planning: {
+    /** `by` picks the side of the stay: the range bounds check-in (default) or check-out, and the row's turnover is the one before arrival or after departure. */
     list: (filters: {
+      by?: 'checkIn' | 'checkOut';
       arrivalFrom?: string;
       arrivalTo?: string;
       creationDateFrom?: string;

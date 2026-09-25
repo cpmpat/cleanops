@@ -17,6 +17,21 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-24 — each Planning tab owns one time; the other is read-only
+
+**Decision.** `/planning/check-in` edits and pushes only `checkInTime`;
+`/planning/check-out` only `checkOutTime`. The backend's planning list takes
+`by=checkIn|checkOut`, which picks the date field the range bounds *and* the
+turnover the row reports (before arrival vs. after departure).
+
+**Why.** The desk plans arrivals and departures as two jobs, often by two
+people. One page with both fields editable meant two operators could push
+the same booking with different intents and the later PUT to Avantio won
+silently. Locking the field that is not the tab's subject makes the intent
+explicit and the conflict impossible.
+
+---
+
 ## 2026-09-24 — "last minute" is decided by the PMS booking date, never by a turnover row's age
 
 **Decision.** A turnover is last-minute when the guest *booked* and *arrives*
