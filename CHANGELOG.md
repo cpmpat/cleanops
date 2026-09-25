@@ -23,6 +23,34 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — branch `feat/agent-availability`
+
+**Agents declare their availability; the desk sees it against arrivals.**
+Users with the `AGENT` role get their own app tabs — *Availability* and the
+inbox — and land on Availability after login (the cleaning screens redirect
+there; cleaners cannot open Availability). The screen lists today through
+Sunday of next week; a day with no hours says *Not available*. Adding time is
+a bottom sheet: four quick picks (08–12, 12–18, 18–23, 21–01), From/Till in
+30-minute steps with past-midnight blocks (till 06:00), and "same hours also
+on" for the next six days. Touching or overlapping blocks on a day merge.
+*Copy this week* repeats the week onto the next. Today's hours can be added to
+but not changed or removed; from tomorrow on everything is editable. Up to 28
+days ahead.
+
+**Planning → Agents** (third item under Planning): a Day timeline 08:00 →
+02:00 with one row per agent, a now-line, and two lines per hour — arrivals
+from Check-In planning (striped when the time is our 15:00 default) and agents
+on duty; an hour is red when guests arrive and no agent is available, amber
+above 4 arrivals per agent. Uncovered arrivals are listed with a link to
+Check-In. A Week grid shows agents × days with agent-hours, arrivals and
+uncovered hours per day; clicking a day opens its timeline. Read-only for the
+desk; re-reads when the tab regains focus.
+
+*Migrations:* `20260925120000_agent_availability` (new table
+`agent_availability`). *Env:* None.
+
+---
+
 ## Unreleased — branch `feat/planning-check-out-tab`
 
 **Planning has two tabs.** The sidebar item unfolds into *Check-In* (the

@@ -26,6 +26,7 @@ import { NotesModule } from './notes/notes.module';
 import { HelpModule } from './help/help.module';
 import { DatasetsModule } from './datasets/datasets.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { AvailabilityModule } from './availability/availability.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { ConversationsModule } from './conversations/conversations.module';
     HelpModule,
     DatasetsModule,
     ConversationsModule,
+    AvailabilityModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -1788,3 +1788,62 @@ export const conversations = {
 };
 
 export { ApiError };
+
+// ─── Agent availability ───────────────────────────────────────────────────────
+// Days are YYYY-MM-DD and times "HH:mm", both Europe/Prague. A block past
+// midnight keeps its evening's day: 21:00 → 01:00 is startMinute 1260,
+// endMinute 1500, end "01:00".
+
+export interface AvailabilityBlock {
+  id: string;
+  userId: string;
+  day: string;
+  startMinute: number;
+  endMinute: number;
+  start: string;
+  end: string;
+  updatedAt: string;
+}
+
+export interface MyAvailability {
+  /** Today in Prague — the server's, so a phone on another clock still agrees. */
+  today: string;
+  /** Last day an agent may plan. */
+  horizon: string;
+  blocks: AvailabilityBlock[];
+}
+
+export interface AvailabilityBoardArrival {
+  id: string;
+  bookingRef: string;
+  accommodationName: string;
+  day: string;
+  time: string;
+  /** Minutes after the day's midnight. */
+  minute: number;
+  /** The time is our 15:00 default, not a real one. */
+  assumed: boolean;
+}
+
+export interface AvailabilityBoard {
+  from: string;
+  to: string;
+  today: string;
+  agents: { id: string; name: string; mobileNumber: string | null }[];
+  blocks: AvailabilityBlock[];
+  arrivals: AvailabilityBoardArrival[];
+}
+
+export const availability = {
+  mine: () => get<MyAvailability>('/availability/mine'),
+  /** Same hours on each day; end ≤ start means past midnight. Merges with touching blocks. */
+  add: (days: string[], start: string, end: string) =>
+    post<MyAvailability>('/availability/mine', { days, start, end }),
+  update: (id: string, start: string, end: string) =>
+    patch<MyAvailability>(`/availability/mine/${id}`, { start, end }),
+  remove: (id: string) => del<MyAvailability>(`/availability/mine/${id}`),
+  copyWeek: (weekStart: string) =>
+    post<MyAvailability & { copied: number }>('/availability/mine/copy-week', { weekStart }),
+  board: (from: string, to: string) =>
+    get<AvailabilityBoard>(`/availability/board?from=${from}&to=${to}`),
+};
