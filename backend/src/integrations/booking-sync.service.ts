@@ -25,8 +25,16 @@ export interface BookingSyncOutcome {
 }
 
 export interface PlanningFilters {
-  arrivalFrom?: string;      // filters by checkInTime >=
-  arrivalTo?: string;        // filters by checkInTime <=
+  /**
+   * Which side of the stay the desk is planning. 'checkIn' (default): the
+   * date range bounds checkInTime and each row reports the turnover *before
+   * this guest arrives*. 'checkOut': the range bounds checkOutTime and each
+   * row reports the turnover *after this guest leaves* — the cleaning that
+   * departure time actually gates.
+   */
+  by?: 'checkIn' | 'checkOut';
+  arrivalFrom?: string;      // filters by checkInTime >= (checkOutTime when by=checkOut)
+  arrivalTo?: string;        // filters by checkInTime <= (checkOutTime when by=checkOut)
   creationDateFrom?: string; // filters by event createdAt >=
   creationDateTo?: string;   // filters by event createdAt <=
   status?: string;           // TurnoverStatus value — the arrival turnover's status
@@ -309,10 +317,12 @@ export class BookingSyncService {
       return { lt: startOfDayInAppZone(d.toISOString().slice(0, 10)) };
     };
 
+    const byCheckOut = filters.by === 'checkOut';
+    const dateField = byCheckOut ? 'checkOutTime' : 'checkInTime';
     if (filters.arrivalFrom || filters.arrivalTo) {
-      where.checkInTime = {};
-      if (filters.arrivalFrom) where.checkInTime.gte = fromBound(filters.arrivalFrom);
-      if (filters.arrivalTo) Object.assign(where.checkInTime, toBound(filters.arrivalTo));
+      where[dateField] = {};
+      if (filters.arrivalFrom) where[dateField].gte = fromBound(filters.arrivalFrom);
+      if (filters.arrivalTo) Object.assign(where[dateField], toBound(filters.arrivalTo));
     }
 
     if (filters.creationDateFrom || filters.creationDateTo) {
@@ -325,6 +335,22 @@ export class BookingSyncService {
     // below. It used to be applied to `bookings.status` (CONFIRMED/CANCELLED)
     // with a cleaning-status value, which matched nothing.
 
+    const liveTurnover = {
+      where: {
+        supersededById: null,
+        status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
+      },
+      include: {
+        assignments: {
+          where: { status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.STARTED, AssignmentStatus.COMPLETED] } },
+          include: { user: { select: { id: true, name: true } } },
+          orderBy: [{ isPrimary: 'desc' }, { assignedAt: 'asc' }] as any,
+        },
+      },
+      orderBy: { createdAt: 'desc' as const },
+      take: 1,
+    };
+
     const bookings = await this.prisma.booking.findMany({
       where,
       include: {
@@ -335,27 +361,16 @@ export class BookingSyncService {
         // mark done, so it is what the desk needs to see. The legacy
         // `cleaning.status` stayed PENDING forever once cleaners moved to
         // turnovers, which showed every row as "In pool · Unassigned".
-        turnoversAsTo: {
-          where: {
-            supersededById: null,
-            status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
-          },
-          include: {
-            assignments: {
-              where: { status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.STARTED, AssignmentStatus.COMPLETED] } },
-              include: { user: { select: { id: true, name: true } } },
-              orderBy: [{ isPrimary: 'desc' }, { assignedAt: 'asc' }],
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
+        // For the Check-out view the row reports the turnover *after this
+        // guest leaves* (`fromBooking` is this booking) — the job the desk is
+        // unblocking when it confirms a departure time.
+        ...(byCheckOut ? { turnoversAsFrom: liveTurnover } : { turnoversAsTo: liveTurnover }),
       },
-      orderBy: { checkInTime: 'asc' },
+      orderBy: { [dateField]: 'asc' },
     });
 
-    const rows = bookings.map(b => {
-      const turnover = b.turnoversAsTo[0] ?? null;
+    const rows = bookings.map((b: any) => {
+      const turnover = (byCheckOut ? b.turnoversAsFrom?.[0] : b.turnoversAsTo?.[0]) ?? null;
       return {
       id: b.id,
       cleaningId: b.cleaning?.id,
@@ -388,7 +403,7 @@ export class BookingSyncService {
       status: turnover?.status ?? null,
       bookingStatus: b.status,
       bookingCancelledAt: b.cancelledAt,
-      assignments: (turnover?.assignments ?? []).map((a) => ({
+      assignments: (turnover?.assignments ?? []).map((a: any) => ({
         id: a.id,
         userId: a.userId,
         userName: a.user.name,

@@ -23,6 +23,28 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — branch `feat/planning-check-out-tab`
+
+**Planning has two tabs.** The sidebar item unfolds into *Check-In* (the
+existing page, now at `/planning/check-in`; `/planning` redirects there) and
+*Check-Out* (`/planning/check-out`): the same list bounded by departure date
+instead of arrival — Next 24/48/72 h and the date range both read departures —
+and each row reports the turnover *after* that guest leaves, which is the job
+a departure time actually gates. Each tab edits only its own time and pushes
+only that field; the other time is shown locked (grey, lock icon in the
+heading), so two operators cannot push the same field from two tabs. The
+last-minute chip stays on the Check-In side only.
+
+**Cleaners can tell a confirmed arrival time from an assumed one.** On the
+turnover card the time is bold when the front desk set it in Planning or the
+PMS carried a real one, and plain weight when it is the 15:00 house default
+we filled in — the same distinction the amber "not confirmed" chip makes,
+now visible in the number itself.
+
+*Migrations:* None. *Env:* None.
+
+---
+
 ## Deployed
 
 ### 2026-09-24 · PR #38

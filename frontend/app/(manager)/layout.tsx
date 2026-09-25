@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
+  LogIn,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
@@ -77,6 +78,17 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     datasetsApi.list().then(setDataLists).catch(() => {});
   }, [user]);
 
+  // Planning unfolds into the two sides of a stay. Each tab edits only its
+  // own time (Check-In → arrival, Check-Out → departure); the other is shown
+  // read-only, so two desk operators cannot fight over the same field.
+  const onPlanning = pathname?.startsWith('/planning') ?? false;
+  const [planningOpen, setPlanningOpen] = useState(onPlanning);
+  useEffect(() => { if (onPlanning) setPlanningOpen(true); }, [onPlanning]);
+  const planningTabs = [
+    { href: '/planning/check-in',  icon: LogIn,  label: (t.planning as any).tabCheckIn  ?? 'Check-In' },
+    { href: '/planning/check-out', icon: LogOut, label: (t.planning as any).tabCheckOut ?? 'Check-Out' },
+  ];
+
   const navItems = [
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
     { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
@@ -125,6 +137,9 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
           {visibleNav.map(({ href, icon: Icon, label }) => {
             const active = pathname === href || pathname?.startsWith(href + '/');
             const isData = href === '/datasets';
+            const isPlanning = href === '/planning';
+            const open = isData ? dataOpen : planningOpen;
+            const toggle = isData ? () => setDataOpen(o => !o) : () => setPlanningOpen(o => !o);
             return (
               <div key={href}>
                 <div
@@ -137,19 +152,41 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                     <Icon size={17} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
                     {label}
                   </Link>
-                  {isData ? (
+                  {isData || isPlanning ? (
                     <button
                       type="button"
-                      onClick={() => setDataOpen(o => !o)}
-                      aria-expanded={dataOpen}
+                      onClick={toggle}
+                      aria-expanded={open}
                       className="ml-auto -mr-1 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition"
                     >
-                      <ChevronDown size={14} className={cn('transition-transform', dataOpen ? 'rotate-180' : '')} />
+                      <ChevronDown size={14} className={cn('transition-transform', open ? 'rotate-180' : '')} />
                     </button>
                   ) : (
                     active && <ChevronRight size={14} className="ml-auto opacity-40" />
                   )}
                 </div>
+
+                {/* Planning → Check-In / Check-Out */}
+                {isPlanning && planningOpen && (
+                  <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
+                    {planningTabs.map(tab => {
+                      const on = pathname === tab.href || pathname?.startsWith(tab.href + '/');
+                      return (
+                        <Link
+                          key={tab.href}
+                          href={tab.href}
+                          className={cn(
+                            'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
+                            on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
+                          )}
+                        >
+                          <tab.icon size={13} className="flex-shrink-0 opacity-70" />
+                          {tab.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Data → CDM → the lists in it */}
                 {isData && dataOpen && dataLists.length > 0 && (

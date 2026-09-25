@@ -57,7 +57,8 @@ export class IntegrationsController {
     description: 'Returns cleaning events with assignment info, filterable by arrival date range, ' +
       'creation date range, and status. Backed by local DB — instant response.',
   })
-  @ApiQuery({ name: 'arrivalFrom', required: false, description: 'Filter by check-in >= (ISO date, e.g. 2026-04-01)' })
+  @ApiQuery({ name: 'by', required: false, description: "'checkIn' (default) or 'checkOut': which time the date range bounds, and which turnover (before arrival / after departure) the row reports" })
+  @ApiQuery({ name: 'arrivalFrom', required: false, description: 'Filter by check-in >= (ISO date, e.g. 2026-04-01); by check-out when by=checkOut' })
   @ApiQuery({ name: 'arrivalTo', required: false, description: 'Filter by check-in <= (ISO date, e.g. 2026-04-30)' })
   @ApiQuery({ name: 'creationDateFrom', required: false, description: 'Filter by event created >= (ISO date)' })
   @ApiQuery({ name: 'creationDateTo', required: false, description: 'Filter by event created <= (ISO date)' })
@@ -69,8 +70,10 @@ export class IntegrationsController {
     @Query('creationDateFrom') creationDateFrom?: string,
     @Query('creationDateTo') creationDateTo?: string,
     @Query('status') status?: string,
+    @Query('by') by?: string,
   ) {
     return this.syncService.getBookingsForPlanning(req.tenantId!, {
+      by: by === 'checkOut' ? 'checkOut' : 'checkIn',
       arrivalFrom,
       arrivalTo,
       creationDateFrom,

@@ -159,6 +159,14 @@ export function TurnoverCard({
     return isToday(new Date(toBooking.checkInTime)) && isToday(new Date(toBooking.pmsCreatedAt));
   })();
 
+  /**
+   * Is the arrival time a real one — set by the front desk in Planning or
+   * carried by the PMS — or the house default we filled in because nobody
+   * said? A confirmed time is printed bold; an assumed one in plain weight, so
+   * the cleaner reads the difference before she reads the digits.
+   */
+  const checkInConfirmed = !!toBooking?.checkInTime && toBooking.checkInSource !== 'FALLBACK';
+
   // ─── Display fields ───
   const accommodationName =
     property?.name ??
@@ -304,7 +312,7 @@ export function TurnoverCard({
             <span className="flex items-center gap-1">
               <LogIn size={12} className="text-ink-faint" />
               <span className="text-ink-faint">Guest arrives</span>
-              <span className="font-semibold text-ink-soft">
+              <span className={checkInConfirmed ? 'font-bold text-ink' : 'font-normal text-ink-muted'}>
                 {formatTime(toBooking.checkInTime)}
               </span>
             </span>
@@ -386,7 +394,7 @@ export function TurnoverCard({
                     month: 'short',
                     day: 'numeric',
                   })}
-                  , {formatTime(toBooking.checkInTime)}
+                  , <span className={checkInConfirmed ? 'font-bold' : 'font-normal'}>{formatTime(toBooking.checkInTime)}</span>
                 </span>
               </div>
             ) : (
@@ -404,7 +412,7 @@ export function TurnoverCard({
                     month: 'short',
                     day: 'numeric',
                   })}
-                  , {formatTime(toBooking.checkInTime)}
+                  , <span className={checkInConfirmed ? 'font-bold' : 'font-normal'}>{formatTime(toBooking.checkInTime)}</span>
                 </span>
               </div>
             )
