@@ -24,11 +24,16 @@ import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
 const DESK_ONLY_ROLES = ['OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'ASSIST'];
 
 /**
- * What the desk may open. Data is included for everyone on the desk: which
- * lists and columns they then see is decided per role by the dataset access
- * matrix on the server, so a role with no grants sees an empty section.
+ * What each non-manager office role may open, first entry = where it starts.
+ * Everything else is left out of the menu, not shown locked. Which Data lists
+ * and columns they then see is the dataset access matrix's decision.
  */
-const DESK_PATHS = ['/airchat', '/datasets'];
+const ROLE_PATHS: Record<string, string[]> = {
+  FRONT_DESK_MANAGER: ['/planning', '/datasets'],
+  FRONT_DESK:         ['/planning', '/datasets'],
+  OPERATION_MANAGER:  ['/airchat', '/datasets'],
+  ASSIST:             ['/airchat', '/datasets'],
+};
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'en', label: 'EN' },
@@ -58,11 +63,12 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
       if (!user) { router.replace('/login'); return; }
       if (user.role === 'REPAIRMAN') { router.replace('/my-repairs'); return; }
 
-      // The desk gets in as far as Airchat and Data (Data filtered per column
+      // The desk gets the screens ROLE_PATHS names (Data filtered per column
       // by the access matrix). The rest of the manager app stays with MANAGER
       // and ADMIN until each role's scope is decided.
       if (DESK_ONLY_ROLES.includes(user.role)) {
-        if (!DESK_PATHS.some(p => pathname?.startsWith(p))) { router.replace('/airchat'); }
+        const allowed = ROLE_PATHS[user.role] ?? ['/airchat'];
+        if (!allowed.some(p => pathname?.startsWith(p))) { router.replace(allowed[0]); }
         return;
       }
       if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
@@ -117,7 +123,10 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   // Desk roles see one item. Showing them a menu they cannot open would just
   // be a list of locked doors.
   const visibleNav = DESK_ONLY_ROLES.includes(user?.role ?? '')
-    ? navItems.filter((i) => i.href === '/airchat' || (i.href === '/datasets' && dataLists.length > 0))
+    ? navItems.filter((i) =>
+        (ROLE_PATHS[user!.role] ?? ['/airchat']).includes(i.href) &&
+        // Data appears once the matrix grants at least one list.
+        (i.href !== '/datasets' || dataLists.length > 0))
     : navItems;
 
   if (loading || !user) {

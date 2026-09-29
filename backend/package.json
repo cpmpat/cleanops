@@ -21,7 +21,8 @@
     "diag:boundary": "ts-node -P tsconfig.scripts.json scripts/diag-boundary.ts",
     "diag:dataset-values": "ts-node -P tsconfig.scripts.json scripts/diag-dataset-values.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
-    "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts"
+    "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts",
+    "import:access-matrix": "ts-node -P tsconfig.scripts.json scripts/import-access-matrix.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",

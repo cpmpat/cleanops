@@ -10,6 +10,7 @@ import { AvantioAdapter } from './avantio/avantio.adapter';
 import { PmsTenantConfig } from '../common/interfaces/pms-adapter.interface';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
+import { PLANNING_ROLES } from '../common/roles';
 
 @ApiTags('Integrations')
 @ApiBearerAuth()
@@ -52,6 +53,7 @@ export class IntegrationsController {
   // ─── Check-in Planning ───
 
   @Get('planning/bookings')
+  @Roles(...PLANNING_ROLES)
   @ApiOperation({
     summary: 'List bookings for the Check-in Planning view',
     description: 'Returns cleaning events with assignment info, filterable by arrival date range, ' +
@@ -83,6 +85,7 @@ export class IntegrationsController {
   }
 
   @Get('planning/bookings/:pmsBookingId')
+  @Roles(...PLANNING_ROLES)
   @ApiOperation({
     summary: 'Get full booking detail from Avantio',
     description: 'Fetches the complete booking object from the PMS. ' +
@@ -96,6 +99,7 @@ export class IntegrationsController {
   }
 
   @Patch('planning/bookings/:pmsBookingId')
+  @Roles(...PLANNING_ROLES)
   @ApiOperation({
     summary: 'Update check-in / check-out time in Avantio',
     description:
@@ -118,5 +122,21 @@ export class IntegrationsController {
       body,
       req.userId,
     );
+  }
+
+  @Patch('planning/setup/:bookingId')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Record setup requests (crib, separate beds) for a booking',
+    description:
+      'Local to CleanOps, never sent to the PMS. Body: { needsCrib?: boolean, separateBeds?: boolean }. ' +
+      'Its own endpoint so the desk can set these without the manager-only booking edit.',
+  })
+  updateSetup(
+    @Req() req: TenantRequest,
+    @Param('bookingId') bookingId: string,
+    @Body() body: { needsCrib?: boolean; separateBeds?: boolean },
+  ) {
+    return this.syncService.updateSetupRequests(req.tenantId!, bookingId, body ?? {});
   }
 }

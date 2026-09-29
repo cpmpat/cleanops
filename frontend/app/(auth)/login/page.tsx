@@ -40,7 +40,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.replace(user.role === 'MANAGER' ? '/dashboard' : user.role === 'AGENT' ? '/availability' : '/cleanings');
+      router.replace(homeFor(user.role));
     }
   }, [user, loading, router]);
 
@@ -57,7 +57,7 @@ export default function LoginPage() {
     try {
       const { accessToken, user } = await authApi.login(email, password);
       setAuth(accessToken, user);
-      router.replace(user.role === 'MANAGER' ? '/dashboard' : user.role === 'AGENT' ? '/availability' : '/cleanings');
+      router.replace(homeFor(user.role));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(t.invalidCredentials);
@@ -282,4 +282,16 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Where each role starts. The desk roles used to fall through to the cleaners'
+ * pool, where every "Take" answers 403 — they belong in the office app.
+ */
+function homeFor(role?: string | null): string {
+  if (role === 'ADMIN' || role === 'FRONT_DESK_MANAGER' || role === 'FRONT_DESK') return '/planning';
+  if (role === 'MANAGER') return '/dashboard';
+  if (role === 'AGENT') return '/availability';
+  if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
+  return '/cleanings';
 }

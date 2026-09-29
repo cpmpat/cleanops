@@ -53,11 +53,29 @@ only, and those entries are visible to ADMIN alone.
 **Five new Accommodation columns:** totalBedrooms (int), totalBathrooms
 (float), orderAccommodationAdded, parkingLimits, accommodationStandard.
 `otaHousingAnywhere` becomes boolean (its data held only TRUE/FALSE).
+
+**Per-role start and menu.** ADMIN, FRONT_DESK_MANAGER and FRONT_DESK start
+on Planning after login (MANAGER stays on the Dashboard). The two front-desk
+roles see only Planning and Data in the menu; OPERATION_MANAGER and ASSIST see
+Airchat and Data. Desk roles used to land on the cleaners' pool, where every
+"Take" was a 403. The front desk can use Planning — list, push times, crib /
+separate beds (new `PATCH /integrations/planning/setup/:bookingId`) — but
+assigning cleaners stays MANAGER/ADMIN and its controls are hidden. Full
+picture in `docs/ACCESS.md`.
+
+**OX Point list.** New `cdm_ox_point` table, loaded from the CDM sheet's
+"OX Point" tab by `import:cdm --list oxpoint` (a list without a mapping tab
+now takes its column names from the data tab's header). Shown in Data once the
+matrix grants it.
+
+**`import:access-matrix`** loads the matrix CSV (any number of roles; the file
+is the whole truth for the roles it names), dry run by default, audited.
 `import:cdm` now refuses `--apply` on a list with app edits unless
 `--overwrite-app-edits`. New read-only `diag:dataset-values`.
 
 *Migrations:* `20260929120000_dataset_access_matrix` (three tables, one
-column on `dataset_fields`, five on `cdm_accommodations`, seeds). *Env:* None.
+column on `dataset_fields`, five on `cdm_accommodations`, seeds),
+`20260929130000_cdm_ox_point`. *Env:* None.
 
 ---
 

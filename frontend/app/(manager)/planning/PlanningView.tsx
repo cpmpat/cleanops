@@ -1,7 +1,8 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { integrations, bookings as bookingsApi, users as usersApi, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
+import { integrations, users as usersApi, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
@@ -120,11 +121,17 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState('');
 
+  // Assigning cleaners stays with MANAGER / ADMIN (the API enforces it); the
+  // desk sees who is assigned but gets no assign controls.
+  const { user } = useAuth();
+  const mayAssign = user?.role === 'MANAGER' || user?.role === 'ADMIN';
+
   useEffect(() => {
+    if (!mayAssign) return;
     usersApi.list()
       .then(all => setCleaners(all.filter(u => u.role === 'CLEANER')))
       .catch(() => {});
-  }, []);
+  }, [mayAssign]);
 
   /**
    * `keepDrafts`: a background refresh (socket event) must not wipe what the
@@ -279,7 +286,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     setBookings(prev => prev.map(x => (x.id === b.id ? { ...x, [key]: next } : x)));
     setFlagBusy(prev => ({ ...prev, [b.id]: 'saving' }));
     try {
-      await bookingsApi.update(b.id, { [key]: next });
+      await integrations.planning.setup(b.id, { [key]: next });
       setFlagBusy(prev => without(prev, b.id));
     } catch {
       setBookings(prev => prev.map(x => (x.id === b.id ? { ...x, [key]: !next } : x)));
@@ -714,13 +721,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                               {a.userName[0]}
                             </div>
                             <span className="text-xs text-ink-soft max-w-[60px] truncate">{a.userName.split(' ')[0]}</span>
-                            <button
+                            {mayAssign && <button
                               onClick={() => openAssign(b, a.userId)}
                               title={`Reassign ${a.userName}`}
                               className="ml-0.5 text-ink-faint hover:text-accent transition"
                             >
                               <ArrowLeftRight size={11} />
-                            </button>
+                            </button>}
                           </div>
                         ))}
                         {b.assignments.length > 2 && (
@@ -728,7 +735,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         )}
                       </div>
                     )}
-                    {b.turnoverId && !done && b.assignments.length < 3 && (
+                    {mayAssign && b.turnoverId && !done && b.assignments.length < 3 && (
                       <button
                         onClick={() => openAssign(b)}
                         title="Assign cleaner"

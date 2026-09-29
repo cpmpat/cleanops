@@ -1,0 +1,61 @@
+# Who can open what
+
+The current access of each role, as the code enforces it. Update this file in
+the same PR as any change to role checks, the desk-path list in the manager
+layout, or the dataset access matrix.
+
+Three layers decide access:
+
+1. **API** — `@Roles(...)` + `RolesGuard` per endpoint. `ADMIN` passes every
+   role check. Endpoints with no `@Roles` are open to any signed-in account.
+2. **Screens** — `ROLE_PATHS` in the manager layout lists what each desk role
+   may open (anything else is absent from the menu and redirects):
+   FRONT_DESK_MANAGER and FRONT_DESK → Planning, Data; OPERATION_MANAGER and
+   ASSIST → Airchat, Data. Login sends ADMIN, FRONT_DESK_MANAGER and
+   FRONT_DESK to Planning, MANAGER to the Dashboard, agents to Availability.
+3. **Data** — the dataset access matrix (`dataset_field_access`), per role ×
+   list × column: none / view / edit. No row = no access.
+
+## ADMIN, FRONT_DESK_MANAGER, FRONT_DESK — as of `feat/dataset-access-matrix`
+
+| Area | ADMIN | FRONT_DESK_MANAGER | FRONT_DESK |
+|---|---|---|---|
+| Lands on after login | Planning | Planning | Planning |
+| Manager app menu | Everything | Planning, Data | Planning, Data |
+| Dashboard, Schedule, Stream, Incidents, Repairs, Messages, Staff, Properties, Settings | Yes | No | No |
+| Planning — view, push check-in/out times, crib/separate beds | Yes | Yes | Yes |
+| Planning — assign / reassign cleaners | Yes | No (controls hidden; API MANAGER-only) | No |
+| Planning → Agents | Yes | Yes | Yes |
+| Airchat | Yes | Not in the menu (the API still admits them; chats they are members of open from notifications) | Same |
+| Data → Accommodation | View all 169 columns, edit none | View 116, edit 15 | View 116, edit 13 |
+| Data → User | View all, edit none | Hidden | Hidden |
+| Data → OX Point | Hidden until granted | Hidden until granted | Hidden until granted |
+| Data → Owner (sheet) | View | Hidden | Hidden |
+| Data export (CSV/XLSX) | Yes | No | No |
+| Change history in the record drawer | All fields, incl. sensitive (who/when only) | Fields they can view, sensitive excluded | Same |
+| Create records in Data | No (off for everyone) | No | No |
+| Cleaner app (pool, claim, mine) | Redirected | Redirected | Redirected |
+
+Accommodation edit rights (from `matrixFieldsAccessRoles.csv`, 29 Sep 2026):
+
+- **Both:** capacity, bedrooms, bathrooms, floor, elevator, bed, bed2,
+  propertyFactWifiName, propertyFactWifiPassword, buildingUnderConstruction,
+  contactBuildingManagement, accommodationStandard.
+- **FRONT_DESK_MANAGER only:** maximumTimeRelease, bellLabel,
+  allowedSpendingForRepairs.
+- **FRONT_DESK only:** sizeM2.
+
+Both desk roles may view the channel credentials (passwordGmail,
+passwordAirbnb, passwordBooking, email columns) and the lockbox codes
+(codeLockBox, lockboxCode) — confirmed 29 Sep 2026.
+
+## Known gaps
+
+- Several read endpoints carry no role check and answer any signed-in
+  account (e.g. `GET /turnovers`, `GET /bookings/:id`, `GET /incidents`,
+  `GET /properties`, `GET /users/:id`). The screens do not expose them to the
+  wrong roles, but the API does. Not yet audited endpoint by endpoint.
+- New dataset columns and lists (OX Point) are invisible to every role,
+  MANAGER and ADMIN included, until granted. Grants are loaded from the
+  matrix CSV with `import:access-matrix` (dry run by default); there is no
+  admin screen yet.

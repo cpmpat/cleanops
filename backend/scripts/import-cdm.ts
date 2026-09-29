@@ -102,6 +102,11 @@ const LISTS: Record<string, {
    * the cell as an icon and give the column 72px instead of 190.
    */
   urlMatch?: RegExp[];
+  /**
+   * The list may have no mapping<Tab>. Then the data tab's header row is the
+   * metadata: column order from its position, labels = the header names.
+   */
+  mappingOptional?: boolean;
 }> = {
   user: {
     tab: 'User',
@@ -225,6 +230,19 @@ const LISTS: Record<string, {
     // 164 columns wide; as an icon they cost 72.
     urlMatch: [/^url/i, /Url$/, /^link/i, /^airbnbUrl/],
   },
+
+  oxpoint: {
+    tab: 'OX Point',
+    mappingTab: 'mappingOXPoint',
+    mappingOptional: true,
+    model: 'cdmOxPoint',
+    key: 'id',
+    types: {},
+    // Codes that open a box. Recorded in history without values.
+    sensitive: ['accessCode', 'lockboxCode'],
+    hidden: [],
+    required: ['id'],
+  },
 };
 
 /**
@@ -276,6 +294,17 @@ function dbName(sheetName: string): string {
   const ascii = sheetName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const safe = ascii.replace(/[^A-Za-z0-9_]/g, '');
   return /^[A-Za-z]/.test(safe) ? safe : `f${safe}`;
+}
+
+/** A 1-based index to column letters (1 → A, 28 → AB). */
+function indexToLetter(n: number): string {
+  let out = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
 }
 
 /** Column letters (A, B, … AA, AB) to a 1-based index. */
@@ -395,11 +424,25 @@ async function main() {
     // Resolve both tab names up front, so a rename fails here with the list of
     // real tabs rather than three steps later as a parse error.
     const dataTab = await resolveTab(sheets, row.datasetsSheetId, spec.tab);
-    const mappingTab = await resolveTab(sheets, row.datasetsSheetId, spec.mappingTab);
-    console.log(`Tabs   : ${dataTab} + ${mappingTab}\n`);
+    let mappingTab: string | null = null;
+    try {
+      mappingTab = await resolveTab(sheets, row.datasetsSheetId, spec.mappingTab);
+    } catch (e) {
+      if (!spec.mappingOptional) throw e;
+      console.log(`No ${spec.mappingTab} tab — the data tab's header row names the columns.`);
+    }
+    console.log(`Tabs   : ${dataTab}${mappingTab ? ` + ${mappingTab}` : ''}\n`);
+
+    // ── data ───────────────────────────────────────────────────────────────
+    // Read first: without a mapping tab, its header row is the metadata.
+    const { columns, rows } = await sheets.readTab(row.datasetsSheetId, dataTab);
 
     // ── metadata ───────────────────────────────────────────────────────────
-    const mapRows = (await sheets.readValues(row.datasetsSheetId, mappingTab)) ?? [];
+    const mapRows: string[][] = mappingTab
+      ? ((await sheets.readValues(row.datasetsSheetId, mappingTab)) ?? [])
+      // Same shape as a mapping tab — [letter, source, description, label] —
+      // so everything below stays one code path. Row 1 is skipped as a header.
+      : [[], ...columns.map((c, i) => [indexToLetter(i + 1), c ?? '', '', ''])];
     const fields = mapRows
       .slice(1) // row 1 is the mapping sheet's own header
       .map((r) => {
@@ -420,8 +463,6 @@ async function main() {
 
     console.log(`Metadata: ${fields.length} column(s) described`);
 
-    // ── data ───────────────────────────────────────────────────────────────
-    const { columns, rows } = await sheets.readTab(row.datasetsSheetId, dataTab);
     console.log(`Data    : ${rows.length} row(s) x ${columns.length} column(s)`);
 
     const known = new Set(fields.map((f) => f.source));
