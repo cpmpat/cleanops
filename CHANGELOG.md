@@ -23,7 +23,31 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/desk-assign-evidence`
+## Unreleased — branch `fix/sign-in-landing`
+
+**The emailed sign-in link lands on the right start page.** After setting a
+password from the link, everyone but MANAGER was sent to the cleaners' pool
+(the login page had the same bug, fixed in #43). Both now use one rule,
+`frontend/lib/home.ts`: ADMIN and the front desk → Planning, EVIDENCE → Data,
+MANAGER → Dashboard, agents → Availability, OPERATION_MANAGER / ASSIST →
+Airchat, cleaners → the pool.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-09-29 · PR #45
+
+**Fix: the OX Point migration.** `20260929130000_cdm_ox_point` had a stray
+comma and failed on deploy, which stopped every Railway deploy since #43 at
+`migrate deploy` (the backend stayed on the pre-#43 build). Marked rolled back
+on production, re-applied from the corrected file, then merged.
+
+*Migrations:* `20260929130000_cdm_ox_point` (re-applied). *Env:* None.
+
+### 2026-09-29 · PR #44
 
 **The front desk assigns cleaners; EVIDENCE sees Data only.**
 FRONT_DESK_MANAGER and FRONT_DESK may assign and reassign cleaners in
@@ -34,10 +58,6 @@ Data alone, and its lists and columns come only from the access matrix; Data
 says "No lists are shared with your role yet" when there are none.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-29 · PR #43
 

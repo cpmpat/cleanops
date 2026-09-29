@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, Suspense } from 'react';
+import { homeFor } from '@/lib/home';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { auth as authApi, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -91,7 +92,7 @@ function VerifyPageInner() {
         newPassword,
       );
       setAuth(accessToken, user);
-      router.replace(user.role === 'MANAGER' ? '/dashboard' : '/cleanings');
+      router.replace(homeFor(user.role));
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
