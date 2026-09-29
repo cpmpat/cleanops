@@ -11,8 +11,9 @@ Three layers decide access:
 2. **Screens** — `ROLE_PATHS` in the manager layout lists what each desk role
    may open (anything else is absent from the menu and redirects):
    FRONT_DESK_MANAGER and FRONT_DESK → Planning, Data; OPERATION_MANAGER and
-   ASSIST → Airchat, Data. Login sends ADMIN, FRONT_DESK_MANAGER and
-   FRONT_DESK to Planning, MANAGER to the Dashboard, agents to Availability.
+   ASSIST → Airchat, Data; EVIDENCE → Data only. Login sends ADMIN,
+   FRONT_DESK_MANAGER and FRONT_DESK to Planning, EVIDENCE to Data, MANAGER to
+   the Dashboard, agents to Availability.
 3. **Data** — the dataset access matrix (`dataset_field_access`), per role ×
    list × column: none / view / edit. No row = no access.
 
@@ -24,7 +25,7 @@ Three layers decide access:
 | Manager app menu | Everything | Planning, Data | Planning, Data |
 | Dashboard, Schedule, Stream, Incidents, Repairs, Messages, Staff, Properties, Settings | Yes | No | No |
 | Planning — view, push check-in/out times, crib/separate beds | Yes | Yes | Yes |
-| Planning — assign / reassign cleaners | Yes | No (controls hidden; API MANAGER-only) | No |
+| Planning — assign / reassign cleaners | Yes | Yes | Yes |
 | Planning → Agents | Yes | Yes | Yes |
 | Airchat | Yes | Not in the menu (the API still admits them; chats they are members of open from notifications) | Same |
 | Data → Accommodation | View all 169 columns, edit none | View 116, edit 15 | View 116, edit 13 |
@@ -48,6 +49,17 @@ Accommodation edit rights (from `matrixFieldsAccessRoles.csv`, 29 Sep 2026):
 Both desk roles may view the channel credentials (passwordGmail,
 passwordAirbnb, passwordBooking, email columns) and the lockbox codes
 (codeLockBox, lockboxCode) — confirmed 29 Sep 2026.
+
+## EVIDENCE
+
+Data only — the menu shows nothing else and every other screen redirects to
+Data. Which lists and columns it sees, and whether it may edit any, is the
+access matrix alone (`import:access-matrix` with an EVIDENCE column). With no
+grants the Data screen says so. No export.
+
+DIRECTOR, RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
+after login they fall through to the cleaner app. Define them before any
+account gets one of those roles.
 
 ## Known gaps
 

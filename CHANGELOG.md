@@ -23,7 +23,23 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/dataset-access-matrix`
+## Unreleased — branch `feat/desk-assign-evidence`
+
+**The front desk assigns cleaners; EVIDENCE sees Data only.**
+FRONT_DESK_MANAGER and FRONT_DESK may assign and reassign cleaners in
+Planning (turnover assign/unassign opened to them); the dropdown reads the new
+narrow `GET /integrations/planning/cleaners` (id and name of active cleaners)
+instead of the MANAGER-only user list. EVIDENCE starts on Data, its menu is
+Data alone, and its lists and columns come only from the access matrix; Data
+says "No lists are shared with your role yet" when there are none.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-09-29 · PR #43
 
 **Data is governed by an access matrix.** Each role × list × column is none /
 view / edit (`dataset_field_access`); no row means no access. Seeded from
@@ -76,10 +92,6 @@ is the whole truth for the roles it names), dry run by default, audited.
 *Migrations:* `20260929120000_dataset_access_matrix` (three tables, one
 column on `dataset_fields`, five on `cdm_accommodations`, seeds),
 `20260929130000_cdm_ox_point`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-25 · PR #41
 

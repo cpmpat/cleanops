@@ -1,8 +1,7 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { integrations, users as usersApi, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { integrations, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
@@ -121,17 +120,15 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState('');
 
-  // Assigning cleaners stays with MANAGER / ADMIN (the API enforces it); the
-  // desk sees who is assigned but gets no assign controls.
-  const { user } = useAuth();
-  const mayAssign = user?.role === 'MANAGER' || user?.role === 'ADMIN';
+  // Everyone who can open Planning may assign and reassign (MANAGER, ADMIN,
+  // FRONT_DESK_MANAGER, FRONT_DESK — PLANNING_ROLES on the API).
+  const mayAssign = true;
 
   useEffect(() => {
-    if (!mayAssign) return;
-    usersApi.list()
-      .then(all => setCleaners(all.filter(u => u.role === 'CLEANER')))
+    integrations.planning.cleaners()
+      .then(setCleaners)
       .catch(() => {});
-  }, [mayAssign]);
+  }, []);
 
   /**
    * `keepDrafts`: a background refresh (socket event) must not wipe what the

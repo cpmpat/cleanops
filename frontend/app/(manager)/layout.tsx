@@ -21,7 +21,7 @@ import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
  * Office roles that are not managers. They may open Airchat and nothing else —
  * the first real permission split in the app, deliberately narrow.
  */
-const DESK_ONLY_ROLES = ['OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'ASSIST'];
+const DESK_ONLY_ROLES = ['OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'ASSIST', 'EVIDENCE'];
 
 /**
  * What each non-manager office role may open, first entry = where it starts.
@@ -33,6 +33,8 @@ const ROLE_PATHS: Record<string, string[]> = {
   FRONT_DESK:         ['/planning', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets'],
   ASSIST:             ['/airchat', '/datasets'],
+  /** Data only; which lists and columns is the access matrix's call. */
+  EVIDENCE:           ['/datasets'],
 };
 
 const LOCALES: { code: Locale; label: string }[] = [
@@ -125,8 +127,9 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   const visibleNav = DESK_ONLY_ROLES.includes(user?.role ?? '')
     ? navItems.filter((i) =>
         (ROLE_PATHS[user!.role] ?? ['/airchat']).includes(i.href) &&
-        // Data appears once the matrix grants at least one list.
-        (i.href !== '/datasets' || dataLists.length > 0))
+        // Data appears once the matrix grants at least one list — or always,
+        // for a role whose only screen it is.
+        (i.href !== '/datasets' || dataLists.length > 0 || ROLE_PATHS[user!.role]?.[0] === '/datasets'))
     : navItems;
 
   if (loading || !user) {

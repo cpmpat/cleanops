@@ -139,4 +139,18 @@ export class IntegrationsController {
   ) {
     return this.syncService.updateSetupRequests(req.tenantId!, bookingId, body ?? {});
   }
+
+  @Get('planning/cleaners')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Active cleaners, id and name only — the assign dropdown in Planning',
+    description: 'Narrow on purpose: the desk may assign cleaners without reading the user list.',
+  })
+  planningCleaners(@Req() req: TenantRequest) {
+    return this.prisma.user.findMany({
+      where: { tenantId: req.tenantId!, role: 'CLEANER', isActive: true },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: 'asc' },
+    });
+  }
 }

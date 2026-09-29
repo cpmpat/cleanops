@@ -8,6 +8,7 @@ import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { TurnoversService } from './turnovers.service';
 import { IncidentPriority } from '@prisma/client';
 import { todayInAppZone } from '../common/time';
+import { PLANNING_ROLES } from '../common/roles';
 
 @ApiTags('Turnovers')
 @ApiBearerAuth()
@@ -115,7 +116,7 @@ export class TurnoversController {
 
   @Post(':id/assign')
   @UseGuards(RolesGuard)
-  @Roles('MANAGER')
+  @Roles(...PLANNING_ROLES)
   @ApiOperation({
     summary: 'Assign a cleaner to a turnover (manager)',
     description:
@@ -135,7 +136,7 @@ export class TurnoversController {
 
   @Post(':id/unassign')
   @UseGuards(RolesGuard)
-  @Roles('MANAGER')
+  @Roles(...PLANNING_ROLES)
   @ApiOperation({
     summary: 'Remove a cleaner from a turnover (manager)',
     description:

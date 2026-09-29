@@ -82,6 +82,7 @@ type SortDir = 'asc' | 'desc';
  */
 function DatasetsPageInner() {
   const [tabs, setTabs] = useState<DatasetSummary[]>([]);
+  const [listsLoaded, setListsLoaded] = useState(false);
   const [active, setActive] = useState<string>('');
   const [data, setData] = useState<DatasetPage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -138,6 +139,7 @@ function DatasetsPageInner() {
     api.list()
       .then(list => {
         setTabs(list);
+        setListsLoaded(true);
         if (list.length) setActive(list.some(l => l.key === wanted) ? wanted : list[0].key);
       })
       .catch(() => setError('Could not load the dataset list.'));
@@ -965,7 +967,9 @@ function DatasetsPageInner() {
 
       {!error && !data && (
         <div className="border border-surface-border rounded-xl h-[65vh] bg-white flex items-center justify-center">
-          <p className="text-sm text-ink-muted">{loading ? 'Loading…' : ''}</p>
+          <p className="text-sm text-ink-muted">
+            {loading ? 'Loading…' : listsLoaded && tabs.length === 0 ? 'No lists are shared with your role yet.' : ''}
+          </p>
         </div>
       )}
 

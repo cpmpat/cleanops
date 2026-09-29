@@ -1264,6 +1264,8 @@ export const integrations = {
     },
     detail: (pmsBookingId: string) =>
       get(`/integrations/planning/bookings/${pmsBookingId}`),
+    /** Active cleaners (id, name) for the assign dropdown — open to everyone who can use Planning. */
+    cleaners: () => get<User[]>('/integrations/planning/cleaners'),
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
