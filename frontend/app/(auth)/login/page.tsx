@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { homeFor } from '@/lib/home';
 import { useRouter } from 'next/navigation';
 import { auth as authApi, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -282,17 +283,4 @@ export default function LoginPage() {
       </div>
     </div>
   );
-}
-
-/**
- * Where each role starts. The desk roles used to fall through to the cleaners'
- * pool, where every "Take" answers 403 — they belong in the office app.
- */
-function homeFor(role?: string | null): string {
-  if (role === 'ADMIN' || role === 'FRONT_DESK_MANAGER' || role === 'FRONT_DESK') return '/planning';
-  if (role === 'MANAGER') return '/dashboard';
-  if (role === 'AGENT') return '/availability';
-  if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
-  if (role === 'EVIDENCE') return '/datasets';
-  return '/cleanings';
 }
