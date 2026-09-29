@@ -27,7 +27,7 @@ CREATE TABLE "cdm_ox_point" (
     "accessibilitySunday" TEXT,
     "createdAt"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt"  TIMESTAMP(3) NOT NULL,
-,
+
     CONSTRAINT "cdm_ox_point_pkey" PRIMARY KEY ("rowId")
 );
 
