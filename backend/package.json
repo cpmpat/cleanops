@@ -19,6 +19,7 @@
     "diag:booking": "ts-node -P tsconfig.scripts.json scripts/diag-booking.ts",
     "diag:list-sort": "ts-node -P tsconfig.scripts.json scripts/diag-list-sort.ts",
     "diag:boundary": "ts-node -P tsconfig.scripts.json scripts/diag-boundary.ts",
+    "diag:dataset-values": "ts-node -P tsconfig.scripts.json scripts/diag-dataset-values.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts"
   },

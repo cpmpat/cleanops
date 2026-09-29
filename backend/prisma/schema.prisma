@@ -53,6 +53,9 @@ model Tenant {
   datasetFields       DatasetField[]
   datasetFieldRoles   DatasetFieldRole[]
   agentAvailability   AgentAvailability[]
+  datasetFieldAccess  DatasetFieldAccess[]
+  datasetPicklistValues DatasetPicklistValue[]
+  datasetFieldChanges DatasetFieldChange[]
 
   @@map("tenants")
 }
@@ -538,6 +541,7 @@ model AuditEvent {
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   actor  User?  @relation(fields: [actorId], references: [id])
+  fieldChanges DatasetFieldChange[]
 
   @@index([tenantId, createdAt])
   @@index([tenantId, category, createdAt])
@@ -1283,6 +1287,9 @@ model DatasetField {
   /// Purely visual: the viewer tints each family so a 164-column table can be
   /// navigated sideways without counting headers.
   group           String?
+  /// Name of the pick list whose active values are the only ones this field
+  /// accepts (dataset_picklist_values.list). Null = free input of its type.
+  picklist        String?
 
   tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   overrides DatasetFieldRole[]
@@ -1396,10 +1403,10 @@ model CdmUser {
 /// collide with Prisma's. `idAvantio` is the natural key: it is what the rest
 /// of the app already joins properties on.
 ///
-/// Types come from evidence in the sample export, never from a column's name.
-/// A name that sounds boolean but has no data yet stays text, because
-/// `otaHousingAnywhere` reads exactly like a boolean and holds TRUE, FALSE and
-/// "TO BE" — which is precisely how a guessed type eats a value in silence.
+/// Types come from evidence in the data, never from a column's name. A name
+/// that sounds boolean but has no data yet stays text: `otaHousingAnywhere`
+/// held TRUE, FALSE and "TO BE" at import, and only became boolean on 29 Sep
+/// 2026 once `diag:dataset-values` showed nothing but TRUE/FALSE left.
 model CdmAccommodation {
   rowId    String @id @default(uuid())
   tenantId String
@@ -1504,7 +1511,7 @@ model CdmAccommodation {
   otaExpediaSaleStarted                          DateTime?
   otaHomeAwaySaleStarted                         DateTime?
   buildingUnderConstruction                      String?
-  otaHousingAnywhere                             String?
+  otaHousingAnywhere                             Boolean?
   roomIdBooking                                  String?
   groupRd                                        String?
   validUntil                                     DateTime?
@@ -1568,6 +1575,13 @@ model CdmAccommodation {
   sumUp                                          String?
   invoicingProcess                               String?
   additionalInvoicing                            String?
+  /// Added 29 Sep 2026 with the access matrix (columns new in the sheet).
+  totalBedrooms                                  Int?
+  totalBathrooms                                 Float?
+  orderAccommodationAdded                        String?
+  parkingLimits                                  String?
+  /// Pick list `accommodation.accommodationStandard`; values defined later.
+  accommodationStandard                          String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1607,4 +1621,71 @@ model AgentAvailability {
   @@index([tenantId, day])
   @@index([userId, day])
   @@map("agent_availability")
+}
+
+// ─── DATASET ACCESS MATRIX ────────────────────────
+/// Who may see and who may change each column of a CDM list, per role.
+/// No row = no access: a new role, or a new column, is invisible until
+/// someone grants it. Deliberately not a foreign key to dataset_fields — a
+/// grant for a column that does not exist yet simply waits for it.
+/// canEdit implies canView (CHECK constraint in the migration).
+model DatasetFieldAccess {
+  id        String   @id @default(uuid())
+  tenantId  String
+  dataset   String
+  field     String
+  role      UserRole
+  canView   Boolean  @default(false)
+  canEdit   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dataset, field, role])
+  @@index([tenantId, dataset, role])
+  @@map("dataset_field_access")
+}
+
+/// Allowed values of a pick-list field. Bound by dataset_fields.picklist.
+/// Retire a value with `active = false` rather than deleting it: rows that
+/// hold it keep displaying it, nobody can pick it any more.
+model DatasetPicklistValue {
+  id        String   @id @default(uuid())
+  tenantId  String
+  list      String
+  value     String
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, list, value])
+  @@map("dataset_picklist_values")
+}
+
+/// One changed field of one saved row: old → new, who (email and role) and
+/// when. Children of the save's AuditEvent, written in the same transaction as
+/// the change. Sensitive columns are recorded with `masked` and no values —
+/// the audit log is not a second place to keep passwords.
+model DatasetFieldChange {
+  id         String   @id @default(uuid())
+  tenantId   String
+  eventId    String
+  dataset    String
+  rowId      String
+  field      String
+  oldValue   String?
+  newValue   String?
+  masked     Boolean  @default(false)
+  actorEmail String?
+  actorRole  String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  AuditEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dataset, rowId, createdAt])
+  @@index([eventId])
+  @@map("dataset_field_changes")
 }

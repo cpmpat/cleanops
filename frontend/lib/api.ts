@@ -1290,6 +1290,25 @@ export interface DatasetColumn {
   required: boolean;
   /** Visual family — pricing, ota, credentials. Null on sheet-backed lists. */
   group?: string | null;
+  /** What the caller's role may do with this column (access matrix). */
+  access?: 'view' | 'edit';
+  /** Allowed values when the column is a pick list. */
+  options?: string[];
+  /** Credentials / personal data — changes are audited without values. */
+  sensitive?: boolean;
+}
+
+/** One changed field of one save, from the change history. */
+export interface DatasetFieldChange {
+  id: string;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  /** Sensitive column: who and when only, no values. */
+  masked: boolean;
+  actorEmail: string | null;
+  actorRole: string | null;
+  createdAt: string;
 }
 
 export interface DatasetPage {
@@ -1308,6 +1327,12 @@ export interface DatasetPage {
   columns: DatasetColumn[];
   /** Parallel to `columns`; the sheet repeats header names, so rows are arrays. */
   rows: string[][];
+  /** Parallel to `rows` on migrated lists: the key a save addresses. */
+  rowIds?: string[];
+  /** Parallel to `rows`: each row's updatedAt as read — sent back with a save. */
+  versions?: string[];
+  /** True when the caller's role may edit at least one column. */
+  canEdit?: boolean;
   totalColumns: number;
 }
 
@@ -1315,8 +1340,13 @@ export const datasets = {
   list: () => get<DatasetSummary[]>('/datasets'),
   read: (key: string, refresh = false) =>
     get<DatasetPage>(`/datasets/${key}${refresh ? '?refresh=1' : ''}`),
-  create: (key: string, values: Record<string, string>) =>
-    post<{ id: string }>(`/datasets/${key}`, values),
+  /** Save one row. 409 when someone saved it since `version` was read. */
+  update: (key: string, rowId: string, version: string, values: Record<string, string>) =>
+    patch<{ changed: string[]; version: string; values: Record<string, string> }>(
+      `/datasets/${key}/rows/${rowId}`, { version, values },
+    ),
+  history: (key: string, rowId: string) =>
+    get<DatasetFieldChange[]>(`/datasets/${key}/rows/${rowId}/history`),
 
   /**
    * Download an export of the current view.

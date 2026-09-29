@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { GoogleSheetsClient } from './google-sheets.client';
 import { toCsv, toXlsx } from './dataset-export';
@@ -94,7 +96,20 @@ export interface DatasetColumn {
   required: boolean;
   /** Visual family — pricing, ota, credentials. Null for sheet-backed lists. */
   group?: string | null;
+  /** What this role may do with the column. Sheet-backed lists are always 'view'. */
+  access?: 'view' | 'edit';
+  /** Allowed values of a pick-list column (active ones, in order). */
+  options?: string[];
+  /** Credentials / personal data. Changes are audited without their values. */
+  sensitive?: boolean;
 }
+
+/** Roles that keep today's access to the sheet-backed lists (Owner). */
+const SHEET_READERS: string[] = ['MANAGER', 'ADMIN'];
+
+const STALE_MESSAGE =
+  'Someone else changed this record since you opened it. Reload to see their ' +
+  'changes, then make yours again.';
 
 /** How long a fetched tab is reused before going back to Google. */
 const CACHE_TTL_MS = 60_000;
@@ -125,8 +140,21 @@ export class DatasetsService {
     private readonly sheets: GoogleSheetsClient,
   ) {}
 
-  list() {
-    return TABS.map(({ key, label }) => ({ key, label }));
+  /**
+   * The lists this role may open. A migrated list appears when the matrix
+   * grants the role at least one column of it; a sheet-backed list only for
+   * the roles that have always read it.
+   */
+  async list(tenantId: string, role: UserRole) {
+    const granted = await this.prisma.datasetFieldAccess.findMany({
+      where: { tenantId, role, canView: true },
+      distinct: ['dataset'],
+      select: { dataset: true },
+    });
+    const has = new Set(granted.map((g: { dataset: string }) => g.dataset));
+    return TABS
+      .filter((t) => (t.source === 'db' ? has.has(t.key) : SHEET_READERS.includes(role)))
+      .map(({ key, label }) => ({ key, label }));
   }
 
   /**
@@ -147,26 +175,34 @@ export class DatasetsService {
   }
 
   /**
-   * The same decision for a migrated list, where the metadata says which
-   * columns are credentials and which are personal data.
-   *
-   * Today's behaviour is preserved exactly: MANAGER and ADMIN are the only
-   * roles that can reach this module at all, and they keep seeing everything.
-   * The change is what happens to the roles added since — DIRECTOR, EVIDENCE,
-   * RESOLUTIONS, MARKETING_MANAGER. If one of them is ever granted the module,
-   * it gets the list without the mailbox passwords and without the birth
-   * numbers, rather than everything by default.
-   *
-   * This is the whitelist seam, not the whitelist. When the privilege matrix
-   * lands it replaces this function; until then the failure mode of a new role
-   * is "sees less than expected", which is the right way round.
+   * The access matrix for one role on one migrated list: field → 'view' |
+   * 'edit'. A field with no grant, or a grant with canView false, is absent —
+   * default deny. ~170 indexed rows, read per request: small enough that a
+   * cache would only add a way for a revoked grant to linger.
    */
-  private visibleFields<T extends { field: string; sensitive: boolean }>(
-    fields: T[],
+  private async accessFor(
+    tenantId: string,
+    dataset: string,
     role: UserRole,
-  ): T[] {
-    const mayReadSensitive = role === 'MANAGER' || role === 'ADMIN';
-    return mayReadSensitive ? fields : fields.filter((f) => !f.sensitive);
+  ): Promise<Map<string, 'view' | 'edit'>> {
+    const grants = await this.prisma.datasetFieldAccess.findMany({
+      where: { tenantId, dataset, role, canView: true },
+      select: { field: true, canEdit: true },
+    });
+    return new Map(grants.map((g: { field: string; canEdit: boolean }) => [g.field, g.canEdit ? 'edit' : 'view'] as const));
+  }
+
+  /** Active pick-list values for the given lists, in their sort order. */
+  private async picklists(tenantId: string, lists: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (lists.length === 0) return out;
+    const rows = await this.prisma.datasetPicklistValue.findMany({
+      where: { tenantId, list: { in: lists }, active: true },
+      orderBy: [{ list: 'asc' }, { sortOrder: 'asc' }, { value: 'asc' }],
+      select: { list: true, value: true },
+    });
+    for (const r of rows) out.set(r.list, [...(out.get(r.list) ?? []), r.value]);
+    return out;
   }
 
   /**
@@ -253,6 +289,9 @@ export class DatasetsService {
 
     if (entry.source === 'db') {
       return this.readFromDb(tenantId, entry.key, entry.label, role);
+    }
+    if (!SHEET_READERS.includes(role)) {
+      throw new ForbiddenException(`No access to "${entry.label}"`);
     }
 
     const tenant = await this.prisma.tenant.findUnique({
@@ -515,11 +554,14 @@ export class DatasetsService {
 
     // Base metadata, plus this role's overrides in one round trip. The
     // override rows are sparse — a role that has never been tuned has none.
-    const all = await this.prisma.datasetField.findMany({
-      where: { tenantId, dataset: key },
-      orderBy: { columnOrder: 'asc' },
-      include: { overrides: { where: { role } } },
-    });
+    const [all, access] = await Promise.all([
+      this.prisma.datasetField.findMany({
+        where: { tenantId, dataset: key },
+        orderBy: { columnOrder: 'asc' },
+        include: { overrides: { where: { role } } },
+      }),
+      this.accessFor(tenantId, key, role),
+    ]);
 
     if (all.length === 0) {
       throw new BadRequestException(
@@ -529,9 +571,9 @@ export class DatasetsService {
     }
 
     // Apply the role's overrides, then re-sort. Note what an override may do:
-    // move a column and hide it. It cannot reveal one — a `sensitive` field
-    // stays filtered out below no matter what the override says, so a
-    // reordering table can never become a back door into the passwords.
+    // move a column and hide it. It cannot reveal one — only the access
+    // matrix below decides what is sent, so a reordering table can never
+    // become a back door into the passwords.
     const tuned = all
       .map((f) => {
         const o = f.overrides[0];
@@ -543,10 +585,20 @@ export class DatasetsService {
       })
       .sort((a, b) => a.columnOrder - b.columnOrder || a.field.localeCompare(b.field));
 
-    const fields = this.visibleFields(tuned, role);
+    // The matrix is the whole decision: a column without a view grant is not
+    // selected, so its values never leave the database.
+    const fields = tuned.filter((f) => access.has(f.field));
+    if (fields.length === 0) throw new ForbiddenException(`No access to "${label}"`);
+
+    const options = await this.picklists(
+      tenantId,
+      [...new Set(fields.map((f) => f.picklist).filter((l): l is string => !!l))],
+    );
     const delegate = (this.prisma as any)[spec.model];
 
-    const select: Record<string, true> = {};
+    // The row's key and version travel with it but are not columns: the key
+    // addresses a save, the version (updatedAt) detects a concurrent edit.
+    const select: Record<string, true> = { [spec.pk]: true, updatedAt: true };
     for (const f of fields) select[f.field] = true;
 
     const records: Record<string, unknown>[] = await delegate.findMany({
@@ -573,119 +625,219 @@ export class DatasetsService {
         type: f.type,
         required: f.required,
         group: f.group,
+        access: access.get(f.field)!,
+        options: f.picklist ? options.get(f.picklist) ?? [] : undefined,
+        sensitive: f.sensitive,
       })),
       rows: records.map((r) => fields.map((f) => this.render(r[f.field]))),
+      rowIds: records.map((r) => String(r[spec.pk])),
+      versions: records.map((r) => (r.updatedAt as Date).toISOString()),
       totalColumns: all.length,
-      canCreate: true,
+      // Adding records is switched off for every list and every role for now.
+      canCreate: false,
+      canEdit: fields.some((f) => access.get(f.field) === 'edit'),
     };
   }
 
   /**
-   * Add a row to a migrated list.
-   *
-   * Everything the request may set is derived from the metadata, so an unknown
-   * key is rejected rather than ignored, and a sensitive column cannot be
-   * written by a role that is not allowed to read it.
+   * Adding records is switched off for every list and every role. It will
+   * come back behind a table-level grant; until then the endpoint says so
+   * rather than half-working.
    */
-  async create(
+  async create(): Promise<never> {
+    throw new ForbiddenException('Adding new records is switched off.');
+  }
+
+  /**
+   * Save one row's edits.
+   *
+   * Every field in `values` must carry an edit grant for this role — one
+   * field without it rejects the whole save, so a row never half-saves.
+   * Values are parsed by the column's type and checked against its pick list.
+   * `version` is the row's updatedAt as the client read it: if the row moved
+   * since, the save is refused with 409 instead of silently overwriting
+   * someone else's change.
+   *
+   * The change and its audit go in one transaction: one AuditEvent for the
+   * save, one DatasetFieldChange per field that actually changed, each with
+   * the actor's email and role.
+   */
+  async update(
     tenantId: string,
     key: string,
     role: UserRole,
     actorId: string | undefined,
-    body: Record<string, unknown>,
+    rowId: string,
+    body: { version?: string; values?: Record<string, unknown> },
   ) {
     const entry = TABS.find((t) => t.key === key);
     if (!entry) throw new NotFoundException(`Unknown dataset "${key}"`);
     if (entry.source !== 'db') {
-      throw new BadRequestException(
-        `"${entry.label}" still lives in the spreadsheet, which this app can only read.`,
-      );
+      throw new BadRequestException(`"${entry.label}" is read from the spreadsheet and cannot be edited here.`);
     }
-
     const spec = DB_MODELS[key];
-    const all = await this.prisma.datasetField.findMany({
-      where: { tenantId, dataset: key },
-      orderBy: { columnOrder: 'asc' },
-    });
-    const writable = this.visibleFields(all, role);
-    const byField = new Map(writable.map((f) => [f.field, f]));
+    const values = body?.values ?? {};
+    const keys = Object.keys(values);
+    if (keys.length === 0) throw new BadRequestException('Nothing to save.');
+    if (!body?.version) throw new BadRequestException('version is required.');
 
-    const unknown = Object.keys(body).filter((k) => !byField.has(k));
-    if (unknown.length) {
-      throw new BadRequestException(`Unknown or not-writable column(s): ${unknown.join(', ')}`);
+    const [fields, access] = await Promise.all([
+      this.prisma.datasetField.findMany({ where: { tenantId, dataset: key, field: { in: keys } } }),
+      this.accessFor(tenantId, key, role),
+    ]);
+    const byField = new Map(fields.map((f) => [f.field, f]));
+    const denied = keys.filter((k) => !byField.has(k) || access.get(k) !== 'edit');
+    if (denied.length) {
+      throw new ForbiddenException(`You cannot edit: ${denied.join(', ')}`);
     }
 
-    const data: Record<string, unknown> = { tenantId };
-    for (const f of writable) {
-      const raw = body[f.field];
-      const str = raw === null || raw === undefined ? '' : String(raw).trim();
+    const allowed = await this.picklists(
+      tenantId,
+      [...new Set(fields.map((f) => f.picklist).filter((l): l is string => !!l))],
+    );
+    const data: Record<string, unknown> = {};
+    for (const k of keys) data[k] = this.parse(byField.get(k)!, values[k], allowed);
 
-      if (!str) {
-        if (f.required) throw new BadRequestException(`"${f.displayName}" is required.`);
-        continue;
-      }
-
-      if (f.type === 'int') {
-        const n = Number(str);
-        if (!Number.isFinite(n)) throw new BadRequestException(`"${f.displayName}" must be a number.`);
-        data[f.field] = Math.trunc(n);
-      } else if (f.type === 'bool') {
-        data[f.field] = ['true', 'yes', '1'].includes(str.toLowerCase());
-      } else if (f.type === 'date') {
-        const d = new Date(str);
-        if (isNaN(d.getTime())) throw new BadRequestException(`"${f.displayName}" must be a date.`);
-        data[f.field] = d;
-      } else {
-        data[f.field] = str;
-      }
-    }
-
-    const naturalKey = data[spec.key];
-    if (!naturalKey) throw new BadRequestException(`"${spec.key}" is required.`);
-
-    const delegate = (this.prisma as any)[spec.model];
-    const clash = await delegate.findUnique({
-      where: { [`tenantId_${spec.key}`]: { tenantId, [spec.key]: naturalKey } },
-      select: { [spec.pk]: true },
-    });
-    if (clash) {
-      throw new BadRequestException(`${spec.key} "${naturalKey}" already exists.`);
-    }
-
-    // The email is denormalised onto the audit row rather than left to the
-    // foreign key. A person can leave and their account can go; the record of
-    // what they did must not go with it.
+    // Denormalised onto every audit row: a person can leave and their account
+    // can go; the record of what they changed must not go with it.
     const actor = actorId
-      ? await this.prisma.user.findUnique({
-          where: { id: actorId },
-          select: { email: true },
-        })
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { email: true } })
       : null;
+    const actorEmail = actor?.email ?? null;
 
-    // The row and its audit entry go in together. An audit row written after
-    // the commit is an audit row that sometimes does not exist.
+    const select: Record<string, true> = { updatedAt: true };
+    for (const k of keys) select[k] = true;
+
     return this.prisma.$transaction(async (tx) => {
-      const created = await (tx as any)[spec.model].create({ data });
-      const createdId: string = created[spec.pk];
+      const model = (tx as any)[spec.model];
+      const current = await model.findFirst({ where: { tenantId, [spec.pk]: rowId }, select });
+      if (!current) throw new NotFoundException('Record not found');
+      if ((current.updatedAt as Date).toISOString() !== body.version) {
+        throw new ConflictException(STALE_MESSAGE);
+      }
 
-      await tx.auditEvent.create({
+      const changed = keys.filter((k) => this.render(current[k]) !== this.render(data[k]));
+      if (changed.length === 0) {
+        return { changed: [] as string[], version: body.version, values: {} as Record<string, string> };
+      }
+
+      // Conditional on the version we just read: a save that raced ours
+      // between the read and here makes this match nothing.
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      for (const k of changed) patch[k] = data[k];
+      const res = await model.updateMany({
+        where: { tenantId, [spec.pk]: rowId, updatedAt: current.updatedAt },
+        data: patch,
+      });
+      if (res.count !== 1) throw new ConflictException(STALE_MESSAGE);
+
+      const after = await model.findFirst({ where: { tenantId, [spec.pk]: rowId }, select });
+
+      const event = await tx.auditEvent.create({
         data: {
           tenantId,
           category: 'DATA_EDIT',
-          action: `dataset.${key}.create`,
+          action: `dataset.${key}.update`,
           actorId: actorId ?? null,
-          actorEmail: actor?.email ?? null,
+          actorEmail,
           targetType: `dataset:${key}`,
-          targetId: createdId,
-          // Values are deliberately not recorded here: this row can carry
-          // mailbox passwords, and an audit log is not a second place to keep
-          // them. What was created, by whom and when is the useful part.
-          metadata: { fields: Object.keys(data).filter((k) => k !== 'tenantId') },
+          targetId: rowId,
+          metadata: { role, fields: changed },
         },
       });
+      await tx.datasetFieldChange.createMany({
+        data: changed.map((k) => {
+          const masked = byField.get(k)!.sensitive;
+          return {
+            tenantId,
+            eventId: event.id,
+            dataset: key,
+            rowId,
+            field: k,
+            oldValue: masked ? null : this.render(current[k]) || null,
+            newValue: masked ? null : this.render(after[k]) || null,
+            masked,
+            actorEmail,
+            actorRole: role,
+            createdAt: event.createdAt,
+          };
+        }),
+      });
 
-      this.logger.log(`Created ${key} row ${createdId} (${naturalKey}) by ${actor?.email ?? 'unknown'}`);
-      return { id: createdId, [spec.key]: naturalKey };
+      this.logger.log(`Updated ${key} row ${rowId} (${changed.join(', ')}) by ${actorEmail ?? 'unknown'} as ${role}`);
+      return {
+        changed,
+        version: (after.updatedAt as Date).toISOString(),
+        values: Object.fromEntries(changed.map((k) => [k, this.render(after[k])])),
+      };
     });
+  }
+
+  /**
+   * Change history of one row, newest first — only for the fields this role
+   * may see, so history is never a side door into a column's values. Changes
+   * to sensitive columns (recorded without values: who and when only) are
+   * shown to ADMIN alone.
+   */
+  async history(tenantId: string, key: string, role: UserRole, rowId: string) {
+    const access = await this.accessFor(tenantId, key, role);
+    if (access.size === 0) throw new ForbiddenException('No access to this list');
+    return this.prisma.datasetFieldChange.findMany({
+      where: {
+        tenantId, dataset: key, rowId, field: { in: [...access.keys()] },
+        ...(role === 'ADMIN' ? {} : { masked: false }),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: {
+        id: true, field: true, oldValue: true, newValue: true, masked: true,
+        actorEmail: true, actorRole: true, createdAt: true,
+      },
+    });
+  }
+
+  /** One submitted value → what the column stores. Empty means null. */
+  private parse(
+    f: { field: string; displayName: string; type: string; required: boolean; picklist: string | null },
+    raw: unknown,
+    allowed: Map<string, string[]>,
+  ): unknown {
+    const str = raw === null || raw === undefined ? '' : String(raw).trim();
+    if (!str) {
+      if (f.required) throw new BadRequestException(`"${f.displayName}" is required.`);
+      return null;
+    }
+    if (f.picklist) {
+      const ok = allowed.get(f.picklist) ?? [];
+      if (!ok.includes(str)) {
+        throw new BadRequestException(`"${f.displayName}" must be one of: ${ok.join(', ')}.`);
+      }
+      return str;
+    }
+    const num = Number(str.replace(',', '.'));
+    switch (f.type) {
+      case 'int':
+        if (!Number.isInteger(num)) throw new BadRequestException(`"${f.displayName}" must be a whole number.`);
+        return num;
+      case 'float':
+        if (!Number.isFinite(num)) throw new BadRequestException(`"${f.displayName}" must be a number.`);
+        return num;
+      case 'decimal':
+        if (!Number.isFinite(num)) throw new BadRequestException(`"${f.displayName}" must be a number.`);
+        return str.replace(',', '.');
+      case 'bool': {
+        const u = str.toUpperCase();
+        if (u === 'TRUE') return true;
+        if (u === 'FALSE') return false;
+        throw new BadRequestException(`"${f.displayName}" must be TRUE or FALSE.`);
+      }
+      case 'date':
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(str) || isNaN(new Date(`${str}T00:00:00Z`).getTime())) {
+          throw new BadRequestException(`"${f.displayName}" must be a date (YYYY-MM-DD).`);
+        }
+        return new Date(`${str}T00:00:00Z`);
+      default:
+        return str;
+    }
   }
 }
