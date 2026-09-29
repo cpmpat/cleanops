@@ -23,6 +23,13 @@ import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
  */
 const DESK_ONLY_ROLES = ['OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'ASSIST'];
 
+/**
+ * What the desk may open. Data is included for everyone on the desk: which
+ * lists and columns they then see is decided per role by the dataset access
+ * matrix on the server, so a role with no grants sees an empty section.
+ */
+const DESK_PATHS = ['/airchat', '/datasets'];
+
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'en', label: 'EN' },
   { code: 'cs', label: 'CS' },
@@ -51,11 +58,11 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
       if (!user) { router.replace('/login'); return; }
       if (user.role === 'REPAIRMAN') { router.replace('/my-repairs'); return; }
 
-      // The desk gets in, but only as far as Airchat — that is their whole
-      // workplace for now. The rest of the manager app stays with MANAGER and
-      // ADMIN until each role's scope is decided.
+      // The desk gets in as far as Airchat and Data (Data filtered per column
+      // by the access matrix). The rest of the manager app stays with MANAGER
+      // and ADMIN until each role's scope is decided.
       if (DESK_ONLY_ROLES.includes(user.role)) {
-        if (!pathname?.startsWith('/airchat')) { router.replace('/airchat'); }
+        if (!DESK_PATHS.some(p => pathname?.startsWith(p))) { router.replace('/airchat'); }
         return;
       }
       if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
@@ -75,7 +82,8 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   const [dataOpen, setDataOpen] = useState(onData);
   useEffect(() => { if (onData) setDataOpen(true); }, [onData]);
   useEffect(() => {
-    if (!user || DESK_ONLY_ROLES.includes(user.role ?? '')) return;
+    if (!user) return;
+    // The server lists only what this role has grants for.
     datasetsApi.list().then(setDataLists).catch(() => {});
   }, [user]);
 
@@ -109,7 +117,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   // Desk roles see one item. Showing them a menu they cannot open would just
   // be a list of locked doors.
   const visibleNav = DESK_ONLY_ROLES.includes(user?.role ?? '')
-    ? navItems.filter((i) => i.href === '/airchat')
+    ? navItems.filter((i) => i.href === '/airchat' || (i.href === '/datasets' && dataLists.length > 0))
     : navItems;
 
   if (loading || !user) {

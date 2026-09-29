@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import type { Response } from 'express';
@@ -8,23 +8,27 @@ import { DatasetsService } from './datasets.service';
 @ApiTags('Datasets')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
 @Controller('datasets')
 export class DatasetsController {
   constructor(private readonly datasets: DatasetsService) {}
 
+  // Access is decided per list and per column by the dataset access matrix
+  // (dataset_field_access), not by a role list on this controller: any
+  // signed-in user may ask, and sees only what the matrix grants their role.
+
   @Get()
-  @ApiOperation({ summary: 'List the datasets this tenant exposes' })
-  list() {
-    return this.datasets.list();
+  @ApiOperation({ summary: 'The lists this role may open' })
+  list(@Req() req: TenantRequest) {
+    return this.datasets.list(req.tenantId!, req.userRole as any);
   }
 
   @Get(':key')
   @ApiOperation({
     summary: 'Read one dataset from the tenant spreadsheet',
     description:
-      'Read-only. Served from a 60s cache unless refresh=1 is passed. ' +
-      'Columns are filtered by the caller role.',
+      'Columns are those the access matrix lets the caller role view; each ' +
+      'carries access view|edit. Migrated lists also return rowIds and ' +
+      'versions (updatedAt) for saving.',
   })
   read(
     @Req() req: TenantRequest,
@@ -37,6 +41,7 @@ export class DatasetsController {
   }
 
   @Post(':key/export')
+  @Roles('MANAGER')
   @ApiOperation({
     summary: 'Export a dataset as CSV or XLSX',
     description:
@@ -69,24 +74,31 @@ export class DatasetsController {
   }
 
   @Post(':key')
+  @ApiOperation({ summary: 'Add a row — switched off for every list and role for now' })
+  create() {
+    return this.datasets.create();
+  }
+
+  @Patch(':key/rows/:rowId')
   @ApiOperation({
-    summary: 'Add a row to a dataset',
+    summary: 'Save one row\'s edits',
     description:
-      'Only for lists that have been migrated into Postgres. A list still ' +
-      'served from the spreadsheet rejects this, because the app holds ' +
-      'read-only scope on the sheet and always will.',
+      'Body: { version: <updatedAt as read>, values: { field: value, … } }. Every field needs an ' +
+      'edit grant for the caller role, or nothing is saved. 409 when the row changed since it ' +
+      'was read. Each save writes an audit event plus one field change per changed field.',
   })
-  create(
+  update(
     @Req() req: TenantRequest,
     @Param('key') key: string,
-    @Body() body: Record<string, unknown>,
+    @Param('rowId') rowId: string,
+    @Body() body: { version?: string; values?: Record<string, unknown> },
   ) {
-    return this.datasets.create(
-      req.tenantId!,
-      key,
-      req.userRole as any,
-      req.userId,
-      body ?? {},
-    );
+    return this.datasets.update(req.tenantId!, key, req.userRole as any, req.userId, rowId, body ?? {});
+  }
+
+  @Get(':key/rows/:rowId/history')
+  @ApiOperation({ summary: 'Field-level change history of one row, for the fields the caller may view' })
+  history(@Req() req: TenantRequest, @Param('key') key: string, @Param('rowId') rowId: string) {
+    return this.datasets.history(req.tenantId!, key, req.userRole as any, rowId);
   }
 }

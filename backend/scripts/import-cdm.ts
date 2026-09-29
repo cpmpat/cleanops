@@ -28,6 +28,8 @@
 //   --list <key>        which list (default: user; only `user` exists so far)
 //   --apply             write (default: report only)
 //   --show-keys         print every natural key the sheet yielded
+//   --overwrite-app-edits  allow --apply on a list already edited in the app;
+//                       this puts the sheet's values back over those edits
 //
 // Exit codes:
 //   0  success            1  one or more rows failed            2  bad usage
@@ -50,8 +52,21 @@ const { values } = parseArgs({
     list: { type: 'string', default: 'user' },
     apply: { type: 'boolean', default: false },
     'show-keys': { type: 'boolean', default: false },
+    'overwrite-app-edits': { type: 'boolean', default: false },
   },
 });
+
+/**
+ * Which columns are pick lists (dataset_picklist_values.list). Set on import
+ * so a re-import cannot drop the binding; values live in the database.
+ */
+const PICKLIST_BINDINGS: Record<string, Record<string, string>> = {
+  accommodation: {
+    source: 'accommodation.source',
+    status: 'accommodation.status',
+    accommodationStandard: 'accommodation.accommodationStandard',
+  },
+};
 
 if (!values.tenant) {
   console.error('Usage: npm run import:cdm -- --tenant <id|slug> [--list user] [--apply]');
@@ -164,6 +179,9 @@ const LISTS: Record<string, {
       dateOffboard: 'date',
       contractSigned: 'date',
       contractTerminated: 'date',
+      totalBedrooms: 'int',
+      otaHousingAnywhere: 'bool',
+      totalBathrooms: 'float',
     },
     sensitive: [],
     // Matched rather than listed. Channel passwords, Ubyport credentials and
@@ -358,6 +376,22 @@ async function main() {
     console.log(`List   : ${values.list}`);
     console.log(`Mode   : ${values.apply ? 'APPLY' : 'DRY RUN'}\n`);
 
+    // Once people edit a list in the app, Postgres is its record and the sheet
+    // is stale. Re-importing would silently put the sheet's old values back
+    // over their edits. Refuse unless asked for explicitly.
+    if (values.apply) {
+      const edits = await prisma.datasetFieldChange.count({
+        where: { tenantId: tenant.id, dataset: values.list! },
+      });
+      if (edits > 0 && !values['overwrite-app-edits']) {
+        console.error(
+          `"${values.list}" has ${edits} field change(s) made in the app. --apply would overwrite them ` +
+          "with the sheet's values. Re-run with --overwrite-app-edits only if that is what you want.",
+        );
+        process.exit(2);
+      }
+    }
+
     // Resolve both tab names up front, so a rename fails here with the list of
     // real tabs rather than three steps later as a parse error.
     const dataTab = await resolveTab(sheets, row.datasetsSheetId, spec.tab);
@@ -542,6 +576,7 @@ async function main() {
           sensitive: isSensitive(f.field),
           required: spec.required.includes(f.field),
           group: groupOf(f.field),
+          picklist: PICKLIST_BINDINGS[values.list!]?.[f.field] ?? null,
         },
         update: {
           columnOrder: f.columnOrder,
@@ -554,6 +589,8 @@ async function main() {
           sensitive: isSensitive(f.field) ? true : undefined,
           required: spec.required.includes(f.field),
           group: groupOf(f.field),
+          // Set when configured; otherwise left as the database has it.
+          picklist: PICKLIST_BINDINGS[values.list!]?.[f.field] ?? undefined,
         },
       });
     }

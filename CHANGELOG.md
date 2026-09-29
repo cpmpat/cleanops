@@ -23,6 +23,44 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — branch `feat/dataset-access-matrix`
+
+**Data is governed by an access matrix.** Each role × list × column is none /
+view / edit (`dataset_field_access`); no row means no access. Seeded from
+`matrixFieldsAccessRoles.csv` for FRONT_DESK_MANAGER and FRONT_DESK on
+Accommodation; MANAGER and ADMIN keep view on every column of every migrated
+list and edit on none. Columns without a view grant are never selected from
+the database. Front-desk roles can now open Data and see only the lists they
+hold grants on; Owner (still sheet-backed) stays MANAGER/ADMIN; export stays
+MANAGER/ADMIN. **Adding records is switched off** for every list and role.
+
+**Editing.** Cells the role may edit are marked with a pencil in the header
+and edit in place — pick lists and TRUE/FALSE columns as selects, numbers and
+dates as their own inputs. A row's edits collect behind one Save (a bar per
+changed row); the whole record opens in a side drawer (icon on the first cell,
+or double-click the row) with every field's change history. Saves are refused
+with "reload" when someone else saved the row since it was opened.
+
+**Pick lists** (`dataset_picklist_values`): Accommodation `source` (Avantio,
+CRM, Lead) and `status` (Valid, Invalid, Offboarding, Offboarded,
+Onboarding); `accommodationStandard` is bound to a list with no values yet.
+
+**Audit.** Every save writes one `audit_events` row and one
+`dataset_field_changes` row per changed field — old → new, email, role,
+timestamp — in the same transaction. Sensitive columns record who and when
+only, and those entries are visible to ADMIN alone.
+
+**Five new Accommodation columns:** totalBedrooms (int), totalBathrooms
+(float), orderAccommodationAdded, parkingLimits, accommodationStandard.
+`otaHousingAnywhere` becomes boolean (its data held only TRUE/FALSE).
+`import:cdm` now refuses `--apply` on a list with app edits unless
+`--overwrite-app-edits`. New read-only `diag:dataset-values`.
+
+*Migrations:* `20260929120000_dataset_access_matrix` (three tables, one
+column on `dataset_fields`, five on `cdm_accommodations`, seeds). *Env:* None.
+
+---
+
 ## Deployed
 
 ### 2026-09-25 · PR #41

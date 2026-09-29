@@ -17,6 +17,31 @@ The other record files and what belongs where:
 
 ---
 
+## 2026-09-29 — CDM lists: per-column access matrix, row saves, field audit
+
+**Decision.** Access to a migrated CDM list is a matrix of role × list ×
+column → none / view / edit, in Postgres, default deny, enforced on the
+server (unviewable columns are not selected; every saved field needs an edit
+grant or the whole save is refused). Editing is inline in the grid plus a
+record drawer, both sharing one draft per row and one Save. Saves carry the
+row's `updatedAt`; a mismatch is a 409, never a silent overwrite. Each save is
+one audit event plus one field-change row per changed field (old → new,
+email, role, time), in the same transaction. Sensitive columns are audited
+without values, visible to ADMIN only. Creating records is off for now.
+
+**Why not SQL roles or per-role views.** The app talks to Postgres as one
+pooled user; database grants cannot vary by tenant, every matrix change would
+be DDL, and per-role views multiply and drift with each new column. The
+matrix is ~170 indexed rows per role per list — read per request, no cache,
+so a revoked grant is gone on the next request. SQL views remain the right
+tool for curated read-only lists, behind the same matrix.
+
+**Why grants are not a foreign key to `dataset_fields`.** A grant for a column
+that does not exist yet waits for it (five CSV columns were granted before
+they were added).
+
+---
+
 ## 2026-09-25 — agent availability is stored as Prague wall-clock, per real date
 
 **Decision.** `agent_availability` rows are `day` (YYYY-MM-DD, Prague) plus
@@ -172,14 +197,54 @@ not be decrypted" — which reads like a corrupted row and is not. The
 
 ---
 
-## Standing follow-ups (not yet decided or built)
+## Open items
 
-- **Nightly `--find-missing` sweep** on the existing `@Cron` scheduler,
-  7-day window, notifications suppressed — the guard that is indifferent to
-  the cause; it found all seven bookings before the cause was known.
-- **A log line per `'skipped'` sync result** with reference and raw status.
-- **Rotate the `cleanops-media-uploader` GCP service account** — its key has
-  been pasted into `.env.production` files and echoed into tool output;
-  already on the security review's list.
-- **Nothing checks `TURNOVER_SYNC_ENABLED` at boot**; **no tests, no CI**
-  (runbook, Still open).
+The running list of what is still to do, newest decisions above it. Tick an
+item in the same PR that finishes it; delete it once the PR is deployed.
+
+### Patrik — operations, no code
+
+- [ ] Confirm the PR #41 deploy on Railway: green, and
+      `20260925120000_agent_availability` applied.
+- [ ] **Rotate the `cleanops-media-uploader` GCP service-account key** — it was
+      pasted into `.env.production` and echoed into tool output (Sep 2026).
+- [ ] Rotate the mailbox / Avantio passwords held in `cdm_users`
+      (`passwordEmail1`, `passwordEmail2Avantio`) — they passed through a chat
+      transcript during the CDM migration (Aug 2026).
+- [ ] Clear the 9 orphan turnovers found on 25 Sep (Hartigova 8 ×7,
+      Mahenova 8 ×2):
+      `./scripts/prod.sh reconcile:turnovers -- --tenant prague-stays --apply --verify`.
+- [ ] Give agents the `AGENT` role and brief them: no hours = not offered
+      work; today's hours cannot be removed.
+- [ ] Decide what `FRONT_DESK` / `FRONT_DESK_MANAGER` accounts may open —
+      today they see Airchat only, so they cannot use Planning.
+
+### Build — next
+
+- [ ] `codeLockBox`: 24 × FALSE plus one Google Sheets URL — decide what the
+      column means (a flag, a code, or a link) and clean it; stays text.
+- [ ] Admin screen for the access matrix and pick-list values (today: SQL
+      or a migration). Values for `accommodation.accommodationStandard`.
+- [ ] Type of `orderAccommodationAdded` (stored as text until decided).
+- [ ] After deploy, before anyone edits: optionally run
+      `import:cdm --list accommodation --apply` once to fill the five new
+      columns from the sheet (it refuses once app edits exist).
+- [ ] **Nightly safety sweep** on the `@Cron` scheduler: `--find-missing`
+      over 7 days (notifications suppressed) plus reconcile of orphan
+      turnovers, with a log of what it fixed. Evidence: 7 missed bookings
+      (Sep 13–15), 9 orphans (Sep 25).
+- [ ] A log line per `'skipped'` sync result, with reference and raw status.
+
+### Build — smaller
+
+- [ ] Planning → Agents updates live when an agent changes hours (emit on
+      the socket from `AvailabilityService`).
+- [ ] Planning's default dates use the browser's day (`todayISO()`), not
+      Prague's — wrong on a laptop in another time zone.
+- [ ] Nothing checks `TURNOVER_SYNC_ENABLED` at boot.
+- [ ] No tests, no CI beyond the Vercel build.
+
+### Build — later, needs a design pass
+
+- [ ] Agent check-in jobs: the desk assigns arrivals to available agents;
+      takes the first tab of the agent app.

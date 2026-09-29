@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Plus, Loader2, Palette,
+  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Loader2, Palette, Pencil, PanelRightOpen,
   Folder, FileText, ExternalLink, Download,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
   readSavedView, fromSavedView, toSavedView, useSaveTableView,
 } from '@/lib/table-view';
 import { cn } from '@/lib/utils';
+import { SaveBar, RecordDrawer, ValueInput, isEditable, type RowDraft } from './editing';
 
 /**
  * Column width is fixed, so horizontal offsets are pure arithmetic.
@@ -103,7 +104,15 @@ function DatasetsPageInner() {
   const [tint, setTint] = useState(false);
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
+  // ── Editing: one draft per row, saved row by row ──
+  const [drafts, setDrafts] = useState<Record<number, RowDraft>>({});
+  const [editing, setEditing] = useState<{ row: number; key: string } | null>(null);
+  const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
+  const [drawer, setDrawer] = useState<number | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const { user } = useAuth();
+  const mayExport = user?.role === 'MANAGER' || user?.role === 'ADMIN';
 
   /**
    * The dataset whose saved view has been applied.
@@ -153,6 +162,7 @@ function DatasetsPageInner() {
     setLoading(true);
     setError('');
     setViewAppliedFor('');
+    setDrafts({}); setEditing(null); setRowErrors({}); setDrawer(null);
     try {
       const raw = await api.read(key, refresh);
 
@@ -267,6 +277,70 @@ function DatasetsPageInner() {
     }
     return out;
   }, [data, search, filters, sort]);
+
+  // Filtering and sorting reorder the same row arrays, so a row's position in
+  // `data.rows` — which is what rowIds, versions and drafts are keyed on — is
+  // found by identity.
+  const indexOf = useMemo(
+    () => new Map((data?.rows ?? []).map((row, i) => [row, i] as const)),
+    [data],
+  );
+
+  function setDraftValue(r: number, key: string, value: string) {
+    if (!data) return;
+    const ci = data.columns.findIndex(c => c.key === key);
+    const stored = ci >= 0 ? data.rows[r]?.[ci] ?? '' : '';
+    setDrafts(prev => {
+      const row = { ...(prev[r] ?? {}) };
+      if (value === stored) delete row[key]; else row[key] = value;
+      const next = { ...prev };
+      if (Object.keys(row).length) next[r] = row; else delete next[r];
+      return next;
+    });
+    setRowErrors(prev => omit(prev, r));
+  }
+
+  function discardRow(r: number) {
+    setDrafts(prev => omit(prev, r));
+    setRowErrors(prev => omit(prev, r));
+    if (editing?.row === r) setEditing(null);
+  }
+
+  async function saveRow(r: number) {
+    const d = drafts[r];
+    if (!data?.rowIds || !data.versions || !d || Object.keys(d).length === 0) return;
+    setSaving(prev => ({ ...prev, [r]: true }));
+    setRowErrors(prev => omit(prev, r));
+    try {
+      const res = await api.update(data.key, data.rowIds[r], data.versions[r], d);
+      setData(prev => {
+        if (!prev) return prev;
+        const rowsNext = [...prev.rows];
+        const row = [...rowsNext[r]];
+        for (const [k, v] of Object.entries(res.values)) {
+          const i = prev.columns.findIndex(c => c.key === k);
+          if (i >= 0) row[i] = v;
+        }
+        rowsNext[r] = row;
+        const versions = [...(prev.versions ?? [])];
+        versions[r] = res.version;
+        return { ...prev, rows: rowsNext, versions };
+      });
+      setDrafts(prev => omit(prev, r));
+      setHistoryVersion(v => v + 1);
+    } catch (e: any) {
+      setRowErrors(prev => ({ ...prev, [r]: e?.message || 'Could not save' }));
+    } finally {
+      setSaving(prev => omit(prev, r));
+    }
+  }
+
+  useEffect(() => {
+    if (drawer === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawer(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawer]);
 
   /**
    * The frozen band has to sit exactly under the header, and each frozen row
@@ -412,9 +486,11 @@ function DatasetsPageInner() {
             Datasets
           </h1>
           <p className="text-sm text-ink-muted mt-0.5">
-            {data?.canCreate
-              ? 'Stored in the database. Rows added here are saved immediately.'
-              : 'Read-only view of the CDM spreadsheet. Changes made in the sheet appear here.'}
+            {!data?.rowIds
+              ? 'Read-only view of the CDM spreadsheet. Changes made in the sheet appear here.'
+              : data.canEdit
+                ? 'Click a highlighted cell to edit it. Each row saves with its own Save button; the whole record opens from the icon on its first cell.'
+                : 'Read-only for your role. Open a record from the icon on its first cell to see its change history.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -429,7 +505,7 @@ function DatasetsPageInner() {
           {/* Only for lists that live in Postgres. A sheet-backed list cannot
               be written to at all, so the button is absent rather than present
               and failing on submit. */}
-          <div className="relative">
+          {mayExport && <div className="relative">
             <button
               onClick={() => setExportOpen(v => !v)}
               disabled={!data || Boolean(exporting)}
@@ -464,16 +540,7 @@ function DatasetsPageInner() {
                 </div>
               </>
             )}
-          </div>
-          {data?.canCreate && (
-            <button
-              onClick={() => setAdding(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-ink-soft transition"
-            >
-              <Plus size={15} />
-              Add new
-            </button>
-          )}
+          </div>}
         </div>
       </div>
 
@@ -766,6 +833,7 @@ function DatasetsPageInner() {
                       )}
                     >
                       <span className="flex items-center gap-1">
+                        {isEditable(data, c) && <Pencil size={10} className="flex-shrink-0 text-amber-600" aria-label="Editable" />}
                         <span className="truncate">{c.label}</span>
                         {sorted
                           ? (sort!.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
@@ -779,15 +847,26 @@ function DatasetsPageInner() {
             <tbody>
               {rows.map((row, r) => {
                 const rowFrozen = r < frozenRows;
+                const di = indexOf.get(row) ?? -1;
+                const rowDraft = drafts[di];
                 return (
-                  <tr key={r} className={cn('group', !rowFrozen && 'hover:bg-surface-sunken/60')}>
+                  <tr
+                    key={r}
+                    className={cn('group', !rowFrozen && 'hover:bg-surface-sunken/60')}
+                    onDoubleClick={() => { if (data.rowIds && !editing) setDrawer(di); }}
+                  >
                     {visible.map((c, pos) => {
                       const colFrozen = pos < frozenCols;
                       const stick = rowFrozen || colFrozen;
+                      const editable = isEditable(data, c);
+                      const drafted = rowDraft?.[c.key];
+                      const shown = drafted ?? row[c.i] ?? '';
+                      const isEditing = editing?.row === di && editing.key === c.key;
                       return (
                         <td
                           key={`${c.key}-${c.i}`}
-                          title={row[c.i]}
+                          title={shown}
+                          onClick={editable && !isEditing ? () => setEditing({ row: di, key: c.key }) : undefined}
                           style={{
                             width: widthOf(c), minWidth: widthOf(c), height: ROW_H,
                             ...(colFrozen ? { left: colLefts[pos] } : {}),
@@ -796,6 +875,9 @@ function DatasetsPageInner() {
                             // must stay opaque for the same reason that class
                             // exists.
                             ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
+                            // An unsaved value outranks the family tint — it is
+                            // the one thing on the row that needs attention.
+                            ...(drafted !== undefined ? { backgroundColor: '#FFFBEB' } : {}),
                           }}
                           className={cn(
                             'px-3 border-b border-surface-border truncate',
@@ -807,9 +889,36 @@ function DatasetsPageInner() {
                             colFrozen && !rowFrozen && 'group-hover:bg-surface-sunken',
                             colFrozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
                             c.type === 'url' && 'text-center',
+                            editable && 'cursor-text hover:outline hover:outline-1 hover:outline-amber-300 hover:-outline-offset-1',
+                            drafted !== undefined && 'text-ink font-semibold',
+                            isEditing && 'px-0.5',
                           )}
                         >
-                          <CellValue value={row[c.i]} />
+                          {isEditing ? (
+                            <ValueInput
+                              column={c}
+                              value={shown}
+                              autoFocus
+                              onChange={(v) => setDraftValue(di, c.key, v)}
+                              onCommit={() => setEditing(null)}
+                              onCancel={() => { setDraftValue(di, c.key, row[c.i] ?? ''); setEditing(null); }}
+                            />
+                          ) : pos === 0 && data.rowIds ? (
+                            <div className="relative pr-6 truncate">
+                              <CellValue value={shown} />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setDrawer(di); }}
+                                title="Open the whole record"
+                                aria-label="Open the whole record"
+                                className="absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint opacity-0 group-hover:opacity-100 hover:text-ink hover:bg-surface-sunken transition"
+                              >
+                                <PanelRightOpen size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <CellValue value={shown} />
+                          )}
                         </td>
                       );
                     })}
@@ -826,11 +935,31 @@ function DatasetsPageInner() {
         </div>
       )}
 
-      {adding && data && (
-        <AddRowDialog
-          dataset={data}
-          onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); load(active, true); }}
+      {data?.rowIds && (
+        <SaveBar
+          page={data}
+          drafts={drafts}
+          saving={saving}
+          errors={rowErrors}
+          onSave={(r) => void saveRow(r)}
+          onDiscard={discardRow}
+          onOpen={setDrawer}
+        />
+      )}
+
+      {data && drawer !== null && data.rowIds?.[drawer] && (
+        <RecordDrawer
+          page={data}
+          row={drawer}
+          draft={drafts[drawer] ?? {}}
+          saving={!!saving[drawer]}
+          error={rowErrors[drawer]}
+          groupLabel={(g) => GROUP_LABEL[g] ?? g}
+          onChange={(k, v) => setDraftValue(drawer, k, v)}
+          onSave={() => void saveRow(drawer)}
+          onDiscard={() => discardRow(drawer)}
+          onClose={() => setDrawer(null)}
+          historyVersion={historyVersion}
         />
       )}
 
@@ -928,129 +1057,6 @@ function PanelButton({
 }
 
 /**
- * Add a row to a database-backed list.
- *
- * The form is generated from the dataset's own column metadata rather than
- * written per list, so the next migrated list gets this screen for free — the
- * backend describes its columns and the inputs follow. `type` picks the input,
- * `required` decides what blocks the save, and `description` is the same hover
- * text the column picker shows.
- *
- * Blank fields are omitted from the request rather than sent as empty strings.
- * A column left alone should end up NULL, not "".
- */
-function AddRowDialog({
-  dataset, onClose, onSaved,
-}: {
-  dataset: DatasetPage;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const cols = dataset.columns;
-  const missing = cols.filter((c) => c.required && !(values[c.key] ?? '').trim());
-
-  async function save() {
-    if (missing.length > 0) {
-      setError(`Fill in: ${missing.map((c) => c.label).join(', ')}`);
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const payload: Record<string, string> = {};
-      for (const [k, v] of Object.entries(values)) {
-        if (v.trim()) payload[k] = v.trim();
-      }
-      await api.create(dataset.key, payload);
-      onSaved();
-    } catch (e: any) {
-      setError(e?.message || 'Could not save the row.');
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl max-h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col"
-      >
-        <div className="flex items-start justify-between gap-3 p-5 border-b border-surface-border">
-          <div>
-            <h2 className="text-lg font-bold text-ink">New {dataset.label} record</h2>
-            <p className="text-xs text-ink-muted mt-0.5">
-              {cols.length} field{cols.length === 1 ? '' : 's'}. Anything left blank stays empty.
-            </p>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center">
-            <X size={17} />
-          </button>
-        </div>
-
-        <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
-          {cols.map((c) => (
-            <label key={c.key} className="flex flex-col gap-1" title={c.description ?? c.key}>
-              <span className="text-[11px] font-semibold text-ink-muted">
-                {c.label}
-                {c.required && <span className="text-red-500 ml-0.5">*</span>}
-              </span>
-
-              {c.type === 'bool' ? (
-                <select
-                  value={values[c.key] ?? ''}
-                  onChange={(e) => setValues((v) => ({ ...v, [c.key]: e.target.value }))}
-                  className="px-3 py-2 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-white"
-                >
-                  <option value="">—</option>
-                  <option value="true">TRUE</option>
-                  <option value="false">FALSE</option>
-                </select>
-              ) : (
-                <input
-                  type={c.type === 'int' ? 'number' : c.type === 'date' ? 'date' : 'text'}
-                  value={values[c.key] ?? ''}
-                  onChange={(e) => setValues((v) => ({ ...v, [c.key]: e.target.value }))}
-                  className="px-3 py-2 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              )}
-
-              {c.description && (
-                <span className="text-[10px] text-ink-faint leading-tight">{c.description}</span>
-              )}
-            </label>
-          ))}
-        </div>
-
-        {error && (
-          <p className="px-5 pb-2 text-xs text-red-600">{error}</p>
-        )}
-
-        <div className="flex justify-end gap-2 p-5 border-t border-surface-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-surface-border text-sm font-semibold text-ink-muted hover:text-ink transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-50"
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * A link renders as a shortcut, not as 180 characters of query string.
  *
  * Detected from the value rather than only from the column type, so a stray URL
@@ -1092,4 +1098,12 @@ export default function DatasetsPage() {
       <DatasetsPageInner />
     </Suspense>
   );
+}
+
+/** A copy of `obj` without `key`. */
+function omit<T>(obj: Record<number, T>, key: number): Record<number, T> {
+  if (!(key in obj)) return obj;
+  const copy = { ...obj };
+  delete copy[key];
+  return copy;
 }
