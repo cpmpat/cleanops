@@ -19,6 +19,7 @@ const TABS = [
   { key: 'accommodation', tab: 'Accommodation', label: 'Accommodation', source: 'db'    },
   { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
   { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
+  { key: 'oxpoint',       tab: 'OX Point',     label: 'OX Point',      source: 'db'    },
 ] as const;
 
 /**
@@ -34,6 +35,8 @@ const DB_MODELS: Record<string, { model: string; key: string; pk: string }> = {
   // The primary key is `rowId` here: the Accomodation sheet has its own column
   // called `id`, which would otherwise collide with Prisma's.
   accommodation: { model: 'cdmAccommodation', key: 'idAvantio',  pk: 'rowId' },
+  // Same `id`-column collision as Accommodation, same answer.
+  oxpoint:       { model: 'cdmOxPoint',       key: 'id',         pk: 'rowId' },
 };
 
 /**

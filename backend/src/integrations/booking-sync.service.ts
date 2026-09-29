@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
 import { atTimeInAppZone, startOfDayInAppZone, todayInAppZone } from '../common/time';
@@ -438,6 +438,30 @@ export class BookingSyncService {
    * 2. Update local cleaning event — avoids a 5-min stale window
    * 3. Notify assigned cleaners — they need to know their schedule changed
    */
+  /**
+   * Crib / separate beds from Planning. Ours, not the PMS's: never pushed,
+   * never touched by the sync. Broadcast so an open cleaner card shows the
+   * icon without a reload.
+   */
+  async updateSetupRequests(
+    tenantId: string,
+    bookingId: string,
+    body: { needsCrib?: boolean; separateBeds?: boolean },
+  ) {
+    const data: { needsCrib?: boolean; separateBeds?: boolean } = {};
+    if (typeof body.needsCrib === 'boolean') data.needsCrib = body.needsCrib;
+    if (typeof body.separateBeds === 'boolean') data.separateBeds = body.separateBeds;
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('Send needsCrib and/or separateBeds as true/false');
+    }
+    const res = await this.prisma.booking.updateMany({ where: { id: bookingId, tenantId }, data });
+    if (res.count !== 1) throw new NotFoundException('Booking not found');
+    this.gateway?.emitToTenant(tenantId, 'event:updated', {
+      source: 'planning-setup', bookingId, at: new Date().toISOString(),
+    });
+    return { success: true, ...data };
+  }
+
   async updateBookingTimesFromPlanning(
     tenantId: string,
     pmsBookingId: string,

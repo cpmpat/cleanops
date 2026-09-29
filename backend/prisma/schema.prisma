@@ -56,6 +56,7 @@ model Tenant {
   datasetFieldAccess  DatasetFieldAccess[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
+  cdmOxPoints         CdmOxPoint[]
 
   @@map("tenants")
 }
@@ -1688,4 +1689,49 @@ model DatasetFieldChange {
   @@index([tenantId, dataset, rowId, createdAt])
   @@index([eventId])
   @@map("dataset_field_changes")
+}
+
+/// The CDM "OX Point" list: parcel / key drop points. Loaded from the CDM
+/// sheet by `import:cdm --list oxpoint`; served in Data like the other lists
+/// and governed by the same access matrix.
+///
+/// Every column is text until the data says otherwise (`active` included —
+/// it is empty in the sample; `diag:dataset-values` will say when it is safe
+/// to make it boolean). Opening hours stay as the sheet writes them,
+/// "00:00-23:59", one column per weekday.
+model CdmOxPoint {
+  rowId    String @id @default(uuid())
+  tenantId String
+
+  /// The point's own four-character code (U0HJ) — the natural key. `rowId`
+  /// is the primary key because this column is called `id`.
+  id                      String?
+  oxId                    String?
+  active                  String?
+  city                    String?
+  district                String?
+  street                  String?
+  streetNumber            String?
+  postCode                String?
+  description             String?
+  boxNumber               String?
+  accessCode              String?
+  lockBoxNumber           String?
+  lockboxCode             String?
+  accessibilityMonday     String?
+  accessibilityTuesday    String?
+  accessibilityWednesday  String?
+  accessibilityThursday   String?
+  accessibilityFriday     String?
+  accessibilitySaturday   String?
+  accessibilitySunday     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, city])
+  @@map("cdm_ox_point")
 }

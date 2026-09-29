@@ -1264,6 +1264,9 @@ export const integrations = {
     },
     detail: (pmsBookingId: string) =>
       get(`/integrations/planning/bookings/${pmsBookingId}`),
+    /** Crib / separate beds — local only, never sent to the PMS. */
+    setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
+      patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
     /** Times are "HH:mm" in Europe/Prague; the backend anchors them on the booking's own day. */
     updateTimes: (pmsBookingId: string, data: { checkInTime?: string; checkOutTime?: string }) =>
       patch(`/integrations/planning/bookings/${pmsBookingId}`, data),

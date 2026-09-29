@@ -32,8 +32,14 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
       // which is one screen both sides share. Bouncing them out of a thread
       // they were invited to would make the invitation meaningless.
       const inThread = pathname?.startsWith('/conversations');
-      if ((user.role === 'MANAGER' || user.role === 'ADMIN') && !inThread) {
-        router.replace('/dashboard');
+      // Office roles work in the office app; each goes to where it starts.
+      const OFFICE_HOME: Record<string, string> = {
+        MANAGER: '/dashboard', ADMIN: '/planning',
+        FRONT_DESK_MANAGER: '/planning', FRONT_DESK: '/planning',
+        OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
+      };
+      if (OFFICE_HOME[user.role] && !inThread) {
+        router.replace(OFFICE_HOME[user.role]);
         return;
       }
       // Agents have Availability instead of the cleaning screens; cleaners
