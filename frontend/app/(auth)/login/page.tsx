@@ -293,5 +293,6 @@ function homeFor(role?: string | null): string {
   if (role === 'MANAGER') return '/dashboard';
   if (role === 'AGENT') return '/availability';
   if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
+  if (role === 'EVIDENCE') return '/datasets';
   return '/cleanings';
 }

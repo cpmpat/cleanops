@@ -31,8 +31,8 @@ export type OfficeRole = (typeof OFFICE_ROLES)[number];
 
 /**
  * Who may use Planning (Check-In, Check-Out, Agents): read the list, push
- * times to the PMS and record setup requests. Assigning cleaners stays with
- * MANAGER (ADMIN passes every check).
+ * times to the PMS, record setup requests, and assign / reassign cleaners
+ * (ADMIN passes every check).
  */
 export const PLANNING_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK'] as const;
 

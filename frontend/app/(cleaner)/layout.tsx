@@ -37,6 +37,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         MANAGER: '/dashboard', ADMIN: '/planning',
         FRONT_DESK_MANAGER: '/planning', FRONT_DESK: '/planning',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
+        EVIDENCE: '/datasets',
       };
       if (OFFICE_HOME[user.role] && !inThread) {
         router.replace(OFFICE_HOME[user.role]);
