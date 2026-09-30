@@ -466,7 +466,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
       {!loaded ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
           <Filter size={32} className="mx-auto text-ink-faint mb-3" />
-          <p className="text-sm text-ink-muted">Set filters and click Apply to load bookings</p>
+          <p className="text-sm text-ink-muted">{loading ? t.general.loading : 'Set filters and click Apply to load bookings'}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
