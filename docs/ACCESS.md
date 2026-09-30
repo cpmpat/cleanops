@@ -8,8 +8,9 @@ Three layers decide access:
 
 1. **API** — `@Roles(...)` + `RolesGuard` per endpoint. `ADMIN` passes every
    role check. Endpoints with no `@Roles` are open to any signed-in account.
-2. **Screens** — `ROLE_PATHS` in the manager layout lists what each desk role
-   may open (anything else is absent from the menu and redirects):
+2. **Screens** — `ROLE_PATHS` in the manager layout lists what each role other
+   than MANAGER may open (anything else is absent from the menu and
+   redirects): ADMIN → Planning, Dashboard, Data;
    FRONT_DESK_MANAGER and FRONT_DESK → Planning, Data; OPERATION_MANAGER and
    ASSIST → Airchat, Data; EVIDENCE → Data only. Login sends ADMIN,
    FRONT_DESK_MANAGER and FRONT_DESK to Planning, EVIDENCE to Data, MANAGER to
@@ -22,12 +23,13 @@ Three layers decide access:
 | Area | ADMIN | FRONT_DESK_MANAGER | FRONT_DESK |
 |---|---|---|---|
 | Lands on after login | Planning | Planning | Planning |
-| Manager app menu | Everything | Planning, Data | Planning, Data |
-| Dashboard, Schedule, Stream, Incidents, Repairs, Messages, Staff, Properties, Settings | Yes | No | No |
+| Manager app menu | Dashboard, Planning, Data | Planning, Data | Planning, Data |
+| Dashboard | Yes | No | No |
+| Schedule, Stream, Incidents, Repairs, Airchat, Messages, Staff, Properties, Settings | No (hidden; the API still admits ADMIN) | No | No |
 | Planning — view, push check-in/out times, crib/separate beds | Yes | Yes | Yes |
 | Planning — assign / reassign cleaners | Yes | Yes | Yes |
 | Planning → Agents | Yes | Yes | Yes |
-| Airchat | Yes | Not in the menu (the API still admits them; chats they are members of open from notifications) | Same |
+| Airchat | Not in the menu | Not in the menu (the API still admits them; chats they are members of open from notifications) | Same |
 | Data → Accommodation | View all 169 columns, edit none | View 116, edit 15 | View 116, edit 13 |
 | Data → User | View all, edit none | Hidden | Hidden |
 | Data → OX Point | Hidden until granted | Hidden until granted | Hidden until granted |

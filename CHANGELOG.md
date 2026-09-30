@@ -23,6 +23,19 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — branch `fix/admin-menu`
+
+**ADMIN's menu is Dashboard, Planning and Data.** Schedule, Stream,
+Incidents, Repairs, Airchat, Messages, Staff, Properties and Settings are
+hidden for ADMIN and redirect to Planning; MANAGER keeps the full menu. UI
+only — ADMIN still passes every role check on the API. The manager sidebar
+scrolls without showing a scrollbar, and Planning's first load says
+"Loading…" instead of "Set filters and click Apply".
+
+*Migrations:* None. *Env:* None.
+
+---
+
 ## Unreleased — branch `fix/sign-in-landing`
 
 **The emailed sign-in link lands on the right start page.** After setting a
