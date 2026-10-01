@@ -23,6 +23,23 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — branch `fix/account-status`
+
+**Deactivating an account takes effect within a minute.** The auth guard
+used to trust a login token for its whole 30 days, so a deactivated user who
+was already logged in kept working, and a changed role applied only at the
+next login. Every request (and every live-update connection) now checks the
+account's `isActive` and current role, cached 60 s per user; a deactivated
+account gets 401 and the app logs it out.
+
+**EVIDENCE on Accommodation.** The access matrix now lives in the repo,
+`docs/access-matrix/accommodation.csv`, and adds EVIDENCE: view on 46
+columns, edit on the five Ubyport columns. Loaded with `import:access-matrix`.
+
+*Migrations:* None. *Env:* None.
+
+---
+
 ## Unreleased — branch `fix/admin-menu`
 
 **ADMIN's menu is Dashboard, Planning and Data.** Schedule, Stream,

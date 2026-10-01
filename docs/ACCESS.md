@@ -6,8 +6,11 @@ layout, or the dataset access matrix.
 
 Three layers decide access:
 
-1. **API** — `@Roles(...)` + `RolesGuard` per endpoint. `ADMIN` passes every
-   role check. Endpoints with no `@Roles` are open to any signed-in account.
+1. **API** — `AuthGuard` admits an active account only, with its current role
+   (database, cached 60 s — a deactivation or role change applies within a
+   minute). Then `@Roles(...)` + `RolesGuard` per endpoint; `ADMIN` passes
+   every role check. Endpoints with no `@Roles` are open to any signed-in
+   account.
 2. **Screens** — `ROLE_PATHS` in the manager layout lists what each role other
    than MANAGER may open (anything else is absent from the menu and
    redirects): ADMIN → Planning, Dashboard, Data;
@@ -56,8 +59,9 @@ passwordAirbnb, passwordBooking, email columns) and the lockbox codes
 
 Data only — the menu shows nothing else and every other screen redirects to
 Data. Which lists and columns it sees, and whether it may edit any, is the
-access matrix alone (`import:access-matrix` with an EVIDENCE column). With no
-grants the Data screen says so. No export.
+access matrix alone (`docs/access-matrix/`). Accommodation: view 46 columns
+(identity, channels, contract, city tax, Ubyport, evidence folders), edit the
+five Ubyport columns. No export.
 
 DIRECTOR, RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
 after login they fall through to the cleaner app. Define them before any

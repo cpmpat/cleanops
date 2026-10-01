@@ -8,6 +8,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { PrismaService } from '../common/prisma.service';
+import { accountStatus } from '../common/guards/auth.guard';
 
 // ─── Gateway ───
 @WebSocketGateway({
@@ -23,6 +25,7 @@ export class CleanOpsGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private jwt: JwtService,
     private config: ConfigService,
+    private prisma: PrismaService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -34,8 +37,13 @@ export class CleanOpsGateway implements OnGatewayConnection, OnGatewayDisconnect
       const userId = payload.sub;
       const tenantId = payload.tenantId;
 
+      // Same rule as the HTTP guard: a deactivated account gets no live
+      // updates, and the role is the current one.
+      const status = await accountStatus(this.prisma, userId);
+      if (!status.active || status.tenantId !== tenantId) { client.disconnect(); return; }
+
       // Store mapping
-      client.data = { userId, tenantId, role: payload.role };
+      client.data = { userId, tenantId, role: status.role ?? payload.role };
       client.join(`tenant:${tenantId}`);
       client.join(`user:${userId}`);
 
