@@ -15,7 +15,7 @@ import { UserRole } from '@prisma/client';
  * that filters columns by role — this becomes a model, and `visibleColumns()`
  * below is the seam it plugs into.
  */
-const TABS = [
+export const TABS = [
   { key: 'accommodation', tab: 'Accommodation', label: 'Accommodation', source: 'db'    },
   { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
   { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
@@ -144,9 +144,9 @@ export class DatasetsService {
   ) {}
 
   /**
-   * The lists this role may open. A migrated list appears when the matrix
-   * grants the role at least one column of it; a sheet-backed list only for
-   * the roles that have always read it.
+   * The lists this role may open: any list the matrix grants the role at least
+   * one column of. MANAGER and ADMIN also keep every sheet-backed list, as they
+   * always have.
    */
   async list(tenantId: string, role: UserRole) {
     const granted = await this.prisma.datasetFieldAccess.findMany({
@@ -156,25 +156,32 @@ export class DatasetsService {
     });
     const has = new Set(granted.map((g: { dataset: string }) => g.dataset));
     return TABS
-      .filter((t) => (t.source === 'db' ? has.has(t.key) : SHEET_READERS.includes(role)))
+      .filter((t) => has.has(t.key) || (t.source === 'sheet' && SHEET_READERS.includes(role)))
       .map(({ key, label }) => ({ key, label }));
   }
 
   /**
-   * Which columns a role may see.
+   * Which columns of a sheet-backed list a role may see.
    *
-   * Today: everything, for the two roles that can reach the module at all.
-   * This function exists so that stays a one-place decision. The sheet holds
-   * channel passwords, Ubyport credentials and lockbox codes in plain text, so
-   * the moment a third role gets in here, the answer has to change — and it
-   * has to change by returning a WHITELIST. A deny-list over 140 columns is a
-   * bet that nobody ever adds a 141st called `passwordSomethingElse`.
+   * MANAGER and ADMIN: every column, as before. Everyone else: exactly the
+   * columns the access matrix grants them — a WHITELIST, so a column added to
+   * the sheet tomorrow stays hidden until someone grants it. Header names are
+   * compared squashed (case, spaces and punctuation ignored), so a stray
+   * space or capital in the sheet's header row does not cost a grant.
    *
-   * Note this is a different thing from HIDDEN_BY_DEFAULT: that is tidiness,
-   * one click from being undone. This is permission.
+   * Sheet-backed lists are read-only to the app, so an edit grant here means
+   * nothing more than view.
    */
-  private visibleColumns(columns: string[], _role: UserRole): string[] {
-    return columns;
+  private async visibleColumns(
+    tenantId: string,
+    dataset: string,
+    columns: string[],
+    role: UserRole,
+  ): Promise<string[]> {
+    if (SHEET_READERS.includes(role)) return columns;
+    const access = await this.accessFor(tenantId, dataset, role);
+    const granted = new Set([...access.keys()].map(squash));
+    return columns.filter((c) => granted.has(squash(c)));
   }
 
   /**
@@ -293,8 +300,13 @@ export class DatasetsService {
     if (entry.source === 'db') {
       return this.readFromDb(tenantId, entry.key, entry.label, role);
     }
+    // Refuse before touching the spreadsheet: a role with no grant on this
+    // list learns nothing, not even how many rows it has.
     if (!SHEET_READERS.includes(role)) {
-      throw new ForbiddenException(`No access to "${entry.label}"`);
+      const access = await this.accessFor(tenantId, entry.key, role);
+      if (access.size === 0) {
+        throw new ForbiddenException(`No access to "${entry.label}"`);
+      }
     }
 
     const tenant = await this.prisma.tenant.findUnique({
@@ -341,7 +353,7 @@ export class DatasetsService {
 
     // Project down to what this role may see. Index-based, so duplicated
     // header names survive intact.
-    const allowed = new Set(this.visibleColumns(columns, role));
+    const allowed = new Set(await this.visibleColumns(tenantId, entry.key, columns, role));
     const keptIndexes = columns
       .map((c, i) => (allowed.has(c) ? i : -1))
       .filter((i) => i >= 0);
@@ -370,6 +382,7 @@ export class DatasetsService {
         type: 'text',
         required: false,
         group: null,
+        access: 'view' as const,
       };
     });
 
@@ -383,7 +396,9 @@ export class DatasetsService {
       mappingTab,
       columns: shaped,
       rows: rows.map((row) => keptIndexes.map((i) => row[i])),
-      totalColumns: columns.length,
+      // How wide the sheet is would itself hint at what is withheld; only the
+      // roles that see everything get the true number.
+      totalColumns: SHEET_READERS.includes(role) ? columns.length : keptIndexes.length,
       // The app has read-only scope on the spreadsheet, so a sheet-backed list
       // cannot be added to. Saying so here is what greys out "Add new" rather
       // than letting the button fail on submit.

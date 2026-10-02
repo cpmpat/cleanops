@@ -24,11 +24,18 @@
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv --apply
 //
+// SHEET-BACKED LISTS (owner): the grants are matched against the live header
+// row of the sheet tab instead of dataset_fields, compared squashed (case,
+// spaces, punctuation ignored). They are view-only — the app cannot write to
+// the sheet — so an edit grant there is stored but means nothing more than view.
+//
 // Exit codes: 0 ok, 1 the file has errors (nothing written), 2 bad usage.
 
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { PrismaClient, UserRole } from '@prisma/client';
+import { GoogleSheetsClient } from '../src/datasets/google-sheets.client';
+import { TABS, squash } from '../src/datasets/datasets.service';
 
 const argv = process.argv.slice(2);
 if (argv[0] === '--') argv.shift();
@@ -45,8 +52,13 @@ const { values } = parseArgs({
 
 if (!values.tenant || !values.dataset || !values.csv) {
   console.error(
-    'Usage: pnpm import:access-matrix -- --tenant <id|slug> --dataset <accommodation|user|oxpoint> --csv <file> [--apply]',
+    'Usage: pnpm import:access-matrix -- --tenant <id|slug> --dataset <accommodation|user|owner|oxpoint> --csv <file> [--apply]',
   );
+  process.exit(2);
+}
+const TAB = TABS.find((t) => t.key === values.dataset);
+if (!TAB) {
+  console.error(`Unknown list "${values.dataset}". Known: ${TABS.map((t) => t.key).join(', ')}`);
   process.exit(2);
 }
 
@@ -151,10 +163,21 @@ async function main() {
     });
     if (!tenant) { console.error(`No tenant "${values.tenant}"`); process.exit(2); }
 
-    const columns = new Set(
-      (await prisma.datasetField.findMany({ where: { tenantId: tenant.id, dataset }, select: { field: true } }))
-        .map((f) => f.field),
-    );
+    // What the list's columns are called: dataset_fields for a migrated list,
+    // the sheet's own header row for a sheet-backed one.
+    const isSheet = TAB!.source === 'sheet';
+    let columns: Set<string>;
+    if (isSheet) {
+      const t = await prisma.tenant.findUnique({ where: { id: tenant.id }, select: { datasetsSheetId: true } });
+      if (!t?.datasetsSheetId) { console.error('This tenant has no datasetsSheetId.'); process.exit(2); }
+      const { columns: header } = await new GoogleSheetsClient().readTab(t.datasetsSheetId, TAB!.tab);
+      columns = new Set(header.map(squash));
+    } else {
+      columns = new Set(
+        (await prisma.datasetField.findMany({ where: { tenantId: tenant.id, dataset }, select: { field: true } }))
+          .map((f) => f.field),
+      );
+    }
     const current = await prisma.datasetFieldAccess.findMany({
       where: { tenantId: tenant.id, dataset, role: { in: roles.map((r) => r.role) as any } },
     });
@@ -168,10 +191,10 @@ async function main() {
       return b && (b.canView !== g.canView || b.canEdit !== g.canEdit);
     });
     const removed = current.filter((g) => !after.has(key(g)));
-    const unknown = [...seen].filter((f) => !columns.has(f));
+    const unknown = [...seen].filter((f) => !columns.has(isSheet ? squash(f) : f));
 
     console.log(`Tenant  : ${tenant.name} (${tenant.slug})`);
-    console.log(`List    : ${dataset} (${columns.size} columns in dataset_fields)`);
+    console.log(`List    : ${dataset} (${columns.size} columns ${isSheet ? `in the "${TAB!.tab}" sheet tab — sheet-backed, view only` : 'in dataset_fields'})`);
     console.log(`File    : ${values.csv} — ${seen.size} field(s) × ${roles.length} role(s)`);
     console.log(`Mode    : ${values.apply ? 'APPLY' : 'DRY RUN'}\n`);
     for (const { role } of roles) {
@@ -185,8 +208,15 @@ async function main() {
     }
     for (const g of removed.slice(0, 30)) console.log(`  - ${g.role} ${g.field} (not in the file)`);
     if (unknown.length) {
-      console.log(`\n${unknown.length} field(s) in the file are not columns of "${dataset}" yet — stored, they apply once the column exists:`);
+      console.log(
+        isSheet
+          ? `\n${unknown.length} field(s) in the file match no header in the "${TAB!.tab}" tab — stored, but nobody sees them until the names match:`
+          : `\n${unknown.length} field(s) in the file are not columns of "${dataset}" yet — stored, they apply once the column exists:`,
+      );
       console.log(`  ${unknown.join(', ')}`);
+    }
+    if (isSheet && grants.some((g) => g.canEdit)) {
+      console.log('\nNote: edit grants on a sheet-backed list are stored but act as view — the app cannot write to the sheet.');
     }
 
     if (!values.apply) {

@@ -30,6 +30,12 @@
 //   --show-keys         print every natural key the sheet yielded
 //   --overwrite-app-edits  allow --apply on a list already edited in the app;
 //                       this puts the sheet's values back over those edits
+//   --metadata-only     reload labels, descriptions and column order from the
+//                       mapping<Tab> sheet into dataset_fields and stop. No
+//                       data row is read into the table or written, so it is
+//                       safe on a list people already edit in the app.
+//                       Mapping rows for columns the table does not have are
+//                       skipped, never created.
 //
 // Exit codes:
 //   0  success            1  one or more rows failed            2  bad usage
@@ -53,6 +59,7 @@ const { values } = parseArgs({
     apply: { type: 'boolean', default: false },
     'show-keys': { type: 'boolean', default: false },
     'overwrite-app-edits': { type: 'boolean', default: false },
+    'metadata-only': { type: 'boolean', default: false },
   },
 });
 
@@ -378,6 +385,123 @@ function coerce(field: string, raw: string | null, type: 'text' | FieldType): un
   return raw;
 }
 
+type ListSpec = (typeof LISTS)[string];
+type MappedField = {
+  columnOrder: number;
+  source: string;
+  field: string;
+  description: string | null;
+  displayName: string | null;
+};
+type ScriptPrisma = Awaited<ReturnType<typeof bootScriptContext>>['prisma'];
+
+/** How a list's spec classifies one column. Shared by the full and metadata-only paths. */
+function specHelpers(spec: ListSpec) {
+  return {
+    groupOf: (name: string): string | null =>
+      spec.groups?.find(([, re]) => re.test(name))?.[0] ?? null,
+    isSensitive: (name: string): boolean =>
+      spec.sensitive.includes(name) ||
+      (spec.sensitiveMatch ?? []).some((re) => re.test(name)),
+    typeOf: (name: string): string =>
+      spec.types[name] ??
+      ((spec.urlMatch ?? []).some((re) => re.test(name)) ? 'url' : 'text'),
+  };
+}
+
+/**
+ * --metadata-only: bring dataset_fields' labels, descriptions and column order
+ * in line with the mapping tab, and nothing else.
+ *
+ * Updates touch only those three things — type, sensitivity, pick-list binding
+ * and visibility stay exactly as the database has them, because some of those
+ * were set by migrations and by hand. A column the table has but
+ * dataset_fields does not yet describe is created with the same defaults the
+ * full import would give it.
+ */
+async function writeMetadataOnly(
+  prisma: ScriptPrisma,
+  tenantId: string,
+  spec: ListSpec,
+  fields: MappedField[],
+) {
+  const list = values.list!;
+  const { groupOf, isSensitive, typeOf } = specHelpers(spec);
+  const current = new Map(
+    (await prisma.datasetField.findMany({
+      where: { tenantId, dataset: list },
+      select: { field: true, displayName: true, description: true, columnOrder: true },
+    })).map((f: { field: string; displayName: string | null; description: string | null; columnOrder: number }) => [f.field, f]),
+  );
+
+  const created: MappedField[] = [];
+  const changed: Array<{ f: MappedField; what: string[] }> = [];
+  for (const f of fields) {
+    const label = f.displayName ?? f.source;
+    const b = current.get(f.field);
+    if (!b) { created.push(f); continue; }
+    const what: string[] = [];
+    if ((b.displayName ?? '') !== label) what.push(`label "${b.displayName ?? ''}" → "${label}"`);
+    if ((b.description ?? '') !== (f.description ?? '')) what.push('description');
+    if (b.columnOrder !== f.columnOrder) what.push(`order ${b.columnOrder} → ${f.columnOrder}`);
+    if (what.length) changed.push({ f, what });
+  }
+  const mapped = new Set(fields.map((f) => f.field));
+  const notInMapping = [...current.keys()].filter((k) => !mapped.has(k));
+
+  console.log(`\nMetadata: ${changed.length} changed, ${created.length} new, ${fields.length - changed.length - created.length} unchanged`);
+  for (const { f, what } of changed.slice(0, 60)) console.log(`  ~ ${f.field}: ${what.join(', ')}`);
+  if (changed.length > 60) console.log(`  … +${changed.length - 60} more`);
+  for (const f of created) console.log(`  + ${f.field} ("${f.displayName ?? f.source}")`);
+  if (notInMapping.length) {
+    console.log(`\n${notInMapping.length} column(s) described in the app but not in the mapping tab — left as they are:`);
+    console.log(`  ${notInMapping.join(', ')}`);
+  }
+
+  if (!values.apply) {
+    console.log('\nDry run. Nothing written. Re-run with --apply.');
+    return;
+  }
+
+  await prisma.$transaction(async (tx: any) => {
+    for (const { f } of changed) {
+      await tx.datasetField.update({
+        where: { tenantId_dataset_field: { tenantId, dataset: list, field: f.field } },
+        data: { displayName: f.displayName ?? f.source, description: f.description, columnOrder: f.columnOrder },
+      });
+    }
+    for (const f of created) {
+      await tx.datasetField.create({
+        data: {
+          tenantId,
+          dataset: list,
+          columnOrder: f.columnOrder,
+          field: f.field,
+          displayName: f.displayName ?? f.source,
+          description: f.description,
+          type: typeOf(f.field),
+          hiddenByDefault: spec.hidden.includes(f.field),
+          sensitive: isSensitive(f.field),
+          required: spec.required.includes(f.field),
+          group: groupOf(f.field),
+          picklist: PICKLIST_BINDINGS[list]?.[f.field] ?? null,
+        },
+      });
+    }
+    await tx.auditEvent.create({
+      data: {
+        tenantId,
+        category: 'DATA_EDIT',
+        action: `dataset.${list}.metadata.reload`,
+        actorEmail: process.env.USER ? `script:${process.env.USER}` : 'script',
+        targetType: `dataset:${list}`,
+        metadata: { changed: changed.length, created: created.length },
+      },
+    });
+  }, { timeout: 60_000 });
+  console.log('\nWritten. Open the list and press Refresh to see the new labels.');
+}
+
 async function main() {
   const ctx = await bootScriptContext();
   const { prisma } = ctx;
@@ -403,12 +527,14 @@ async function main() {
     const sheets = new GoogleSheetsClient();
     console.log(`Tenant : ${tenant.name} (${tenant.slug})`);
     console.log(`List   : ${values.list}`);
-    console.log(`Mode   : ${values.apply ? 'APPLY' : 'DRY RUN'}\n`);
+    const metadataOnly = values['metadata-only'];
+    console.log(`Mode   : ${values.apply ? 'APPLY' : 'DRY RUN'}${metadataOnly ? ' — metadata only' : ''}\n`);
 
     // Once people edit a list in the app, Postgres is its record and the sheet
     // is stale. Re-importing would silently put the sheet's old values back
     // over their edits. Refuse unless asked for explicitly.
-    if (values.apply) {
+    // Metadata-only never writes a data row, so it cannot undo an edit.
+    if (values.apply && !metadataOnly) {
       const edits = await prisma.datasetFieldChange.count({
         where: { tenantId: tenant.id, dataset: values.list! },
       });
@@ -527,10 +653,18 @@ async function main() {
       }
       console.log('  Either the mapping tab describes a column the data tab does not have,');
       console.log('  or the table needs a migration to add it.');
-      if (values.apply) {
+      if (metadataOnly) {
+        console.log('  Metadata only: these rows are skipped. A dataset_fields row for a');
+        console.log('  column the table lacks would break the list for everyone.');
+      } else if (values.apply) {
         console.error('\nRefusing to apply: every row would fail on the first unknown column.');
         process.exit(1);
       }
+    }
+
+    if (metadataOnly) {
+      await writeMetadataOnly(prisma, tenant.id, spec, fields.filter((f) => modelFields.has(f.field)));
+      return;
     }
 
     const keyIndex = columns.indexOf(spec.key);
@@ -591,15 +725,7 @@ async function main() {
     }
 
     // ── write ──────────────────────────────────────────────────────────────
-    const groupOf = (name: string): string | null =>
-      spec.groups?.find(([, re]) => re.test(name))?.[0] ?? null;
-    const isSensitive = (name: string): boolean =>
-      spec.sensitive.includes(name) ||
-      (spec.sensitiveMatch ?? []).some((re) => re.test(name));
-
-    const typeOf = (name: string): string =>
-      spec.types[name] ??
-      ((spec.urlMatch ?? []).some((re) => re.test(name)) ? 'url' : 'text');
+    const { groupOf, isSensitive, typeOf } = specHelpers(spec);
 
     for (const f of fields) {
       const type = typeOf(f.field);

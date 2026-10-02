@@ -36,7 +36,7 @@ Three layers decide access:
 | Data → Accommodation | View all 169 columns, edit none | View 116, edit 15 | View 116, edit 13 |
 | Data → User | View all, edit none | Hidden | Hidden |
 | Data → OX Point | Hidden until granted | Hidden until granted | Hidden until granted |
-| Data → Owner (sheet) | View | Hidden | Hidden |
+| Data → Owner (sheet, view only) | View all columns | View 16 (matrix) | View 16 (matrix) |
 | Data export (CSV/XLSX) | Yes | No | No |
 | Change history in the record drawer | All fields, incl. sensitive (who/when only) | Fields they can view, sensitive excluded | Same |
 | Create records in Data | No (off for everyone) | No | No |
@@ -55,13 +55,25 @@ Both desk roles may view the channel credentials (passwordGmail,
 passwordAirbnb, passwordBooking, email columns) and the lockbox codes
 (codeLockBox, lockboxCode) — confirmed 29 Sep 2026.
 
+Owner (`docs/access-matrix/owner.csv`, 1 Oct 2026), both desk roles view:
+id, treatment, displayName, language, email1, email2, mobile, city, country,
+vatPayer, identifiedVatPayer, ICO, birthNumber, cityTaxSubject,
+cityTaxVariableSymbol, validity. Hidden: name, surnames, address, IBAN, the
+document serials. birthNumber is a personal identifier — granted on purpose.
+
+Sheet-backed lists (Owner) follow the matrix for every role but MANAGER and
+ADMIN, who see every column. Grants match the sheet's header names (case and
+spacing ignored); a column added to the sheet stays hidden until granted.
+They are view only whatever the matrix says.
+
 ## EVIDENCE
 
 Data only — the menu shows nothing else and every other screen redirects to
 Data. Which lists and columns it sees, and whether it may edit any, is the
-access matrix alone (`docs/access-matrix/`). Accommodation: view 46 columns
+access matrix alone (`docs/access-matrix/`). Accommodation: view 42 columns
 (identity, channels, contract, city tax, Ubyport, evidence folders), edit the
-five Ubyport columns. No export.
+five Ubyport columns. Owner: view 8 (id, treatment, displayName, language,
+email1, email2, mobile, city). No export.
 
 DIRECTOR, RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
 after login they fall through to the cleaner app. Define them before any
