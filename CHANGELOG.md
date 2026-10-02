@@ -23,7 +23,33 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/account-status`
+## Unreleased — branch `feat/sheet-matrix-mapping-reload`
+
+**The access matrix reaches Owner.** Sheet-backed lists (Owner) used to open
+for MANAGER and ADMIN only. Any other role now sees an Owner list when the
+matrix grants it columns, and sees exactly those columns — matched against
+the sheet's header row, view only (the app cannot write to the sheet).
+MANAGER and ADMIN still see every column. Matrix: `docs/access-matrix/owner.csv`
+— FRONT_DESK_MANAGER and FRONT_DESK view 16 columns (birthNumber among them),
+EVIDENCE view 8. `import:access-matrix` now checks a sheet-backed list's
+fields against the live sheet header.
+
+**Accommodation matrix updated.** EVIDENCE loses view on
+feeTransactionCityTax, otaExpediaSaleStarted, otaHomeAwaySaleStarted and
+otaHousingAnywhere (42 columns now, edit unchanged).
+
+**Labels reload without touching data.** `import:cdm -- --metadata-only`
+reloads labels, descriptions and column order from the mapping tab into
+`dataset_fields` — no data rows, so it runs on a list already edited in the
+app. Owner needs no import: its labels are read live from `mappingOwner`.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-01 · PR #48
 
 **Deactivating an account takes effect within a minute.** The auth guard
 used to trust a login token for its whole 30 days, so a deactivated user who
@@ -38,9 +64,7 @@ columns, edit on the five Ubyport columns. Loaded with `import:access-matrix`.
 
 *Migrations:* None. *Env:* None.
 
----
-
-## Unreleased — branch `fix/admin-menu`
+### 2026-09-30 · PR #47
 
 **ADMIN's menu is Dashboard, Planning and Data.** Schedule, Stream,
 Incidents, Repairs, Airchat, Messages, Staff, Properties and Settings are
@@ -51,9 +75,7 @@ scrolls without showing a scrollbar, and Planning's first load says
 
 *Migrations:* None. *Env:* None.
 
----
-
-## Unreleased — branch `fix/sign-in-landing`
+### 2026-09-29 · PR #46
 
 **The emailed sign-in link lands on the right start page.** After setting a
 password from the link, everyone but MANAGER was sent to the cleaners' pool
@@ -63,10 +85,6 @@ MANAGER → Dashboard, agents → Availability, OPERATION_MANAGER / ASSIST →
 Airchat, cleaners → the pool.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-09-29 · PR #45
 

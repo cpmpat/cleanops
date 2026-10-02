@@ -18,3 +18,8 @@ unless added. Commit a changed file in the same PR as running it.
 | File | List | Roles |
 |---|---|---|
 | `accommodation.csv` | Accommodation | FRONT_DESK_MANAGER, FRONT_DESK, EVIDENCE |
+| `owner.csv` | Owner (sheet-backed, view only) | FRONT_DESK_MANAGER, FRONT_DESK, EVIDENCE |
+
+Owner still lives in the Google Sheet. Its field names are matched against
+the sheet's header row (case and spacing ignored), and the dry run lists any
+that match nothing. Edit grants on it are stored but act as view.
