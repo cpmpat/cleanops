@@ -19,6 +19,7 @@ unless added. Commit a changed file in the same PR as running it.
 |---|---|---|
 | `accommodation.csv` | Accommodation | FRONT_DESK_MANAGER, FRONT_DESK, EVIDENCE |
 | `owner.csv` | Owner | FRONT_DESK_MANAGER, FRONT_DESK, EVIDENCE |
+| `user.csv` | User | FRONT_DESK_MANAGER, FRONT_DESK, EVIDENCE, ADMIN |
 
 **Row order = column order.** For the roles a file names, the order of the
 field rows is the order of the columns they see in Data. Move a row to move

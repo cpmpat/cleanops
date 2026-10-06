@@ -137,14 +137,14 @@ const LISTS: Record<string, {
     key: 'internalId',
     types: {
       dataAccess: 'int',
-      checkinCollaborator: 'bool',
+      AppCheckinCollaborator: 'bool',
       terminationDate: 'date',
       startDate: 'date',
     },
     // Mailbox passwords, and the personal data the empty columns are for.
     sensitive: [
       'passwordEmail1', 'passwordEmail2Avantio',
-      'birthNumber', 'birthPlace', 'address', 'healthInsurer', 'tariff',
+      'birthNumber', 'birthPlace', 'residenceAddress', 'healthInsurer', 'tariff',
     ],
     hidden: ['rajon', 'nickname', 'cleaningArea', 'folder'],
     required: ['internalId'],

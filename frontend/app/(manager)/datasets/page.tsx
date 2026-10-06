@@ -431,8 +431,9 @@ function DatasetsPageInner() {
   /**
    * Each column's fitted width, keyed by its index in data.columns.
    *
-   * Link columns are left alone: a link renders as one icon whatever its
-   * length, so a cell holding a URL counts as the icon, not the text. That is
+   * A link renders as one icon whatever its length, so a cell holding a URL
+   * counts as the icon, not the text — but the header label is always shown
+   * in full, so a link column is as wide as its label. That is
    * also what keeps sheet-backed lists — where links are typed 'text' — from
    * stretching to the length of a Drive URL.
    */
@@ -440,7 +441,12 @@ function DatasetsPageInner() {
     const out = new Map<number, number>();
     if (!data) return out;
     data.columns.forEach((c, i) => {
-      if (c.type === 'url') return;
+      // The header is never cut: its full label sets the minimum width of
+      // every column, link columns included (6 Oct 2026).
+      // 8% + 8px of slack: canvas measures the body font, and a header that
+      // renders a hair wider than measured would still get an ellipsis.
+      const head = Math.ceil(textWidth(c.label, 600) * 1.08 + 8 + HEAD_EXTRA + CELL_PAD);
+      if (c.type === 'url') { out.set(i, Math.max(URL_COL_W, head)); return; }
       let widest = 0;
       for (const row of data.rows) {
         const v = (row[i] ?? '').trim();
@@ -448,14 +454,13 @@ function DatasetsPageInner() {
         const w = /^https?:\/\//i.test(v) ? 24 : textWidth(capped(v), 400);
         if (w > widest) widest = w;
       }
-      const head = textWidth(capped(c.label), 600) + HEAD_EXTRA;
-      out.set(i, Math.ceil(Math.max(FIT_MIN_W, widest + CELL_PAD, head + CELL_PAD - 6)));
+      out.set(i, Math.ceil(Math.max(FIT_MIN_W, widest + CELL_PAD, head)));
     });
     return out;
   }, [data]);
 
   const widthOf = (c: { type?: string; i?: number }, pos?: number) =>
-    (c.type === 'url' ? URL_COL_W : (c.i !== undefined ? fitted.get(c.i) : undefined) ?? COL_W) +
+    ((c.i !== undefined ? fitted.get(c.i) : undefined) ?? (c.type === 'url' ? URL_COL_W : COL_W)) +
     (pos === 0 && data?.rowIds ? FIRST_COL_EXTRA : 0);
 
   /**

@@ -23,7 +23,28 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/import-mapping-order`
+## Unreleased — branch `feat/user-list-and-headers`
+
+**Column headers are never cut in Data.** Every column is at least as wide as
+its full header label — link columns too, which were a fixed 72px and showed
+"Fold…". Values still fit up to 48 characters.
+
+**User list follows the sheet and its matrix.** Columns renamed to the
+sheet's headers: possitionTier → positionTier, phuneNumber → phoneNumber,
+checkinCollaborator → AppCheckinCollaborator, address → residenceAddress
+(grants and history renamed with them); new: hr, rowOrderCreation. Matrix
+`docs/access-matrix/user.csv` (FRONT_DESK_MANAGER view 14, FRONT_DESK and
+EVIDENCE view 12, ADMIN view all 31 / edit all but internalId). User joins
+Notifications → Data: ADMIN and MANAGER notified of every column
+(`docs/notify-matrix/user.csv` for the rest).
+
+*Migrations:* `20261006150000_cdm_user_columns`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-06 · PR #51
 
 **`import:cdm` no longer drops mapping rows without a column letter.**
 mappingOwner has no letters in column A, so the first Owner load described one
@@ -42,10 +63,6 @@ reload corrects the stored dates.
 Script only — nothing to deploy.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-06 · PR #50
 
