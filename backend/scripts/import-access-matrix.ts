@@ -24,7 +24,11 @@
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv --apply
 //
-// SHEET-BACKED LISTS (owner): the grants are matched against the live header
+// COLUMN ORDER: the order of the field rows is also each named role's column
+// order in Data (dataset_field_roles.columnOrder, 6 Oct 2026). Reorder the
+// rows to reorder the columns for those roles. --skip-order leaves it alone.
+//
+// SHEET-BACKED LISTS: the grants are matched against the live header
 // row of the sheet tab instead of dataset_fields, compared squashed (case,
 // spaces, punctuation ignored). They are view-only — the app cannot write to
 // the sheet — so an edit grant there is stored but means nothing more than view.
@@ -47,6 +51,7 @@ const { values } = parseArgs({
     dataset: { type: 'string' },
     csv: { type: 'string' },
     apply: { type: 'boolean', default: false },
+    'skip-order': { type: 'boolean', default: false },
   },
 });
 
@@ -68,11 +73,11 @@ if (!TAB) {
  * columns.
  */
 const ALIASES: Record<string, Record<string, string>> = {
+  // The four 29 Sep aliases (urlListingAirbnb → linkListingAirbnb, …) went
+  // away on 6 Oct 2026 when the table's columns were renamed to the sheet's
+  // names. Only the diacritic remains: a column name cannot carry it.
   accommodation: {
-    urlListingAirbnb: 'linkListingAirbnb',
-    dateContractTermination: 'contractTerminated',
-    parkingNumber: 'parkingLotNumber',
-    'vítejEspId': 'espId',
+    'vítejEspId': 'vitejEspId',
   },
 };
 
@@ -126,6 +131,7 @@ async function main() {
   const alias = ALIASES[dataset] ?? {};
   const grants: Grant[] = [];
   const seen = new Set<string>();
+  const order: string[] = [];
   const bool = (raw: string | undefined, where: string): boolean => {
     const v = (raw ?? '').trim().toUpperCase();
     if (v === 'TRUE') return true;
@@ -141,6 +147,7 @@ async function main() {
     const field = alias[raw] ?? raw;
     if (seen.has(field)) { errors.push(`Row ${line}: "${raw}" appears twice`); return; }
     seen.add(field);
+    order.push(field);
     for (const { role, view, edit } of roles) {
       const canView = bool(r[view], `Row ${line} ${role} view`);
       const canEdit = bool(r[edit], `Row ${line} ${role} edit`);
@@ -219,6 +226,23 @@ async function main() {
       console.log('\nNote: edit grants on a sheet-backed list are stored but act as view — the app cannot write to the sheet.');
     }
 
+    // Column order per role: position in the file. Only for columns the
+    // list describes (dataset_field_roles hangs off dataset_fields).
+    const fieldIds = isSheet || values['skip-order']
+      ? new Map<string, string>()
+      : new Map(
+          (await prisma.datasetField.findMany({ where: { tenantId: tenant.id, dataset }, select: { id: true, field: true } }))
+            .map((f) => [f.field, f.id] as const),
+        );
+    const ordered = order.filter((f) => fieldIds.has(f));
+    if (!isSheet) {
+      console.log(
+        values['skip-order']
+          ? '\nColumn order: left as it is (--skip-order).'
+          : `\nColumn order: ${ordered.length} column(s) × ${roles.length} role(s) take the file's row order.`,
+      );
+    }
+
     if (!values.apply) {
       console.log('\nDry run. Nothing written. Re-run with --apply.');
       return;
@@ -235,6 +259,16 @@ async function main() {
       if (removed.length) {
         await tx.datasetFieldAccess.deleteMany({ where: { id: { in: removed.map((g) => g.id) } } });
       }
+      for (const { role } of roles) {
+        for (let i = 0; i < ordered.length; i++) {
+          const fieldId = fieldIds.get(ordered[i])!;
+          await tx.datasetFieldRole.upsert({
+            where: { fieldId_role: { fieldId, role: role as any } },
+            create: { tenantId: tenant.id, fieldId, role: role as any, columnOrder: i + 1 },
+            update: { columnOrder: i + 1 },
+          });
+        }
+      }
       // Who may see what is itself worth a record.
       await tx.auditEvent.create({
         data: {
@@ -247,10 +281,11 @@ async function main() {
             file: values.csv!.split('/').pop(),
             roles: roles.map((r) => r.role),
             added: added.length, changed: changed.length, removed: removed.length,
+            orderedColumns: ordered.length,
           },
         },
       });
-    }, { timeout: 60_000 });
+    }, { timeout: 300_000, maxWait: 20_000 });
     console.log('\nWritten.');
   } finally {
     await prisma.$disconnect();

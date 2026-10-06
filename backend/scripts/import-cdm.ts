@@ -25,17 +25,26 @@
 //
 // Options:
 //   --tenant <id|slug>  required
-//   --list <key>        which list (default: user; only `user` exists so far)
+//   --list <key>        which list: user (default), accommodation, owner, oxpoint
 //   --apply             write (default: report only)
 //   --show-keys         print every natural key the sheet yielded
-//   --overwrite-app-edits  allow --apply on a list already edited in the app;
-//                       this puts the sheet's values back over those edits
+//   --overwrite-app-edits  allow --apply when the sheet differs from a value
+//                       last edited in the app; the sheet's value wins. Without
+//                       it the apply stops and lists those cells.
 //   --metadata-only     reload labels, descriptions and column order from the
 //                       mapping<Tab> sheet into dataset_fields and stop. No
 //                       data row is read into the table or written, so it is
 //                       safe on a list people already edit in the app.
 //                       Mapping rows for columns the table does not have are
 //                       skipped, never created.
+//
+// CHANGE HISTORY
+//   Every cell an apply changes is recorded in dataset_field_changes (one
+//   audit event per run, actor "sheet import", role IMPORT), and every new row
+//   as a change of its key column. That is what Notifications → Data shows for
+//   edits made in the sheet. Sensitive columns are recorded as changed, without
+//   values. The dry run prints the same diff — counts, keys and field names,
+//   never values.
 //
 // Exit codes:
 //   0  success            1  one or more rows failed            2  bad usage
@@ -72,6 +81,8 @@ const PICKLIST_BINDINGS: Record<string, Record<string, string>> = {
     source: 'accommodation.source',
     status: 'accommodation.status',
     accommodationStandard: 'accommodation.accommodationStandard',
+    checkInMethod: 'accommodation.checkInMethod',
+    terraceType: 'accommodation.terraceType',
   },
 };
 
@@ -163,7 +174,7 @@ const LISTS: Record<string, {
       feeChannelManager: 'int',
       mlos: 'int',
       countOccuranceOfcityTaxEntityRegistredEntity: 'int',
-      parkingLotNumber: 'int',
+      parkingNumber: 'int',
       bathrooms: 'float',
       costAvantio: 'decimal',
       otaBooking: 'bool',
@@ -190,10 +201,17 @@ const LISTS: Record<string, {
       otaAirbnbSalesEnded: 'date',
       dateOffboard: 'date',
       contractSigned: 'date',
-      contractTerminated: 'date',
+      dateContractTermination: 'date',
       totalBedrooms: 'int',
       otaHousingAnywhere: 'bool',
       totalBathrooms: 'float',
+      // 6 Oct 2026: tag columns for marking rows, and a link.
+      markField1: 'bool',
+      markField2: 'bool',
+      markField3: 'bool',
+      markField4: 'bool',
+      markField5: 'bool',
+      checkInInstructionLink: 'url',
     },
     sensitive: [],
     // Matched rather than listed. Channel passwords, Ubyport credentials and
@@ -226,9 +244,9 @@ const LISTS: Record<string, {
       ['pricing',     /^(fee|cost|pricing|petsFee|sumUp|invoicingProcess|additionalInvoicing|allowedSpendingForRepairs|maxWithoutSupplement)/],
       ['folders',     /^url|^folderUnitProperties/],
       ['contract',    /^(contract|cotractType|validFrom|validUntil|dateOffboard|ownerVatPayer|mlos|maximumRelease|maximumTimeRelease)/],
-      ['tech',        /^(routerModel|intercom|bellLabel|espId|vitejBoxGateUrl|tvModel|buildingUnderConstruction|propertyFactWifi)/],
+      ['tech',        /^(routerModel|intercom|bellLabel|vitejEspId|vitejBoxGateUrl|tvModel|buildingUnderConstruction|propertyFactWifi)/],
       ['ops',         /^(supplierFinalCleaning|finalCleaningProvided|checkIn|chekin|rajonUserId|hostsName|contactBuildingManagement|notes|keysQuantity)/],
-      ['location',    /^(address|city|unit|floor|parkingLotNumber|parking|parkingType)$/],
+      ['location',    /^(address|city|unit|floor|parkingNumber|parking|parkingType|parkingLimits)$/],
       ['identity',    /^(source|status|id|idBh|idAvantio|titleAvantio|nickname)$/],
       ['property',    /.*/],
     ],
@@ -236,6 +254,19 @@ const LISTS: Record<string, {
     // spreadsheets. As text they each eat 190px of a table that is already
     // 164 columns wide; as an icon they cost 72.
     urlMatch: [/^url/i, /Url$/, /^link/i, /^airbnbUrl/],
+  },
+
+  owner: {
+    tab: 'Owner',
+    mappingTab: 'mappingOwner',
+    model: 'cdmOwner',
+    key: 'id',
+    types: { vatPayer: 'bool' },
+    // Bank account and birth number: recorded in history without values,
+    // and that history is ADMIN's alone.
+    sensitive: ['iban', 'birthNumber'],
+    hidden: [],
+    required: ['id'],
   },
 
   oxpoint: {
@@ -385,6 +416,32 @@ function coerce(field: string, raw: string | null, type: 'text' | FieldType): un
   return raw;
 }
 
+/** Who a sheet reload is, in dataset_field_changes and audit_events. */
+const IMPORT_ACTOR = 'sheet import';
+const IMPORT_ROLE = 'IMPORT';
+
+/**
+ * A stored value as the change history writes it — the same rendering the
+ * app's own saves use (datasets.service render()), so the two read alike.
+ */
+function renderValue(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
+/** Equal as the viewer would show them; numbers compare as numbers (12.50 = 12.5). */
+function sameValue(a: unknown, b: unknown): boolean {
+  const x = renderValue(a);
+  const y = renderValue(b);
+  if (x === y) return true;
+  if (x !== '' && y !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y))) {
+    return Number(x) === Number(y);
+  }
+  return false;
+}
+
 type ListSpec = (typeof LISTS)[string];
 type MappedField = {
   columnOrder: number;
@@ -530,22 +587,8 @@ async function main() {
     const metadataOnly = values['metadata-only'];
     console.log(`Mode   : ${values.apply ? 'APPLY' : 'DRY RUN'}${metadataOnly ? ' — metadata only' : ''}\n`);
 
-    // Once people edit a list in the app, Postgres is its record and the sheet
-    // is stale. Re-importing would silently put the sheet's old values back
-    // over their edits. Refuse unless asked for explicitly.
-    // Metadata-only never writes a data row, so it cannot undo an edit.
-    if (values.apply && !metadataOnly) {
-      const edits = await prisma.datasetFieldChange.count({
-        where: { tenantId: tenant.id, dataset: values.list! },
-      });
-      if (edits > 0 && !values['overwrite-app-edits']) {
-        console.error(
-          `"${values.list}" has ${edits} field change(s) made in the app. --apply would overwrite them ` +
-          "with the sheet's values. Re-run with --overwrite-app-edits only if that is what you want.",
-        );
-        process.exit(2);
-      }
-    }
+    // App edits are protected further down, cell by cell: the apply stops only
+    // when the sheet would actually overwrite a value last edited in the app.
 
     // Resolve both tab names up front, so a rename fails here with the list of
     // real tabs rather than three steps later as a parse error.
@@ -698,30 +741,109 @@ async function main() {
       }
     }
 
-    if (!values.apply) {
-      // Walk every cell through the same coercion the write path uses. A dry
-      // run that does not do this cannot tell you the types are wrong, which
-      // is most of what a dry run is for.
-      for (const r of rows) {
-        if (!clean(r[keyIndex])) continue;
-        for (const f of fields) {
-          const i = columns.indexOf(f.source);
-          if (i >= 0) coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
-        }
-      }
-      if (unparseable.size > 0) {
-        console.log(`\n${unparseable.size} column(s) hold values their declared type cannot take:`);
-        for (const [field, e] of [...unparseable].sort((a, b) => b[1].count - a[1].count)) {
-          console.log(`  ${field.padEnd(46)} ${String(e.count).padStart(4)}x  e.g. ${e.sample.join(' | ')}`);
-        }
-        console.log('  Those cells would import as NULL.');
-      }
+    // ── what would change ──────────────────────────────────────────────────
+    //
+    // Every cell is coerced once, here, and compared with what the table
+    // holds. The one comparison drives the dry-run report, the app-edit guard
+    // and the change history the apply writes.
+    const delegate = (prisma as any)[spec.model];
+    const pk = Prisma.dmmf.datamodel.models
+      .find((m) => m.name === modelName)!.fields.find((f) => f.isId)!.name;
 
-      const withKey = rows.filter((r) => clean(r[keyIndex])).length;
-      console.log(`\nWould write ${fields.length} metadata row(s) and ${withKey} data row(s).`);
-      console.log(`Skipping ${rows.length - withKey} row(s) with no ${spec.key}.`);
+    const planned: Array<{ key: string; data: Record<string, unknown> }> = [];
+    let skipped = 0;
+    for (const r of rows) {
+      const key = clean(r[keyIndex]);
+      if (!key) { skipped++; continue; }
+      const data: Record<string, unknown> = {};
+      for (const f of fields) {
+        const i = columns.indexOf(f.source);
+        if (i < 0 || !modelFields.has(f.field)) continue;
+        data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
+      }
+      delete data[spec.key];
+      planned.push({ key, data });
+    }
+
+    const existingRows: Array<Record<string, unknown>> = await delegate.findMany({
+      where: { tenantId: tenant.id },
+    });
+    const existing = new Map(existingRows.map((e) => [String(e[spec.key]), e]));
+
+    type Cell = { rowId: string; key: string; field: string; old: unknown; new: unknown };
+    const cells: Cell[] = [];
+    const addedKeys: string[] = [];
+    for (const p of planned) {
+      const e = existing.get(p.key);
+      if (!e) { addedKeys.push(p.key); continue; }
+      for (const [field, v] of Object.entries(p.data)) {
+        if (!sameValue(e[field], v)) {
+          cells.push({ rowId: String(e[pk]), key: p.key, field, old: e[field], new: v });
+        }
+      }
+    }
+    const changedKeys = new Set(cells.map((c) => c.key));
+    const inSheet = new Set(planned.map((p) => p.key));
+    const goneFromSheet = [...existing.keys()].filter((k) => !inSheet.has(k));
+
+    // A cell whose most recent change was made in the app, not by an import.
+    const history = await prisma.datasetFieldChange.findMany({
+      where: { tenantId: tenant.id, dataset: values.list! },
+      orderBy: { createdAt: 'asc' },
+      select: { rowId: true, field: true, actorRole: true },
+    });
+    const lastActor = new Map<string, string | null>();
+    for (const h of history) lastActor.set(`${h.rowId}:${h.field}`, h.actorRole);
+    const conflicts = cells.filter((c) => {
+      const a = lastActor.get(`${c.rowId}:${c.field}`);
+      return a !== undefined && a !== IMPORT_ROLE;
+    });
+
+    console.log(
+      `\nRows   : ${planned.length} in the sheet (+${skipped} with no ${spec.key}, skipped) — ` +
+      `${addedKeys.length} new, ${changedKeys.size} changed, ` +
+      `${planned.length - addedKeys.length - changedKeys.size} unchanged`,
+    );
+    console.log(`Cells  : ${cells.length} would change`);
+    if (cells.length) {
+      const byField = new Map<string, number>();
+      for (const c of cells) byField.set(c.field, (byField.get(c.field) ?? 0) + 1);
+      const top = [...byField].sort((a, b) => b[1] - a[1]);
+      console.log('  by column: ' + top.slice(0, 30).map(([f, n]) => `${f}×${n}`).join('  ') +
+        (top.length > 30 ? `  … +${top.length - 30} more` : ''));
+    }
+    if (addedKeys.length) {
+      console.log(`  new ${spec.key}: ${addedKeys.slice(0, 40).join(' ')}${addedKeys.length > 40 ? ` … +${addedKeys.length - 40}` : ''}`);
+    }
+    if (goneFromSheet.length) {
+      console.log(`\n${goneFromSheet.length} row(s) in the table are no longer in the sheet — left as they are:`);
+      console.log(`  ${goneFromSheet.slice(0, 40).join(' ')}${goneFromSheet.length > 40 ? ' …' : ''}`);
+    }
+    if (conflicts.length) {
+      console.log(`\n${conflicts.length} cell(s) were last edited in the app and the sheet says something else:`);
+      for (const c of conflicts.slice(0, 40)) console.log(`  ${c.key.padEnd(14)} ${c.field}`);
+      if (conflicts.length > 40) console.log(`  … +${conflicts.length - 40} more`);
+      console.log('  The apply stops on these unless you pass --overwrite-app-edits (the sheet wins).');
+    }
+
+    if (unparseable.size > 0) {
+      console.log(`\n${unparseable.size} column(s) hold values their declared type cannot take:`);
+      for (const [field, e] of [...unparseable].sort((a, b) => b[1].count - a[1].count)) {
+        console.log(`  ${field.padEnd(46)} ${String(e.count).padStart(4)}x  e.g. ${e.sample.join(' | ')}`);
+      }
+      console.log('  Those cells import as NULL.');
+    }
+
+    if (!values.apply) {
+      console.log(`\nWould write ${fields.length} metadata row(s), ${addedKeys.length} new and ${changedKeys.size} changed row(s).`);
       console.log('\nDry run. Nothing written. Re-run with --apply.');
       return;
+    }
+
+    if (conflicts.length && !values['overwrite-app-edits']) {
+      console.error('\nRefusing to apply: the sheet would overwrite values edited in the app (listed above).');
+      console.error('Fix them in the sheet, or re-run with --overwrite-app-edits to let the sheet win.');
+      process.exit(2);
     }
 
     // ── write ──────────────────────────────────────────────────────────────
@@ -763,44 +885,83 @@ async function main() {
     }
     console.log(`\nMetadata written: ${fields.length} column(s).`);
 
-    const delegate = (prisma as any)[spec.model];
+    // ── data ───────────────────────────────────────────────────────────────
+    // Only rows that are new or differ are written.
     let written = 0;
-    let skipped = 0;
-
-    for (const r of rows) {
-      const key = clean(r[keyIndex]);
-      if (!key) { skipped++; continue; }
-
-      const data: Record<string, unknown> = {};
-      for (const f of fields) {
-        const i = columns.indexOf(f.source);
-        if (i < 0 || !modelFields.has(f.field)) continue;
-        data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
-      }
-      delete data[spec.key];
-
+    const failedKeys = new Set<string>();
+    const added: Array<{ rowId: string; key: string }> = [];
+    for (const p of planned) {
+      const isNew = !existing.has(p.key);
+      if (!isNew && !changedKeys.has(p.key)) continue;
       try {
-        await delegate.upsert({
-          where: { [`tenantId_${spec.key}`]: { tenantId: tenant.id, [spec.key]: key } },
-          create: { tenantId: tenant.id, [spec.key]: key, ...data },
-          update: data,
+        const saved = await delegate.upsert({
+          where: { [`tenantId_${spec.key}`]: { tenantId: tenant.id, [spec.key]: p.key } },
+          create: { tenantId: tenant.id, [spec.key]: p.key, ...p.data },
+          update: p.data,
         });
+        if (isNew) added.push({ rowId: String(saved[pk]), key: p.key });
         written++;
       } catch (err) {
         failures++;
-        console.error(`  ${key}: ${err instanceof Error ? err.message : String(err)}`);
+        failedKeys.add(p.key);
+        console.error(`  ${p.key}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    console.log(`Data written: ${written} row(s). Skipped (no ${spec.key}): ${skipped}. Failed: ${failures}.`);
-
-    if (unparseable.size > 0) {
-      console.log(`\n${unparseable.size} column(s) held values their declared type could not take.`);
-      console.log('Those cells are now NULL. Either the sheet needs cleaning or the type is wrong:');
-      for (const [field, e] of [...unparseable].sort((a, b) => b[1].count - a[1].count)) {
-        console.log(`  ${field.padEnd(46)} ${String(e.count).padStart(4)}x  e.g. ${e.sample.join(' | ')}`);
+    // ── change history ─────────────────────────────────────────────────────
+    // Not on the very first load of a list: "every row was added" is not news.
+    const firstLoad = existing.size === 0;
+    const recorded = cells.filter((c) => !failedKeys.has(c.key));
+    if (firstLoad) console.log('History: first load of this list — not recorded as changes.');
+    if (!firstLoad && (recorded.length || added.length)) {
+      const sensitive = new Set(
+        (await prisma.datasetField.findMany({
+          where: { tenantId: tenant.id, dataset: values.list!, sensitive: true },
+          select: { field: true },
+        })).map((f: { field: string }) => f.field),
+      );
+      const event = await prisma.auditEvent.create({
+        data: {
+          tenantId: tenant.id,
+          category: 'DATA_EDIT',
+          action: `dataset.${values.list}.import`,
+          actorEmail: IMPORT_ACTOR,
+          targetType: `dataset:${values.list}`,
+          metadata: {
+            added: added.length,
+            changedRows: changedKeys.size,
+            cells: recorded.length,
+            overwroteAppEdits: conflicts.length,
+            by: process.env.USER ?? null,
+          },
+        },
+      });
+      const base = {
+        tenantId: tenant.id, eventId: event.id, dataset: values.list!,
+        actorEmail: IMPORT_ACTOR, actorRole: IMPORT_ROLE,
+      };
+      const changeRows = [
+        ...recorded.map((c) => {
+          const masked = sensitive.has(c.field);
+          return {
+            ...base, rowId: c.rowId, field: c.field, masked,
+            oldValue: masked ? null : renderValue(c.old) || null,
+            newValue: masked ? null : renderValue(c.new) || null,
+          };
+        }),
+        // A new row is one change of its key column, from nothing.
+        ...added.map((a) => ({
+          ...base, rowId: a.rowId, field: spec.key, masked: false, oldValue: null, newValue: a.key,
+        })),
+      ];
+      for (let i = 0; i < changeRows.length; i += 1000) {
+        await prisma.datasetFieldChange.createMany({ data: changeRows.slice(i, i + 1000) });
       }
+      console.log(`History: ${changeRows.length} change(s) recorded (Notifications → Data).`);
     }
+
+    console.log(`Data written: ${written} row(s) (${added.length} new). Unchanged: ${planned.length - written - failedKeys.size}. Skipped (no ${spec.key}): ${skipped}. Failed: ${failures}.`);
+
   } finally {
     await ctx.close();
   }

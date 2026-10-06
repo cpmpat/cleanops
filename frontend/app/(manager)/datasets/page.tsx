@@ -70,6 +70,36 @@ const URL_COL_W = 72;
 const HEAD_H = 36;
 const ROW_H = 30;
 
+/**
+ * Text columns are as wide as their longest value, up to this many characters
+ * (agreed 6 Oct 2026). Anything longer is cut with an ellipsis; the full value
+ * is in the cell's tooltip and in the record drawer.
+ */
+const FIT_MAX_CHARS = 48;
+const FIT_MIN_W = 56;
+/** px-3 on both sides, plus the 1px border. */
+const CELL_PAD = 25;
+/** Header extras: the pencil (editable) and the sort arrow, with their gaps. */
+const HEAD_EXTRA = 30;
+/** The first column carries the "open record" button (pr-6). */
+const FIRST_COL_EXTRA = 24;
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+/**
+ * Rendered width of a string in the table's font. Canvas measures in the real
+ * font, so "WWW" and "iii" get the widths they actually take. On the server
+ * (prerender) there is no canvas; a per-character estimate stands in until the
+ * first client render replaces it.
+ */
+function textWidth(text: string, weight: 400 | 600): number {
+  if (typeof document === 'undefined') return text.length * 7;
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return text.length * 7;
+  measureCtx.font = `${weight} 12px ${getComputedStyle(document.body).fontFamily}`;
+  return measureCtx.measureText(text).width;
+}
+const capped = (v: string) => (v.length > FIT_MAX_CHARS ? `${v.slice(0, FIT_MAX_CHARS)}…` : v);
+
 type SortDir = 'asc' | 'desc';
 
 /**
@@ -398,7 +428,35 @@ function DatasetsPageInner() {
   const tintOf = (c: { group?: string | null }): string | undefined =>
     tint && c.group ? GROUP_TINT[c.group] : undefined;
 
-  const widthOf = (c: { type?: string }) => (c.type === 'url' ? URL_COL_W : COL_W);
+  /**
+   * Each column's fitted width, keyed by its index in data.columns.
+   *
+   * Link columns are left alone: a link renders as one icon whatever its
+   * length, so a cell holding a URL counts as the icon, not the text. That is
+   * also what keeps sheet-backed lists — where links are typed 'text' — from
+   * stretching to the length of a Drive URL.
+   */
+  const fitted = useMemo(() => {
+    const out = new Map<number, number>();
+    if (!data) return out;
+    data.columns.forEach((c, i) => {
+      if (c.type === 'url') return;
+      let widest = 0;
+      for (const row of data.rows) {
+        const v = (row[i] ?? '').trim();
+        if (!v) continue;
+        const w = /^https?:\/\//i.test(v) ? 24 : textWidth(capped(v), 400);
+        if (w > widest) widest = w;
+      }
+      const head = textWidth(capped(c.label), 600) + HEAD_EXTRA;
+      out.set(i, Math.ceil(Math.max(FIT_MIN_W, widest + CELL_PAD, head + CELL_PAD - 6)));
+    });
+    return out;
+  }, [data]);
+
+  const widthOf = (c: { type?: string; i?: number }, pos?: number) =>
+    (c.type === 'url' ? URL_COL_W : (c.i !== undefined ? fitted.get(c.i) : undefined) ?? COL_W) +
+    (pos === 0 && data?.rowIds ? FIRST_COL_EXTRA : 0);
 
   /**
    * Left offset per column, as a running total rather than `pos * COL_W`.
@@ -410,10 +468,10 @@ function DatasetsPageInner() {
   const colLefts = useMemo(() => {
     const out: number[] = [];
     let x = 0;
-    for (const c of visible) { out.push(x); x += widthOf(c); }
+    visible.forEach((c, pos) => { out.push(x); x += widthOf(c, pos); });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, fitted]);
 
   /**
    * Export what is on screen.
@@ -822,7 +880,7 @@ function DatasetsPageInner() {
                       title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
                       onClick={() => cycleSort(c.key)}
                       style={{
-                        width: widthOf(c), minWidth: widthOf(c), height: HEAD_H,
+                        width: widthOf(c, pos), minWidth: widthOf(c, pos), maxWidth: widthOf(c, pos), height: HEAD_H,
                         ...(frozen ? { left: colLefts[pos] } : {}),
                         ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                       }}
@@ -870,7 +928,7 @@ function DatasetsPageInner() {
                           title={shown}
                           onClick={editable && !isEditing ? () => setEditing({ row: di, key: c.key }) : undefined}
                           style={{
-                            width: widthOf(c), minWidth: widthOf(c), height: ROW_H,
+                            width: widthOf(c, pos), minWidth: widthOf(c, pos), maxWidth: widthOf(c, pos), height: ROW_H,
                             ...(colFrozen ? { left: colLefts[pos] } : {}),
                             ...(rowFrozen ? { top: rowTops[r] ?? HEAD_H + r * ROW_H } : {}),
                             // Wins over the bg-white class on sticky cells, and

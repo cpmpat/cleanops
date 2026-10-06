@@ -1341,6 +1341,40 @@ export interface DatasetPage {
   totalColumns: number;
 }
 
+// ─── Notifications → Data ───────────────────────────────────────────────────
+export interface DataChange {
+  id: string;
+  dataset: string;
+  listLabel: string;
+  rowId: string;
+  record: string | null;
+  field: string;
+  fieldLabel: string;
+  oldValue: string | null;
+  newValue: string | null;
+  masked: boolean;
+  actorEmail: string | null;
+  actorRole: string | null;
+  source: 'app' | 'import';
+  createdAt: string;
+}
+export interface DataChangesMeta {
+  lists: Array<{ key: string; label: string; fields: Array<{ key: string; label: string }> }>;
+}
+export interface DataChangesQuery {
+  dataset?: string; field?: string; actor?: string; source?: 'app' | 'import';
+  from?: string; to?: string; cursor?: string; limit?: number;
+}
+export const dataNotifications = {
+  meta: () => get<DataChangesMeta>('/notifications/data/meta'),
+  feed: (q: DataChangesQuery = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') params.set(k, String(v));
+    const qs = params.toString();
+    return get<{ items: DataChange[]; next: string | null }>(`/notifications/data${qs ? `?${qs}` : ''}`);
+  },
+};
+
 export const datasets = {
   list: () => get<DatasetSummary[]>('/datasets'),
   read: (key: string, refresh = false) =>

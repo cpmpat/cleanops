@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatasetsController } from './datasets.controller';
 import { DatasetsService } from './datasets.service';
+import { DataNotificationsController } from './data-notifications.controller';
+import { DataNotificationsService } from './data-notifications.service';
 import { GoogleSheetsClient } from './google-sheets.client';
 
 @Module({
@@ -11,8 +13,8 @@ import { GoogleSheetsClient } from './google-sheets.client';
   // at boot: "Nest can't resolve dependencies of the AuthGuard (?, ConfigService)".
   // Every other guarded module imports it for the same reason.
   imports: [AuthModule],
-  controllers: [DatasetsController],
-  providers: [DatasetsService, GoogleSheetsClient],
+  controllers: [DatasetsController, DataNotificationsController],
+  providers: [DatasetsService, DataNotificationsService, GoogleSheetsClient],
   exports: [DatasetsService],
 })
 export class DatasetsModule {}

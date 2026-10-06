@@ -36,7 +36,8 @@ Three layers decide access:
 | Data → Accommodation | View all 169 columns, edit none | View 116, edit 15 | View 116, edit 13 |
 | Data → User | View all, edit none | Hidden | Hidden |
 | Data → OX Point | Hidden until granted | Hidden until granted | Hidden until granted |
-| Data → Owner (sheet, view only) | View all columns | View 16 (matrix) | View 16 (matrix) |
+| Data → Owner | View all columns | View 16 (matrix) | View 16 (matrix) |
+| Notifications → Data | Yes (notify matrix: all columns at start) | Yes (notify matrix; nothing until loaded) | No |
 | Data export (CSV/XLSX) | Yes | No | No |
 | Change history in the record drawer | All fields, incl. sensitive (who/when only) | Fields they can view, sensitive excluded | Same |
 | Create records in Data | No (off for everyone) | No | No |
@@ -61,10 +62,18 @@ vatPayer, identifiedVatPayer, ICO, birthNumber, cityTaxSubject,
 cityTaxVariableSymbol, validity. Hidden: name, surnames, address, IBAN, the
 document serials. birthNumber is a personal identifier — granted on purpose.
 
-Sheet-backed lists (Owner) follow the matrix for every role but MANAGER and
-ADMIN, who see every column. Grants match the sheet's header names (case and
-spacing ignored); a column added to the sheet stays hidden until granted.
-They are view only whatever the matrix says.
+Owner moved from the sheet into Postgres on 6 Oct 2026; it works like
+Accommodation now. Sheet-backed lists (none left) would follow the matrix for
+every role but MANAGER and ADMIN, matched on the sheet's header names, view
+only.
+
+## Notifications → Data
+
+Changes to the CDM lists (app saves and sheet reloads). Open to ADMIN,
+MANAGER, FRONT_DESK_MANAGER and EVIDENCE (menu: Notifications → Data). A role
+sees a change only when the notify matrix (`dataset_field_notify`,
+`docs/notify-matrix/`) says so AND the access matrix lets it view the field.
+Changes to sensitive fields carry no values and are listed for ADMIN only.
 
 ## EVIDENCE
 
