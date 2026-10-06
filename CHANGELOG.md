@@ -23,7 +23,20 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/user-list-and-headers`
+## Unreleased — branch `fix/user-dates`
+
+**User dates are read day first.** The User tab writes dates as 25/3/2026,
+Accommodation as 9/18/2026. The importer now has a date order per list
+(`dateOrder`: User `dmy`, everything else `mdy`), so 1/3/2026 is 1 March on
+User and 3 January on Accommodation — never guessed per cell. Script only.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-06 · PR #52
 
 **Column headers are never cut in Data.** Every column is at least as wide as
 its full header label — link columns too, which were a fixed 72px and showed
@@ -39,10 +52,6 @@ Notifications → Data: ADMIN and MANAGER notified of every column
 (`docs/notify-matrix/user.csv` for the rest).
 
 *Migrations:* `20261006150000_cdm_user_columns`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-06 · PR #51
 
