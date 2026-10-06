@@ -23,7 +23,31 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/data-notifications`
+## Unreleased — branch `fix/import-mapping-order`
+
+**`import:cdm` no longer drops mapping rows without a column letter.**
+mappingOwner has no letters in column A, so the first Owner load described one
+column and imported only `id`. A blank or non-letter cell now falls back to
+the column's position in the data tab. New `--no-history` applies without
+recording the changes (used to backfill Owner's 31 columns, which is not news).
+
+**Dates no longer import a day early.** The importer read the sheet's
+`9/18/2026` as midnight on the machine running it — in Prague, 22:00 UTC the
+day before — so every imported date showed one day early in Data. Dates are
+now read as calendar days (UTC midnight, like an app save) from
+`2026-09-18`, `9/18/2026` (month first, as the sheet writes them) or
+`18.9.2026`; anything else is reported and left empty. The next Accommodation
+reload corrects the stored dates.
+
+Script only — nothing to deploy.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-06 · PR #50
 
 **Notifications → Data.** A new menu section, Notifications, with Data under
 it: every change to the CDM lists — who, when, which record and field, old →
@@ -72,10 +96,6 @@ values), `import:notify-matrix`, `picklist:from-data`.
 
 *Migrations:* `20261006110000_cdm_owner_and_accommodation_columns`,
 `20261006120000_data_notifications`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-02 · PR #49
 

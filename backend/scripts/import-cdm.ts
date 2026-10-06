@@ -31,6 +31,9 @@
 //   --overwrite-app-edits  allow --apply when the sheet differs from a value
 //                       last edited in the app; the sheet's value wins. Without
 //                       it the apply stops and lists those cells.
+//   --no-history        apply without recording the changes in the history
+//                       (for a backfill that is not news, e.g. filling columns
+//                       a first load missed)
 //   --metadata-only     reload labels, descriptions and column order from the
 //                       mapping<Tab> sheet into dataset_fields and stop. No
 //                       data row is read into the table or written, so it is
@@ -69,6 +72,7 @@ const { values } = parseArgs({
     'show-keys': { type: 'boolean', default: false },
     'overwrite-app-edits': { type: 'boolean', default: false },
     'metadata-only': { type: 'boolean', default: false },
+    'no-history': { type: 'boolean', default: false },
   },
 });
 
@@ -409,9 +413,26 @@ function coerce(field: string, raw: string | null, type: 'text' | FieldType): un
     return null;
   }
   if (type === 'date') {
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) { note(field, raw); return null; }
-    return d;
+    // A calendar day, stored as UTC midnight — the same as an app save
+    // (datasets.service parse()). `new Date(raw)` used to read "9/18/2026" as
+    // midnight on the machine running the import: in Prague that is
+    // 2026-09-17 22:00 UTC, so the viewer showed the day before.
+    //
+    // Accepted: 2026-09-18 · 9/18/2026 (the sheet's US month/day) · 18.9.2026.
+    // Anything else ("18/09/2026" — day first with slashes) is reported and
+    // imports as NULL rather than being guessed at.
+    let y: number, m: number, d: number;
+    let hit: RegExpMatchArray | null;
+    if ((hit = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/))) { y = +hit[1]; m = +hit[2]; d = +hit[3]; }
+    else if ((hit = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { m = +hit[1]; d = +hit[2]; y = +hit[3]; }
+    else if ((hit = raw.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})$/))) { d = +hit[1]; m = +hit[2]; y = +hit[3]; }
+    else { note(field, raw); return null; }
+    const date = new Date(Date.UTC(y, m - 1, d));
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+      note(field, raw);
+      return null;
+    }
+    return date;
   }
   return raw;
 }
@@ -619,8 +640,16 @@ async function main() {
         // column is called in Postgres. They differ only where the sheet uses
         // a character an identifier cannot.
         const source = clean(r[1]);
+        // Column A is the column's place: a letter (A, B, … AA) or a number
+        // (1, 2, …). Where it is blank, the column's position in the data
+        // tab stands in — a mapping row must not be dropped just because
+        // nobody typed its letter.
+        const letter = (r[0] ?? '').trim();
+        const position = source ? columns.indexOf(source) + 1 : 0;
         return {
-          columnOrder: letterToIndex(r[0] ?? ''),
+          columnOrder: /^[A-Za-z]{1,3}$/.test(letter) ? letterToIndex(letter)
+            : /^\d+$/.test(letter) && Number(letter) > 0 ? Number(letter)
+            : position,
           source,
           field: source ? dbName(source) : null,
           description: clean(r[2]),
@@ -911,9 +940,11 @@ async function main() {
     // ── change history ─────────────────────────────────────────────────────
     // Not on the very first load of a list: "every row was added" is not news.
     const firstLoad = existing.size === 0;
+    const quiet = firstLoad || values['no-history'];
     const recorded = cells.filter((c) => !failedKeys.has(c.key));
     if (firstLoad) console.log('History: first load of this list — not recorded as changes.');
-    if (!firstLoad && (recorded.length || added.length)) {
+    else if (values['no-history']) console.log('History: --no-history — not recorded as changes.');
+    if (!quiet && (recorded.length || added.length)) {
       const sensitive = new Set(
         (await prisma.datasetField.findMany({
           where: { tenantId: tenant.id, dataset: values.list!, sensitive: true },
