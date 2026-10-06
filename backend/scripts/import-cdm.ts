@@ -129,12 +129,19 @@ const LISTS: Record<string, {
    * metadata: column order from its position, labels = the header names.
    */
   mappingOptional?: boolean;
+  /**
+   * How the tab writes a slashed date: Accommodation writes 9/18/2026 (month
+   * first), User writes 25/3/2026 (day first). Never guessed per cell — 1/3
+   * reads differently under each, silently.
+   */
+  dateOrder?: 'mdy' | 'dmy';
 }> = {
   user: {
     tab: 'User',
     mappingTab: 'mappingUser',
     model: 'cdmUser',
     key: 'internalId',
+    dateOrder: 'dmy',
     types: {
       dataAccess: 'int',
       AppCheckinCollaborator: 'bool',
@@ -398,7 +405,12 @@ function note(field: string, raw: string) {
   unparseable.set(field, e);
 }
 
-function coerce(field: string, raw: string | null, type: 'text' | FieldType): unknown {
+function coerce(
+  field: string,
+  raw: string | null,
+  type: 'text' | FieldType,
+  dateOrder: 'mdy' | 'dmy' = 'mdy',
+): unknown {
   if (raw === null) return null;
   if (type === 'int' || type === 'float' || type === 'decimal') {
     const n = Number(raw.replace(',', '.'));
@@ -418,13 +430,16 @@ function coerce(field: string, raw: string | null, type: 'text' | FieldType): un
     // midnight on the machine running the import: in Prague that is
     // 2026-09-17 22:00 UTC, so the viewer showed the day before.
     //
-    // Accepted: 2026-09-18 · 9/18/2026 (the sheet's US month/day) · 18.9.2026.
-    // Anything else ("18/09/2026" — day first with slashes) is reported and
-    // imports as NULL rather than being guessed at.
+    // Accepted: 2026-09-18 · a slashed date in the list's dateOrder (9/18/2026
+    // on Accommodation, 18/9/2026 on User) · 18.9.2026. Anything else is
+    // reported and imports as NULL rather than being guessed at.
     let y: number, m: number, d: number;
     let hit: RegExpMatchArray | null;
     if ((hit = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/))) { y = +hit[1]; m = +hit[2]; d = +hit[3]; }
-    else if ((hit = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { m = +hit[1]; d = +hit[2]; y = +hit[3]; }
+    else if ((hit = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) {
+      if (dateOrder === 'dmy') { d = +hit[1]; m = +hit[2]; } else { m = +hit[1]; d = +hit[2]; }
+      y = +hit[3];
+    }
     else if ((hit = raw.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})$/))) { d = +hit[1]; m = +hit[2]; y = +hit[3]; }
     else { note(field, raw); return null; }
     const date = new Date(Date.UTC(y, m - 1, d));
@@ -788,7 +803,7 @@ async function main() {
       for (const f of fields) {
         const i = columns.indexOf(f.source);
         if (i < 0 || !modelFields.has(f.field)) continue;
-        data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text');
+        data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text', spec.dateOrder);
       }
       delete data[spec.key];
       planned.push({ key, data });
