@@ -1353,7 +1353,7 @@ model CdmUser {
   area                  String?
   dataAccess            Int?
   department            String?
-  possitionTier         String?
+  positionTier          String?
   /// The company's own idea of a role (Management / Staff / Designer).
   /// NOT the app's UserRole enum, despite the name.
   role                  String?
@@ -1361,14 +1361,14 @@ model CdmUser {
   email2                String?
   passwordEmail1        String?
   passwordEmail2Avantio String?
-  phuneNumber           String?
+  phoneNumber           String?
   validity              String?
   cleaningArea          String?
-  checkinCollaborator   Boolean?
+  AppCheckinCollaborator Boolean?
   rajon                 String?
   nickname              String?
   not                   String?
-  address               String?
+  residenceAddress      String?
   birthNumber           String?
   birthPlace            String?
   businessId            String?
@@ -1377,6 +1377,9 @@ model CdmUser {
   terminationDate       DateTime?
   startDate             DateTime?
   folder                String?
+  /// Added 6 Oct 2026.
+  hr                    String?
+  rowOrderCreation      String?
 
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
