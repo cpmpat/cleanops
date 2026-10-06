@@ -23,7 +23,61 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/sheet-matrix-mapping-reload`
+## Unreleased — branch `feat/data-notifications`
+
+**Notifications → Data.** A new menu section, Notifications, with Data under
+it: every change to the CDM lists — who, when, which record and field, old →
+new — newest first, filterable by list, field, who, source (app edit / sheet
+reload) and period. ADMIN, MANAGER, FRONT_DESK_MANAGER and EVIDENCE have it.
+What each role sees is a second matrix, `dataset_field_notify`, loaded from
+`docs/notify-matrix/*.csv` with `import:notify-matrix`, intersected with the
+access matrix (notify never reveals a field the role cannot view). ADMIN and
+MANAGER start notified of every Accommodation and Owner column; the others
+start with nothing. Sensitive fields: "changed", no values, ADMIN only.
+
+**Sheet reloads are recorded.** `import:cdm --apply` now diffs the sheet
+against the table, writes only rows that changed, and records every changed
+cell (actor "sheet import") and every new row — that is what the feed shows
+for edits made in the sheet. The dry run prints the same diff (counts, keys,
+column names; never values). The app-edit guard is now per cell: the apply
+stops only if the sheet would overwrite a value last edited in the app
+(`--overwrite-app-edits` lets the sheet win).
+
+**Owner moves into Postgres** (`cdm_owners`, `import:cdm --list owner`), like
+Accommodation, so its changes are tracked. MANAGER and ADMIN keep every
+column; the other roles keep their owner.csv grants. iban and birthNumber are
+sensitive (history without values).
+
+**Accommodation columns.** Renamed to the sheet's new headers:
+linkListingAirbnb → urlListingAirbnb, contractTerminated →
+dateContractTermination, parkingLotNumber → parkingNumber, espId →
+vitejEspId, urlFolderPp → urlFolderPpOld (the sheet had two urlFolderPp
+columns; the second is the new urlFolderPpNew). Grants and history are
+renamed with them. New: markField1–5 (Tag 1–5,
+TRUE/FALSE), checkInInstructionLink (link), oxPointId, compHomeboook — MANAGER
+and ADMIN see them; other roles via the matrix. checkInMethod and terraceType
+are pick lists, values loaded from the data with `picklist:from-data`
+(additive — also how a list is extended later).
+
+**Data grid.** Text columns fit their longest value, up to 48 characters
+(longer values are cut; full value on hover and in the record drawer); link
+columns stay one icon wide.
+
+**Column order per role.** `import:access-matrix` now also sets each named
+role's column order from the order of the rows in its file
+(`dataset_field_roles`); `--skip-order` leaves it alone.
+
+**New scripts:** `diag:sheet-columns` (describe a sheet tab without printing
+values), `import:notify-matrix`, `picklist:from-data`.
+
+*Migrations:* `20261006110000_cdm_owner_and_accommodation_columns`,
+`20261006120000_data_notifications`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-02 · PR #49
 
 **The access matrix reaches Owner.** Sheet-backed lists (Owner) used to open
 for MANAGER and ADMIN only. Any other role now sees an Owner list when the
@@ -44,10 +98,6 @@ reloads labels, descriptions and column order from the mapping tab into
 app. Owner needs no import: its labels are read live from `mappingOwner`.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-01 · PR #48
 

@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
-  LogIn, Clock,
+  LogIn, Clock, Bell, History,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
@@ -30,13 +30,18 @@ import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
 const ROLE_PATHS: Record<string, string[]> = {
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
-  ADMIN:              ['/planning', '/dashboard', '/datasets'],
-  FRONT_DESK_MANAGER: ['/planning', '/datasets'],
+  ADMIN:              ['/planning', '/dashboard', '/datasets', '/notify'],
+  FRONT_DESK_MANAGER: ['/planning', '/datasets', '/notify'],
   FRONT_DESK:         ['/planning', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets'],
   ASSIST:             ['/airchat', '/datasets'],
   /** Data only; which lists and columns is the access matrix's call. */
-  EVIDENCE:           ['/datasets'],
+  EVIDENCE:           ['/datasets', '/notify'],
+};
+
+/** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */
+const NOTIFY_LABEL: Record<string, string> = {
+  en: 'Notifications', cs: 'Notifikace', ru: 'Уведомления', uk: 'Сповіщення',
 };
 
 const LOCALES: { code: Locale; label: string }[] = [
@@ -108,6 +113,16 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/planning/agents',    icon: Clock,  label: availabilityStrings[locale]?.tabLabel ?? 'Agents' },
   ];
 
+  // Notifications unfolds like Planning; Data is its first (and for now only)
+  // section — changes to the CDM lists. /notify, not /notifications: that path
+  // belongs to the cleaner app's inbox.
+  const onNotify = pathname?.startsWith('/notify') ?? false;
+  const [notifyOpen, setNotifyOpen] = useState(onNotify);
+  useEffect(() => { if (onNotify) setNotifyOpen(true); }, [onNotify]);
+  const notifyTabs = [
+    { href: '/notify/data', icon: History, label: (t.nav as any).data ?? 'Data' },
+  ];
+
   const navItems = [
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
     { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
@@ -120,6 +135,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
     { href: '/datasets',   icon: Database,        label: (t.nav as any).data ?? 'Data' },
+    { href: '/notify',     icon: Bell,            label: NOTIFY_LABEL[locale] ?? 'Notifications' },
     { href: '/settings',   icon: Settings,        label: t.nav.settings },
   ];
 
@@ -161,8 +177,12 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
             const active = pathname === href || pathname?.startsWith(href + '/');
             const isData = href === '/datasets';
             const isPlanning = href === '/planning';
-            const open = isData ? dataOpen : planningOpen;
-            const toggle = isData ? () => setDataOpen(o => !o) : () => setPlanningOpen(o => !o);
+            const isNotify = href === '/notify';
+            const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : null;
+            const open = isData ? dataOpen : isNotify ? notifyOpen : planningOpen;
+            const toggle = isData ? () => setDataOpen(o => !o)
+              : isNotify ? () => setNotifyOpen(o => !o)
+              : () => setPlanningOpen(o => !o);
             return (
               <div key={href}>
                 <div
@@ -175,7 +195,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                     <Icon size={17} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
                     {label}
                   </Link>
-                  {isData || isPlanning ? (
+                  {isData || sub ? (
                     <button
                       type="button"
                       onClick={toggle}
@@ -189,10 +209,10 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                   )}
                 </div>
 
-                {/* Planning → Check-In / Check-Out */}
-                {isPlanning && planningOpen && (
+                {/* Planning → Check-In / Check-Out / Agents; Notifications → Data */}
+                {sub && open && (
                   <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
-                    {planningTabs.map(tab => {
+                    {sub.map(tab => {
                       const on = pathname === tab.href || pathname?.startsWith(tab.href + '/');
                       return (
                         <Link

@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 export type RowDraft = Record<string, string>;
 
 /** Columns whose value names the record best, in order of preference. */
-const TITLE_KEYS = ['titleAvantio', 'nickname', 'idAvantio', 'internalId', 'lastName'];
+const TITLE_KEYS = ['titleAvantio', 'displayName', 'nickname', 'idAvantio', 'internalId', 'lastName'];
 
 export function rowTitle(page: DatasetPage, rowIndex: number): string {
   const row = page.rows[rowIndex] ?? [];

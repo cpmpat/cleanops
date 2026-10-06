@@ -54,9 +54,11 @@ model Tenant {
   datasetFieldRoles   DatasetFieldRole[]
   agentAvailability   AgentAvailability[]
   datasetFieldAccess  DatasetFieldAccess[]
+  datasetFieldNotify  DatasetFieldNotify[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
   cdmOxPoints         CdmOxPoint[]
+  cdmOwners           CdmOwner[]
 
   @@map("tenants")
 }
@@ -1482,7 +1484,8 @@ model CdmAccommodation {
   keysQuantity                                   String?
   urlFolderFacility                              String?
   urlFolderContractAndPoa                        String?
-  urlFolderPp                                    String?
+  /// The sheet's first of two `urlFolderPp` columns (BS); renamed 6 Oct 2026.
+  urlFolderPpOld                                 String?
   urlCalculation                                 String?
   pricing                                        String?
   urlFolderphotos                                String?
@@ -1495,7 +1498,7 @@ model CdmAccommodation {
   propertyIdBooking                              String?
   petsFee                                        String?
   pricingGroup                                   String?
-  linkListingAirbnb                              String?
+  urlListingAirbnb                               String?
   urlListingBooking                              String?
   listingIdAirbnbPrimary                         String?
   parking                                        Boolean?
@@ -1528,7 +1531,7 @@ model CdmAccommodation {
   cityTaxEntityRegistered                        String?
   costChekin                                     String?
   contractSigned                                 DateTime?
-  contractTerminated                             DateTime?
+  dateContractTermination                        DateTime?
   chekin                                         Boolean?
   cityTaxConsolidateReport                       Boolean?
   countOccuranceOfcityTaxEntityRegistredEntity   Int?
@@ -1544,14 +1547,14 @@ model CdmAccommodation {
   otaAirbnbSalesEnded                            DateTime?
   dateOffboard                                   DateTime?
   propertyFactWifiPassword                       String?
-  parkingLotNumber                               Int?
+  parkingNumber                                  Int?
   hostsName                                      String?
   finalCleaningProvided                          Boolean?
   routerModel                                    String?
   intercomModel                                  String?
   intercomOperating                              String?
   bellLabel                                      String?
-  espId                                          String?
+  vitejEspId                                     String?
   vitejBoxGateUrl                                String?
   ownerAvantioPortalUser                         String?
   apaPropertyId                                  String?
@@ -1583,6 +1586,17 @@ model CdmAccommodation {
   parkingLimits                                  String?
   /// Pick list `accommodation.accommodationStandard`; values defined later.
   accommodationStandard                          String?
+  /// Added 6 Oct 2026. Tag 1-5: TRUE/FALSE marks for flagging rows.
+  markField1                                     Boolean?
+  markField2                                     Boolean?
+  markField3                                     Boolean?
+  markField4                                     Boolean?
+  markField5                                     Boolean?
+  checkInInstructionLink                         String?
+  oxPointId                                      String?
+  compHomeboook                                  String?
+  /// The sheet's second `urlFolderPp` column (FP).
+  urlFolderPpNew                                 String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1647,6 +1661,27 @@ model DatasetFieldAccess {
   @@map("dataset_field_access")
 }
 
+/// Notifications → Data: which field changes a role is told about. A second
+/// matrix beside the access matrix, loaded from docs/notify-matrix/ with
+/// `import:notify-matrix`. Default deny; not a foreign key to
+/// dataset_fields. The feed also requires a view grant on the field, so this
+/// can narrow what a role sees but never widen it.
+model DatasetFieldNotify {
+  id        String   @id @default(uuid())
+  tenantId  String
+  dataset   String
+  field     String
+  role      UserRole
+  notify    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dataset, field, role])
+  @@index([tenantId, role])
+  @@map("dataset_field_notify")
+}
+
 /// Allowed values of a pick-list field. Bound by dataset_fields.picklist.
 /// Retire a value with `active = false` rather than deleting it: rows that
 /// hold it keep displaying it, nobody can pick it any more.
@@ -1687,6 +1722,8 @@ model DatasetFieldChange {
   event  AuditEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, dataset, rowId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, dataset, createdAt])
   @@index([eventId])
   @@map("dataset_field_changes")
 }
@@ -1734,4 +1771,54 @@ model CdmOxPoint {
   @@unique([tenantId, id])
   @@index([tenantId, city])
   @@map("cdm_ox_point")
+}
+
+/// CDM list `Owner`: the property owners. Moved from the live sheet into
+/// Postgres on 6 Oct 2026 so its changes are tracked (Notifications → Data).
+/// Loaded by `import:cdm --list owner`. `rowId` is the primary key because the
+/// sheet has its own `id` column (Airstay ID), the natural key.
+model CdmOwner {
+  rowId    String @id @default(uuid())
+  tenantId String
+
+  id                            String?
+  treatment                     String?
+  name                          String?
+  surnames                      String?
+  displayName                   String?
+  language                      String?
+  email1                        String?
+  email2                        String?
+  mobile                        String?
+  city                          String?
+  country                       String?
+  postalCode                    String?
+  state                         String?
+  street                        String?
+  iban                          String?
+  vatPayer                      Boolean?
+  identifiedVatPayer            String?
+  cityTaxArea                   String?
+  ICO                           String?
+  invoiceSerial                 String?
+  receiptSerial                 String?
+  creditSerial                  String?
+  proformaSerial                String?
+  proofOfPaymentSerial          String?
+  creditOfProofOfPaymentSerial  String?
+  contractSerial                String?
+  settlementSerial              String?
+  birthNumber                   String?
+  cityTaxSubject                String?
+  cityTaxVariableSymbol         String?
+  validity                      String?
+  cityTaxEntityRegistered       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("cdm_owners")
 }

@@ -15,12 +15,14 @@ import { UserRole } from '@prisma/client';
  * that filters columns by role — this becomes a model, and `visibleColumns()`
  * below is the seam it plugs into.
  */
-export const TABS = [
+/** Where a list's rows live: Postgres, or read live from the CDM sheet. */
+export type ListSource = 'db' | 'sheet';
+export const TABS: ReadonlyArray<{ key: string; tab: string; label: string; source: ListSource }> = [
   { key: 'accommodation', tab: 'Accommodation', label: 'Accommodation', source: 'db'    },
   { key: 'user',          tab: 'User',         label: 'User',          source: 'db'    },
-  { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'sheet' },
+  { key: 'owner',         tab: 'Owner',        label: 'Owner',         source: 'db'    },
   { key: 'oxpoint',       tab: 'OX Point',     label: 'OX Point',      source: 'db'    },
-] as const;
+];
 
 /**
  * Which Prisma model backs a migrated list, and what its natural key is.
@@ -30,13 +32,15 @@ export const TABS = [
  * that indirection is resolved, so a typo fails loudly at the first request
  * rather than silently returning nothing.
  */
-const DB_MODELS: Record<string, { model: string; key: string; pk: string }> = {
+export const DB_MODELS: Record<string, { model: string; key: string; pk: string }> = {
   user:          { model: 'cdmUser',          key: 'internalId', pk: 'id'    },
   // The primary key is `rowId` here: the Accomodation sheet has its own column
   // called `id`, which would otherwise collide with Prisma's.
   accommodation: { model: 'cdmAccommodation', key: 'idAvantio',  pk: 'rowId' },
   // Same `id`-column collision as Accommodation, same answer.
   oxpoint:       { model: 'cdmOxPoint',       key: 'id',         pk: 'rowId' },
+  // Moved from the sheet 6 Oct 2026. Same `id` collision again.
+  owner:         { model: 'cdmOwner',         key: 'id',         pk: 'rowId' },
 };
 
 /**

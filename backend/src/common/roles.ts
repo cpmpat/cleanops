@@ -39,3 +39,10 @@ export const PLANNING_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK'] as
 export function isOfficeRole(role?: string | null): boolean {
   return !!role && (OFFICE_ROLES as readonly string[]).includes(role);
 }
+
+/**
+ * Who has Notifications → Data: the feed of changes to the CDM lists. Which
+ * changes each of them sees is the notify matrix (dataset_field_notify), on
+ * top of the access matrix. ADMIN passes every check.
+ */
+export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'EVIDENCE'] as const;
