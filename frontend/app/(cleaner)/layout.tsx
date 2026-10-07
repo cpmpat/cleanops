@@ -37,10 +37,18 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         MANAGER: '/dashboard', ADMIN: '/planning',
         FRONT_DESK_MANAGER: '/planning', FRONT_DESK: '/planning',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
-        EVIDENCE: '/datasets',
+        EVIDENCE: '/datasets', DIRECTOR: '/datasets', TERENAK: '/datasets',
       };
       if (OFFICE_HOME[user.role] && !inThread) {
         router.replace(OFFICE_HOME[user.role]);
+        return;
+      }
+      // The cleaner app is for cleaners (and agents, whose Availability and
+      // Inbox live here). Any other role — repairmen have their own screen,
+      // roles with no screen yet get a page saying so — never lands here by
+      // falling through (7 Oct 2026).
+      if (!OFFICE_HOME[user.role] && user.role !== 'CLEANER' && user.role !== 'AGENT') {
+        router.replace(user.role === 'REPAIRMAN' ? '/my-repairs' : '/no-access');
         return;
       }
       // Agents have Availability instead of the cleaning screens; cleaners

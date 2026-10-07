@@ -16,6 +16,7 @@ import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
 import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
+import { homeFor } from '@/lib/home';
 
 /**
  * Office roles that are not managers. They may open Airchat and nothing else —
@@ -37,6 +38,10 @@ const ROLE_PATHS: Record<string, string[]> = {
   ASSIST:             ['/airchat', '/datasets'],
   /** Data only; which lists and columns is the access matrix's call. */
   EVIDENCE:           ['/datasets', '/notify'],
+  /** Data only (7 Oct 2026). Columns per the matrix; TERENAK also sees only
+   *  some rows (dataset_row_filters: Avantio accommodations, Valid users). */
+  DIRECTOR:           ['/datasets'],
+  TERENAK:            ['/datasets'],
 };
 
 /** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */
@@ -80,7 +85,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         return;
       }
       if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
-        router.replace('/cleanings');
+        router.replace(homeFor(user.role));
         return;
       }
     }

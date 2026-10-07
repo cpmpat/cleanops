@@ -55,6 +55,7 @@ model Tenant {
   agentAvailability   AgentAvailability[]
   datasetFieldAccess  DatasetFieldAccess[]
   datasetFieldNotify  DatasetFieldNotify[]
+  datasetRowFilters   DatasetRowFilter[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
   cdmOxPoints         CdmOxPoint[]
@@ -1683,6 +1684,26 @@ model DatasetFieldNotify {
   @@unique([tenantId, dataset, field, role])
   @@index([tenantId, role])
   @@map("dataset_field_notify")
+}
+
+/// Which RECORDS of a list a role sees (the access matrix decides which
+/// columns). No filter for a role on a list = every row. Several = all must
+/// pass. A filter passes when the row's `field` holds one of `values`
+/// exactly. Applied to reading, saving, history and export alike.
+model DatasetRowFilter {
+  id        String   @id @default(uuid())
+  tenantId  String
+  dataset   String
+  role      UserRole
+  field     String
+  values    String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dataset, role, field])
+  @@map("dataset_row_filters")
 }
 
 /// Allowed values of a pick-list field. Bound by dataset_fields.picklist.

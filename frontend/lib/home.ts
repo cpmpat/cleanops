@@ -8,6 +8,10 @@ export function homeFor(role?: string | null): string {
   if (role === 'MANAGER') return '/dashboard';
   if (role === 'AGENT') return '/availability';
   if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
-  if (role === 'EVIDENCE') return '/datasets';
-  return '/cleanings';
+  if (role === 'EVIDENCE' || role === 'DIRECTOR' || role === 'TERENAK') return '/datasets';
+  if (role === 'REPAIRMAN') return '/my-repairs';
+  if (role === 'CLEANER') return '/cleanings';
+  // A role with no screen yet (RESOLUTIONS, MARKETING_MANAGER) is told so,
+  // rather than dropped into the cleaner app.
+  return '/no-access';
 }
