@@ -19,7 +19,9 @@ export type Role =
   | 'DIRECTOR'
   | 'EVIDENCE'
   | 'RESOLUTIONS'
-  | 'MARKETING_MANAGER';
+  | 'MARKETING_MANAGER'
+  | 'FINANCE'
+  | 'REVENUE_MANAGER';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;
@@ -1344,6 +1346,27 @@ export interface DatasetPage {
   canEdit?: boolean;
   totalColumns: number;
 }
+
+// ─── Newsfeed ───────────────────────────────────────────────────────────────
+export interface NewsItem {
+  id: string;
+  rule: string;
+  createdAt: string;
+  title: string;
+  ref: { dataset: string; list: string; rowId: string; key: string | null };
+  text: string;
+  source: 'app' | 'import';
+  actorEmail: string | null;
+  dismissed: boolean;
+}
+export const newsfeed = {
+  list: (all = false) => get<{ items: NewsItem[]; unread: number }>(`/newsfeed${all ? '?all=1' : ''}`),
+  unread: () => get<{ count: number }>('/newsfeed/unread'),
+  dismiss: (id: string) => post<{ ok: boolean }>(`/newsfeed/${encodeURIComponent(id)}/dismiss`, {}),
+  dismissAll: () => post<{ dismissed: number }>('/newsfeed/dismiss-all', {}),
+};
+/** Fired after a news item is closed, so the menu badge updates at once. */
+export const NEWSFEED_CHANGED = 'newsfeed:changed';
 
 // ─── Notifications → Data ───────────────────────────────────────────────────
 export interface DataChange {

@@ -184,6 +184,17 @@ function DatasetsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, tabs]);
 
+  // `&row=<rowId>` opens that record's drawer once the list has loaded — how
+  // the Newsfeed links to the unit a news item is about.
+  const wantedRow = searchParams?.get('row') ?? '';
+  const openedRow = useRef('');
+  useEffect(() => {
+    if (!wantedRow || !data?.rowIds || openedRow.current === `${active}:${wantedRow}`) return;
+    const i = data.rowIds.indexOf(wantedRow);
+    if (i >= 0) { setDrawer(i); openedRow.current = `${active}:${wantedRow}`; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, wantedRow, active]);
+
   function selectList(key: string) {
     setActive(key); setSearch(''); setPanel(null);
     router.replace(`/datasets?d=${encodeURIComponent(key)}`);

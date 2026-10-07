@@ -37,7 +37,8 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         MANAGER: '/dashboard', ADMIN: '/planning',
         FRONT_DESK_MANAGER: '/planning', FRONT_DESK: '/planning',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
-        EVIDENCE: '/datasets', DIRECTOR: '/datasets', TERENAK: '/datasets',
+        EVIDENCE: '/datasets', TERENAK: '/datasets',
+        DIRECTOR: '/newsfeed', FINANCE: '/newsfeed', REVENUE_MANAGER: '/newsfeed', MARKETING_MANAGER: '/newsfeed',
       };
       if (OFFICE_HOME[user.role] && !inThread) {
         router.replace(OFFICE_HOME[user.role]);

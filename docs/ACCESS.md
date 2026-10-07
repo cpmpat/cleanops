@@ -54,7 +54,8 @@ Accommodation edit rights (from `matrixFieldsAccessRoles.csv`, 29 Sep 2026):
 
 Both desk roles may view the channel credentials (passwordGmail,
 passwordAirbnb, passwordBooking, email columns) and the lockbox codes
-(codeLockBox, lockboxCode) — confirmed 29 Sep 2026.
+(lockboxCode) — confirmed 29 Sep 2026. (codeLockBox was renamed
+urlFolderPPUklid on 7 Oct 2026: it held folder links, not codes.)
 
 Owner (`docs/access-matrix/owner.csv`, 1 Oct 2026), both desk roles view:
 id, treatment, displayName, language, email1, email2, mobile, city, country,
@@ -66,6 +67,14 @@ Owner moved from the sheet into Postgres on 6 Oct 2026; it works like
 Accommodation now. Sheet-backed lists (none left) would follow the matrix for
 every role but MANAGER and ADMIN, matched on the sheet's header names, view
 only.
+
+## Newsfeed
+
+MANAGER, ADMIN, FRONT_DESK_MANAGER, FRONT_DESK, DIRECTOR, FINANCE,
+REVENUE_MANAGER, MARKETING_MANAGER (`NEWSFEED_ROLES`). An item shows only to a
+role that may view the field it is about (access matrix). DIRECTOR, FINANCE,
+REVENUE_MANAGER and MARKETING_MANAGER: menu = Newsfeed + Data, start on the
+Newsfeed.
 
 ## DIRECTOR, TERENAK
 
@@ -92,7 +101,7 @@ access matrix alone (`docs/access-matrix/`). Accommodation: view 42 columns
 five Ubyport columns. Owner: view 8 (id, treatment, displayName, language,
 email1, email2, mobile, city). No export.
 
-RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
+RESOLUTIONS still has no screen defined:
 after login they see a "no screens yet" page (`/no-access`); the cleaner app
 admits only CLEANER and AGENT. Define them before any
 account gets one of those roles.

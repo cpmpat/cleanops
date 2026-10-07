@@ -23,7 +23,43 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/terenak-director`
+## Unreleased — branch `feat/newsfeed`
+
+**Newsfeed.** A new first item in the menu for MANAGER, ADMIN,
+FRONT_DESK_MANAGER, FRONT_DESK, DIRECTOR, FINANCE, REVENUE_MANAGER and
+MARKETING_MANAGER. It turns recorded changes (app saves and sheet reloads) into
+news by rules in `backend/src/newsfeed/rules.ts`:
+- dateOffboard set → "@<titleAvantio> is going to be delisted from Airbnb.com,
+  Booking.com on <date>" (each channel only if otaAirbnb / otaBooking is TRUE);
+- otaAirbnbSalesStarted / otaBookingSalesStarted set → "@<titleAvantio> is
+  online on Airbnb.com / Booking.com from <date>".
+Only the latest change of a field per unit counts, for 90 days; a role sees an
+item only if it may view that field. The ✓ on an item closes it for that person
+(`newsfeed_dismissals`); the red number in the menu counts the open ones,
+refreshed every minute. The unit's name opens its record in Data
+(`/datasets?d=…&row=…`, new).
+
+**New roles FINANCE and REVENUE_MANAGER.** They, DIRECTOR and
+MARKETING_MANAGER get Newsfeed + Data and start on the Newsfeed. Matrices for
+all three lists add MARKETING_MANAGER, REVENUE_MANAGER and FINANCE.
+
+**feeBording → feeBoarding** (the sheet's header was fixed).
+**codeLockBox → urlFolderPPUklid** ("Folder PP cleaning"): the column always
+held links to the cleaning handover folder, not lockbox codes (those are
+lockboxCode), so it is a link column now and no longer treated as sensitive. "standard" is
+closed to every role in the new matrix.
+
+**Menu icons** are macOS-style grey tiles (rounded square, soft gradient,
+white glyph).
+
+*Migrations:* `20261007150000_roles_finance_revenue`,
+`20261007150100_newsfeed`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-07 · PR #54
 
 **DIRECTOR and TERENAK open Data.** Both land on Data and see nothing else in
 the menu; their columns come from the access matrices (Accommodation, Owner,
@@ -49,10 +85,6 @@ checkInInstructionLink, oxPointId and compHomeboook (missing from the new
 file) keep their earlier grants and are closed to DIRECTOR and TERENAK.
 
 *Migrations:* `20261007120000_dataset_row_filters`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-06 · PR #53
 

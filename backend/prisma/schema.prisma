@@ -56,6 +56,7 @@ model Tenant {
   datasetFieldAccess  DatasetFieldAccess[]
   datasetFieldNotify  DatasetFieldNotify[]
   datasetRowFilters   DatasetRowFilter[]
+  newsfeedDismissals  NewsfeedDismissal[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
   cdmOxPoints         CdmOxPoint[]
@@ -98,6 +99,9 @@ enum UserRole {
   EVIDENCE
   RESOLUTIONS
   MARKETING_MANAGER
+  /// Added 7 Oct 2026: Newsfeed + Data, columns per the access matrices.
+  FINANCE
+  REVENUE_MANAGER
 }
 
 enum Language {
@@ -166,6 +170,7 @@ model User {
   noteTargets                NoteTarget[]
   noteAcks                   NoteAck[]
   agentAvailability          AgentAvailability[]
+  newsfeedDismissals         NewsfeedDismissal[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -1452,7 +1457,7 @@ model CdmAccommodation {
   feeAirstay                                     String?
   feePms                                         String?
   feeAdmin                                       Int?
-  feeBording                                     Int?
+  feeBoarding                                    Int?
   feeChannelManager                              Int?
   emailGmail                                     String?
   passwordGmail                                  String?
@@ -1495,7 +1500,9 @@ model CdmAccommodation {
   urlFolderphotos                                String?
   urlFolderUnitOld                               String?
   urlFolderphotographer                          String?
-  codeLockBox                                    String?
+  /// Was `codeLockBox` until 7 Oct 2026: the column always held links to the
+  /// cleaning handover folder, not lockbox codes (those are `lockboxCode`).
+  urlFolderPPUklid                               String?
   otaExpedia                                     Boolean?
   otaVrbo                                        Boolean?
   listingIdAirbnb2                               String?
@@ -1706,6 +1713,24 @@ model DatasetRowFilter {
   @@map("dataset_row_filters")
 }
 
+/// Newsfeed: a person closed a news item. Items themselves are not stored —
+/// each is a dataset_field_changes row that a rule in src/newsfeed/rules.ts
+/// turns into a sentence — so `itemId` is that change's id.
+model NewsfeedDismissal {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  itemId    String
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([tenantId, userId])
+  @@map("newsfeed_dismissals")
+}
+
 /// Allowed values of a pick-list field. Bound by dataset_fields.picklist.
 /// Retire a value with `active = false` rather than deleting it: rows that
 /// hold it keep displaying it, nobody can pick it any more.
@@ -1748,6 +1773,7 @@ model DatasetFieldChange {
   @@index([tenantId, dataset, rowId, createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, dataset, createdAt])
+  @@index([tenantId, dataset, field, createdAt])
   @@index([eventId])
   @@map("dataset_field_changes")
 }

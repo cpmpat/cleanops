@@ -181,7 +181,7 @@ const LISTS: Record<string, {
       sizeM2: 'int',
       bedrooms: 'int',
       feeAdmin: 'int',
-      feeBording: 'int',
+      feeBoarding: 'int',
       feeChannelManager: 'int',
       mlos: 'int',
       countOccuranceOfcityTaxEntityRegistredEntity: 'int',
@@ -233,7 +233,6 @@ const LISTS: Record<string, {
       /^email(Gmail|Airbnb|Booking|Expedia)$/,
       /^ubyport/i,
       /lockbox/i,
-      /^codeLockBox$/,
       /^accountIdAirbnb$/,
       /^ownerAvantioPortalUser$/,
       /WifiName$/,
@@ -249,7 +248,7 @@ const LISTS: Record<string, {
     // First match wins, so order matters: credentials before ota, because
     // `emailAirbnb` is a credential before it is a channel column.
     groups: [
-      ['credentials', /^(password|email|ubyport|accountIdAirbnb|codeLockBox|lockboxCode|ownerAvantioPortalUser)|WifiPassword|WifiName/],
+      ['credentials', /^(password|email|ubyport|accountIdAirbnb|lockboxCode|ownerAvantioPortalUser)|WifiPassword|WifiName/],
       ['citytax',     /^cityTax|countOccuranceOfcityTax|feeTransactionCityTax|urlFolderCityTax|urlSharedFolderCityTax|folderUnitPropertiesCityTax/],
       ['ota',         /^(ota|listing|link|roomIdBooking|propertyIdBooking|urlListingBooking|airbnbUrl|cancelationPolicy|stornoConditions|salesRentalDivision|apaPropertyId)/],
       ['pricing',     /^(fee|cost|pricing|petsFee|sumUp|invoicingProcess|additionalInvoicing|allowedSpendingForRepairs|maxWithoutSupplement)/],
