@@ -46,3 +46,12 @@ export function isOfficeRole(role?: string | null): boolean {
  * top of the access matrix. ADMIN passes every check.
  */
 export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'EVIDENCE'] as const;
+
+/**
+ * Who has the Newsfeed (7 Oct 2026). What each sees is further narrowed by the
+ * access matrix: a news item about a field shows only to a role that may view
+ * that field. ADMIN passes every check.
+ */
+export const NEWSFEED_ROLES = [
+  'MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR', 'MARKETING_MANAGER',
+] as const;

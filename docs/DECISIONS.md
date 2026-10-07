@@ -221,8 +221,9 @@ item in the same PR that finishes it; delete it once the PR is deployed.
 
 ### Build — next
 
-- [ ] `codeLockBox`: 24 × FALSE plus one Google Sheets URL — decide what the
-      column means (a flag, a code, or a link) and clean it; stays text.
+- [x] `codeLockBox`: decided 7 Oct 2026 — it is a link, renamed
+      `urlFolderPPUklid` ("Folder PP cleaning"). Leftover FALSE cells to clean
+      in the sheet.
 - [ ] Admin screen for the access matrix and pick-list values (today: SQL
       or a migration). Values for `accommodation.accommodationStandard`.
 - [ ] Type of `orderAccommodationAdded` (stored as text until decided).

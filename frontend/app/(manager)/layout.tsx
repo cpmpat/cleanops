@@ -8,14 +8,14 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, ChevronRight, Globe,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
-  LogIn, Clock, Bell, History,
+  LogIn, Clock, Bell, History, Newspaper,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
-import { datasets as datasetsApi, type DatasetSummary } from '@/lib/api';
+import { datasets as datasetsApi, newsfeed as newsfeedApi, NEWSFEED_CHANGED, type DatasetSummary } from '@/lib/api';
 import { homeFor } from '@/lib/home';
 
 /**
@@ -31,20 +31,48 @@ import { homeFor } from '@/lib/home';
 const ROLE_PATHS: Record<string, string[]> = {
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
-  ADMIN:              ['/planning', '/dashboard', '/datasets', '/notify'],
-  FRONT_DESK_MANAGER: ['/planning', '/datasets', '/notify'],
-  FRONT_DESK:         ['/planning', '/datasets'],
+  ADMIN:              ['/planning', '/newsfeed', '/dashboard', '/datasets', '/notify'],
+  FRONT_DESK_MANAGER: ['/planning', '/newsfeed', '/datasets', '/notify'],
+  FRONT_DESK:         ['/planning', '/newsfeed', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets'],
   ASSIST:             ['/airchat', '/datasets'],
   /** Data only; which lists and columns is the access matrix's call. */
   EVIDENCE:           ['/datasets', '/notify'],
   /** Data only (7 Oct 2026). Columns per the matrix; TERENAK also sees only
    *  some rows (dataset_row_filters: Avantio accommodations, Valid users). */
-  DIRECTOR:           ['/datasets'],
   TERENAK:            ['/datasets'],
+  /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. */
+  DIRECTOR:           ['/newsfeed', '/datasets'],
+  FINANCE:            ['/newsfeed', '/datasets'],
+  REVENUE_MANAGER:    ['/newsfeed', '/datasets'],
+  MARKETING_MANAGER:  ['/newsfeed', '/datasets'],
 };
 
 /** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */
+const NEWSFEED_LABEL: Record<string, string> = {
+  en: 'Newsfeed', cs: 'Novinky', ru: 'Новости', uk: 'Новини',
+};
+
+/**
+ * A menu icon as a macOS sidebar tile: a small rounded square with a soft
+ * vertical gradient and a white glyph, in greys (System Settings' sidebar,
+ * without its colours). The glyphs are our own (lucide); only the look is
+ * macOS's.
+ */
+function NavTile({ icon: Icon, active }: { icon: React.ElementType; active: boolean }) {
+  return (
+    <span
+      className={cn(
+        'flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-b text-white',
+        'shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35),0_1px_1.5px_rgba(0,0,0,0.35)]',
+        active ? 'from-[#C7C7CC] to-[#8E8E93]' : 'from-[#8E8E93] to-[#5A5A5F]',
+      )}
+    >
+      <Icon size={13} strokeWidth={2.25} />
+    </span>
+  );
+}
+
 const NOTIFY_LABEL: Record<string, string> = {
   en: 'Notifications', cs: 'Notifikace', ru: 'Уведомления', uk: 'Сповіщення',
 };
@@ -128,7 +156,23 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/notify/data', icon: History, label: (t.nav as any).data ?? 'Data' },
   ];
 
+  // Newsfeed badge: how many news items this person has not closed. Polled
+  // every minute, and refreshed at once when the Newsfeed page closes one.
+  const hasNewsfeed = !!user && (user.role === 'MANAGER' || (ROLE_PATHS[user.role] ?? []).includes('/newsfeed'));
+  const [newsUnread, setNewsUnread] = useState(0);
+  useEffect(() => {
+    if (!hasNewsfeed) return;
+    let alive = true;
+    const tick = () => newsfeedApi.unread().then((r) => { if (alive) setNewsUnread(r.count); }).catch(() => {});
+    tick();
+    const t = setInterval(tick, 60_000);
+    window.addEventListener(NEWSFEED_CHANGED, tick);
+    window.addEventListener('focus', tick);
+    return () => { alive = false; clearInterval(t); window.removeEventListener(NEWSFEED_CHANGED, tick); window.removeEventListener('focus', tick); };
+  }, [hasNewsfeed]);
+
   const navItems = [
+    { href: '/newsfeed',   icon: Newspaper,       label: NEWSFEED_LABEL[locale] ?? 'Newsfeed' },
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
     { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
     { href: '/schedule',   icon: CalendarRange,   label: (t.nav as any).schedule ?? 'Schedule' },
@@ -197,9 +241,17 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                   )}
                 >
                   <Link href={href} className="flex items-center gap-3 flex-1 min-w-0">
-                    <Icon size={17} strokeWidth={active ? 2.5 : 1.8} className="flex-shrink-0" />
+                    <NavTile icon={Icon} active={!!active} />
                     {label}
                   </Link>
+                  {href === '/newsfeed' && newsUnread > 0 && (
+                    <span
+                      aria-label={`${newsUnread} unread`}
+                      className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-bold leading-[18px] text-center tabular-nums"
+                    >
+                      {newsUnread > 99 ? '99+' : newsUnread}
+                    </span>
+                  )}
                   {isData || sub ? (
                     <button
                       type="button"
@@ -210,7 +262,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                       <ChevronDown size={14} className={cn('transition-transform', open ? 'rotate-180' : '')} />
                     </button>
                   ) : (
-                    active && <ChevronRight size={14} className="ml-auto opacity-40" />
+                    active && !(href === '/newsfeed' && newsUnread > 0) && <ChevronRight size={14} className="ml-auto opacity-40" />
                   )}
                 </div>
 
