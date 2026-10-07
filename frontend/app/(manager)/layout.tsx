@@ -54,22 +54,17 @@ const NEWSFEED_LABEL: Record<string, string> = {
 };
 
 /**
- * A menu icon as a macOS sidebar tile: a small rounded square with a soft
- * vertical gradient and a white glyph, in greys (System Settings' sidebar,
- * without its colours). The glyphs are our own (lucide); only the look is
- * macOS's.
+ * A menu icon in the style of the macOS Finder sidebar (8 Oct 2026): a plain,
+ * thin-stroked outline symbol, no tile, in grey — Finder's look without its
+ * blue. The glyphs are our own (lucide); only the look is macOS's.
  */
 function NavTile({ icon: Icon, active }: { icon: React.ElementType; active: boolean }) {
   return (
-    <span
-      className={cn(
-        'flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-b text-white',
-        'shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35),0_1px_1.5px_rgba(0,0,0,0.35)]',
-        active ? 'from-[#C7C7CC] to-[#8E8E93]' : 'from-[#8E8E93] to-[#5A5A5F]',
-      )}
-    >
-      <Icon size={13} strokeWidth={2.25} />
-    </span>
+    <Icon
+      size={19}
+      strokeWidth={1.5}
+      className={cn('flex-shrink-0 transition-colors', active ? 'text-[#D1D1D6]' : 'text-[#98989D]')}
+    />
   );
 }
 
@@ -236,11 +231,12 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
               <div key={href}>
                 <div
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                    active ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white hover:bg-white/10',
+                    // Finder's sidebar: a soft rounded selection, bold label when selected.
+                    'flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13.5px] transition-colors',
+                    active ? 'bg-white/[0.13] text-white font-semibold' : 'text-white/85 font-normal hover:bg-white/[0.06]',
                   )}
                 >
-                  <Link href={href} className="flex items-center gap-3 flex-1 min-w-0">
+                  <Link href={href} className="flex items-center gap-2.5 flex-1 min-w-0">
                     <NavTile icon={Icon} active={!!active} />
                     {label}
                   </Link>
