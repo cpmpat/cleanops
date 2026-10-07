@@ -23,7 +23,19 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/newsfeed`
+## Unreleased — branch `feat/finder-icons`
+
+**Menu in the style of the macOS Finder sidebar.** Plain thin outline icons in
+grey, no tiles; the selected item has a soft rounded highlight and a bold
+label. Newsfeed items use the same plain icons. UI only.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-07 · PR #55
 
 **Newsfeed.** A new first item in the menu for MANAGER, ADMIN,
 FRONT_DESK_MANAGER, FRONT_DESK, DIRECTOR, FINANCE, REVENUE_MANAGER and
@@ -49,15 +61,10 @@ held links to the cleaning handover folder, not lockbox codes (those are
 lockboxCode), so it is a link column now and no longer treated as sensitive. "standard" is
 closed to every role in the new matrix.
 
-**Menu icons** are macOS-style grey tiles (rounded square, soft gradient,
-white glyph).
+**Menu icons** were macOS-style grey tiles (replaced on 8 Oct, see above).
 
 *Migrations:* `20261007150000_roles_finance_revenue`,
 `20261007150100_newsfeed`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-07 · PR #54
 

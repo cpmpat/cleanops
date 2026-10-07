@@ -126,9 +126,7 @@ export default function NewsfeedPage() {
                   n.dismissed ? 'border-surface-border opacity-60' : 'border-surface-border shadow-sm',
                 )}
               >
-                <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-b from-[#8E8E93] to-[#5A5A5F] text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35),0_1px_1.5px_rgba(0,0,0,0.25)]">
-                  <Icon size={16} strokeWidth={2.2} />
-                </span>
+                <Icon size={20} strokeWidth={1.5} className="mt-0.5 flex-shrink-0 text-[#8E8E93]" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink leading-snug">
                     <Link
