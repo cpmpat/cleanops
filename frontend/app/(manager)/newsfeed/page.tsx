@@ -1,8 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Newspaper, CalendarX2, Globe, Check, CheckCheck, Loader2, RefreshCw, Sheet, PencilLine } from 'lucide-react';
-import { newsfeed as api, NEWSFEED_CHANGED, type NewsItem } from '@/lib/api';
+import { Newspaper, Check, CheckCheck, Loader2, RefreshCw, Sheet, PencilLine } from 'lucide-react';
+import { newsfeed as api, NEWSFEED_CHANGED, type NewsItem, type NewsPart } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /**
@@ -12,11 +12,50 @@ import { cn } from '@/lib/utils';
  * src/newsfeed/rules.ts). Closing an item hides it for this person only.
  */
 
-const RULE_ICON: Record<string, React.ElementType> = {
-  'accommodation.offboard': CalendarX2,
-  'accommodation.airbnbOnline': Globe,
-  'accommodation.bookingOnline': Globe,
+/** A plain globe: green = listed / online, red and crossed = going offline. */
+function GlobeMark({ off }: { off?: boolean }) {
+  const c = off ? '#E5484D' : '#30A46C';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+      <path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8" />
+      {off && <path d="M4.5 19.5 19.5 4.5" strokeWidth="2" />}
+    </svg>
+  );
+}
+
+const RULE_ICON: Record<string, React.ReactNode> = {
+  'accommodation.offboard': <GlobeMark off />,
+  'accommodation.airbnbOnline': <GlobeMark />,
+  'accommodation.bookingOnline': <GlobeMark />,
 };
+
+const CHANNEL: Record<'airbnb' | 'booking', { src: string; name: string }> = {
+  airbnb: { src: '/brands/airbnb.png', name: 'Airbnb.com' },
+  booking: { src: '/brands/booking.png', name: 'Booking.com' },
+};
+
+/** The sentence: dates bold, channels as their logo (name on hover). */
+function Sentence({ parts }: { parts: NewsPart[] }) {
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.t === 'date' ? <strong key={i} className="font-semibold">{p.v}</strong>
+        : p.t === 'channel' ? (
+          <img
+            key={i}
+            src={CHANNEL[p.v].src}
+            alt={CHANNEL[p.v].name}
+            title={CHANNEL[p.v].name}
+            className="inline-block h-[1.05em] w-[1.05em] align-[-0.15em] mx-[0.1em]"
+          />
+        )
+        : <span key={i}>{p.v}</span>,
+      )}
+    </>
+  );
+}
 
 function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -79,7 +118,7 @@ export default function NewsfeedPage() {
               </span>
             )}
           </h1>
-          <p className="text-sm text-ink-muted mt-0.5">Updates from the CDM lists. Close an item once you have read it.</p>
+          <p className="text-sm text-ink-muted mt-0.5">Updates from the CDM lists. Confirm each item with ✓ once you have read it.</p>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-ink-muted select-none">
@@ -117,7 +156,7 @@ export default function NewsfeedPage() {
       ) : (
         <ul className="space-y-2">
           {items.map((n) => {
-            const Icon = RULE_ICON[n.rule] ?? Newspaper;
+            const icon = RULE_ICON[n.rule] ?? <Newspaper size={20} strokeWidth={1.5} className="text-[#8E8E93]" />;
             return (
               <li
                 key={n.id}
@@ -126,7 +165,7 @@ export default function NewsfeedPage() {
                   n.dismissed ? 'border-surface-border opacity-60' : 'border-surface-border shadow-sm',
                 )}
               >
-                <Icon size={20} strokeWidth={1.5} className="mt-0.5 flex-shrink-0 text-[#8E8E93]" />
+                <span className="mt-0.5 flex-shrink-0">{icon}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink leading-snug">
                     <Link
@@ -134,23 +173,24 @@ export default function NewsfeedPage() {
                       className="font-semibold text-accent hover:underline"
                       title={`Open in Data → ${n.ref.list}${n.ref.key ? ` (${n.ref.key})` : ''}`}
                     >
-                      @{n.title}
+                      {n.title}
                     </Link>{' '}
-                    {n.text}
+                    <Sentence parts={n.parts ?? [{ t: 'text', v: n.text }]} />
                   </p>
                   <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-faint">
-                    {n.source === 'import'
-                      ? <><Sheet size={11} /> from the sheet</>
-                      : <><PencilLine size={11} /> {n.actorEmail ?? 'in the app'}</>}
-                    <span>·</span>
+                    {n.source === 'import' ? <Sheet size={11} /> : <PencilLine size={11} />}
                     <span title={new Date(n.createdAt).toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })}>{ago(n.createdAt)}</span>
+                    <span>·</span>
+                    {n.source === 'import'
+                      ? <span>from the sheet</span>
+                      : <span className="text-ink-muted">{n.actorEmail ?? 'in the app'}</span>}
                   </p>
                 </div>
                 {!n.dismissed && (
                   <button
                     onClick={() => close(n.id)}
-                    title="Mark as read"
-                    aria-label="Mark as read"
+                    title="I've read it — confirm"
+                    aria-label="I've read it — confirm"
                     className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-surface-border text-ink-faint hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition"
                   >
                     <Check size={14} />

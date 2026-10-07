@@ -23,17 +23,34 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/finder-icons`
+## Unreleased — branch `feat/newsfeed-look`
 
-**Menu in the style of the macOS Finder sidebar.** Plain thin outline icons in
-grey, no tiles; the selected item has a soft rounded highlight and a bold
-label. Newsfeed items use the same plain icons. UI only.
+**Newsfeed reads better.** No "@" before the unit; the date is bold; Airbnb.com
+and Booking.com show as their logos (`frontend/public/brands/`, from the
+files Patrik supplied; name on hover); a listing item has a green globe, a
+delisting a red crossed globe. Next to "1 d ago": who made the change in the
+app (their email); sheet reloads say "from the sheet" — the sheet is being
+retired as a source, so its editors are not tracked. Rules now return the
+sentence in parts (`NewsPart`).
+
+**Read confirmations.** The ✓ on an item ("I've read it — confirm") is the
+person's confirmation, stored with its time in `newsfeed_dismissals`
+(userId, itemId = the dataset_field_changes id, createdAt). No screen shows
+them; audit in the database.
 
 *Migrations:* None. *Env:* None.
 
 ---
 
 ## Deployed
+
+### 2026-10-08 · PR #56
+
+**Menu in the style of the macOS Finder sidebar.** Plain thin outline icons in
+grey, no tiles; the selected item has a soft rounded highlight and a bold
+label. Newsfeed items use the same plain icons. UI only.
+
+*Migrations:* None. *Env:* None.
 
 ### 2026-10-07 · PR #55
 
