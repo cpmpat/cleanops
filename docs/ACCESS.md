@@ -67,6 +67,14 @@ Accommodation now. Sheet-backed lists (none left) would follow the matrix for
 every role but MANAGER and ADMIN, matched on the sheet's header names, view
 only.
 
+## DIRECTOR, TERENAK
+
+Data only (menu and start page), since 7 Oct 2026. Columns are the access
+matrix's. TERENAK additionally sees only some rows (`dataset_row_filters`):
+Accommodation where source = "Avantio", User where validity = "Valid". The
+filter applies to reading, saving, history and export. Neither role has
+Notifications yet.
+
 ## Notifications → Data
 
 Changes to the CDM lists (app saves and sheet reloads). Open to ADMIN,
@@ -84,8 +92,9 @@ access matrix alone (`docs/access-matrix/`). Accommodation: view 42 columns
 five Ubyport columns. Owner: view 8 (id, treatment, displayName, language,
 email1, email2, mobile, city). No export.
 
-DIRECTOR, RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
-after login they fall through to the cleaner app. Define them before any
+RESOLUTIONS and MARKETING_MANAGER still have no screen defined:
+after login they see a "no screens yet" page (`/no-access`); the cleaner app
+admits only CLEANER and AGENT. Define them before any
 account gets one of those roles.
 
 ## Known gaps

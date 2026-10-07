@@ -15,7 +15,11 @@ export type Role =
   | 'FRONT_DESK'
   | 'ASSIST'
   | 'TERENAK'
-  | 'AGENT';
+  | 'AGENT'
+  | 'DIRECTOR'
+  | 'EVIDENCE'
+  | 'RESOLUTIONS'
+  | 'MARKETING_MANAGER';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;

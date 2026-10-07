@@ -206,6 +206,21 @@ export class DatasetsService {
     return new Map(grants.map((g: { field: string; canEdit: boolean }) => [g.field, g.canEdit ? 'edit' : 'view'] as const));
   }
 
+  /**
+   * The rows a role may see on one list, as a Prisma `where` fragment
+   * (dataset_row_filters; e.g. TERENAK: Accommodation where source is
+   * "Avantio"). Empty for a role with no filter — every row. Read per request
+   * for the same reason as the access matrix: nothing to go stale.
+   */
+  private async rowFilter(tenantId: string, dataset: string, role: UserRole): Promise<Record<string, unknown>> {
+    const filters = await this.prisma.datasetRowFilter.findMany({
+      where: { tenantId, dataset, role },
+      select: { field: true, values: true },
+    });
+    if (filters.length === 0) return {};
+    return { AND: filters.map((f: { field: string; values: string[] }) => ({ [f.field]: { in: f.values } })) };
+  }
+
   /** Active pick-list values for the given lists, in their sort order. */
   private async picklists(tenantId: string, lists: string[]): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
@@ -624,7 +639,7 @@ export class DatasetsService {
     for (const f of fields) select[f.field] = true;
 
     const records: Record<string, unknown>[] = await delegate.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(await this.rowFilter(tenantId, key, role)) },
       select,
       orderBy: { [spec.key]: 'asc' },
     });
@@ -729,10 +744,13 @@ export class DatasetsService {
 
     const select: Record<string, true> = { updatedAt: true };
     for (const k of keys) select[k] = true;
+    // A row outside the role's row filter is "not found", exactly as if it
+    // did not exist — saving cannot reach what reading cannot.
+    const rows = await this.rowFilter(tenantId, key, role);
 
     return this.prisma.$transaction(async (tx) => {
       const model = (tx as any)[spec.model];
-      const current = await model.findFirst({ where: { tenantId, [spec.pk]: rowId }, select });
+      const current = await model.findFirst({ where: { tenantId, [spec.pk]: rowId, ...rows }, select });
       if (!current) throw new NotFoundException('Record not found');
       if ((current.updatedAt as Date).toISOString() !== body.version) {
         throw new ConflictException(STALE_MESSAGE);
@@ -748,7 +766,7 @@ export class DatasetsService {
       const patch: Record<string, unknown> = { updatedAt: new Date() };
       for (const k of changed) patch[k] = data[k];
       const res = await model.updateMany({
-        where: { tenantId, [spec.pk]: rowId, updatedAt: current.updatedAt },
+        where: { tenantId, [spec.pk]: rowId, updatedAt: current.updatedAt, ...rows },
         data: patch,
       });
       if (res.count !== 1) throw new ConflictException(STALE_MESSAGE);
@@ -804,6 +822,12 @@ export class DatasetsService {
   async history(tenantId: string, key: string, role: UserRole, rowId: string) {
     const access = await this.accessFor(tenantId, key, role);
     if (access.size === 0) throw new ForbiddenException('No access to this list');
+    const spec = DB_MODELS[key];
+    const rows = await this.rowFilter(tenantId, key, role);
+    if (spec && Object.keys(rows).length > 0) {
+      const visible = await (this.prisma as any)[spec.model].count({ where: { tenantId, [spec.pk]: rowId, ...rows } });
+      if (visible === 0) throw new NotFoundException('Record not found');
+    }
     return this.prisma.datasetFieldChange.findMany({
       where: {
         tenantId, dataset: key, rowId, field: { in: [...access.keys()] },

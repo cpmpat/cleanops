@@ -23,7 +23,38 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/user-dates`
+## Unreleased — branch `feat/terenak-director`
+
+**DIRECTOR and TERENAK open Data.** Both land on Data and see nothing else in
+the menu; their columns come from the access matrices (Accommodation, Owner,
+User — DIRECTOR on all three, TERENAK on Accommodation and User). They used
+to fall through to the cleaner app.
+
+**The cleaner app is for cleaners only.** CLEANER (and AGENT, whose
+Availability and Inbox live there). REPAIRMAN goes to My repairs; a role with
+no screens yet (RESOLUTIONS, MARKETING_MANAGER) gets a "no screens yet" page
+instead of the cleaners' pool.
+
+**Row filters.** New `dataset_row_filters`: which records of a list a role
+sees, on top of the matrix's columns. TERENAK sees Accommodation rows whose
+source is "Avantio" and User rows whose validity is "Valid". Reading, saving,
+the change history and export all apply it; a row outside the filter is "not
+found". Roles without a filter see every row.
+
+**Matrices.** `docs/access-matrix/` gains DIRECTOR (Accommodation view 168 /
+edit 63, Owner view 32, User view 27) and TERENAK (Accommodation view 46 /
+edit 1 — Wi-Fi name, User view 11). Accommodation: the sheet's `urlFolderPp`
+row applies to urlFolderPpOld and urlFolderPpNew; codeLockBox, markField1–5,
+checkInInstructionLink, oxPointId and compHomeboook (missing from the new
+file) keep their earlier grants and are closed to DIRECTOR and TERENAK.
+
+*Migrations:* `20261007120000_dataset_row_filters`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-06 · PR #53
 
 **User dates are read day first.** The User tab writes dates as 25/3/2026,
 Accommodation as 9/18/2026. The importer now has a date order per list
@@ -31,10 +62,6 @@ Accommodation as 9/18/2026. The importer now has a date order per list
 User and 3 January on Accommodation — never guessed per cell. Script only.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-06 · PR #52
 
