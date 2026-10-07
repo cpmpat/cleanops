@@ -11,8 +11,17 @@
  * is no item.
  */
 
+/**
+ * A sentence in pieces, so the client can style them: a date is shown bold, a
+ * channel as its logo. `text` pieces are plain.
+ */
+export type NewsPart =
+  | { t: 'text'; v: string }
+  | { t: 'date'; v: string }
+  | { t: 'channel'; v: 'airbnb' | 'booking' };
+
 export interface NewsRule {
-  /** Stable name, sent to the client. */
+  /** Stable name, sent to the client (it also picks the item's icon). */
   key: string;
   dataset: string;
   /** The field whose change is the news. */
@@ -20,7 +29,7 @@ export interface NewsRule {
   /** Other columns of the record the sentence reads. */
   needs: string[];
   /** The sentence after the record's name. Null = not news after all. */
-  text(value: string, row: Record<string, unknown>): string | null;
+  parts(value: string, row: Record<string, unknown>): NewsPart[] | null;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -31,12 +40,19 @@ export function day(value: string): string {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : value;
 }
 
-/** The channels a unit is listed on, as the sentences name them. */
-function channels(row: Record<string, unknown>): string[] {
-  const out: string[] = [];
-  if (row.otaAirbnb === true) out.push('Airbnb.com');
-  if (row.otaBooking === true) out.push('Booking.com');
-  return out;
+const CHANNEL_NAME = { airbnb: 'Airbnb.com', booking: 'Booking.com' } as const;
+
+/** The parts as one plain sentence (for anything that cannot show logos). */
+export function plain(parts: NewsPart[]): string {
+  return parts.map((p) => (p.t === 'channel' ? CHANNEL_NAME[p.v] : p.v)).join('');
+}
+
+/** The channels a unit is listed on, as sentence parts: "Airbnb, Booking". */
+function channels(row: Record<string, unknown>): NewsPart[] {
+  const on: Array<'airbnb' | 'booking'> = [];
+  if (row.otaAirbnb === true) on.push('airbnb');
+  if (row.otaBooking === true) on.push('booking');
+  return on.flatMap((v, i) => (i === 0 ? [{ t: 'channel', v }] : [{ t: 'text', v: ', ' }, { t: 'channel', v }])) as NewsPart[];
 }
 
 export const NEWS_RULES: NewsRule[] = [
@@ -45,11 +61,11 @@ export const NEWS_RULES: NewsRule[] = [
     dataset: 'accommodation',
     field: 'dateOffboard',
     needs: ['otaAirbnb', 'otaBooking'],
-    text: (value, row) => {
+    parts: (value, row) => {
       const on = channels(row);
       return on.length
-        ? `is going to be delisted from ${on.join(', ')} on ${day(value)}.`
-        : `is going to be delisted on ${day(value)}.`;
+        ? [{ t: 'text', v: 'is going to be delisted from ' }, ...on, { t: 'text', v: ' on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }]
+        : [{ t: 'text', v: 'is going to be delisted on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }];
     },
   },
   {
@@ -57,14 +73,20 @@ export const NEWS_RULES: NewsRule[] = [
     dataset: 'accommodation',
     field: 'otaAirbnbSalesStarted',
     needs: [],
-    text: (value) => `is online on Airbnb.com from ${day(value)}.`,
+    parts: (value) => [
+      { t: 'text', v: 'is online on ' }, { t: 'channel', v: 'airbnb' },
+      { t: 'text', v: ' from ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' },
+    ],
   },
   {
     key: 'accommodation.bookingOnline',
     dataset: 'accommodation',
     field: 'otaBookingSalesStarted',
     needs: [],
-    text: (value) => `is online on Booking.com from ${day(value)}.`,
+    parts: (value) => [
+      { t: 'text', v: 'is online on ' }, { t: 'channel', v: 'booking' },
+      { t: 'text', v: ' from ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' },
+    ],
   },
 ];
 

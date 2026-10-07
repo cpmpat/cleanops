@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { DB_MODELS, TABS } from '../datasets/datasets.service';
-import { NEWS_RULES, NEWSFEED_DAYS, NewsRule } from './rules';
+import { NEWS_RULES, NEWSFEED_DAYS, NewsPart, NewsRule, plain } from './rules';
 
 const IMPORT_ROLE = 'IMPORT';
 const TITLE_FIELDS = ['titleAvantio', 'displayName', 'nickname', 'name', 'lastName'];
@@ -14,6 +14,9 @@ export interface NewsItem {
   /** The record's name, shown as the reference. */
   title: string;
   ref: { dataset: string; list: string; rowId: string; key: string | null };
+  /** The sentence in pieces (bold date, channel logos) … */
+  parts: NewsPart[];
+  /** … and as plain text. */
   text: string;
   source: 'app' | 'import';
   actorEmail: string | null;
@@ -100,8 +103,8 @@ export class NewsfeedService {
       const rule = rules.find((r) => r.dataset === c.dataset && r.field === c.field)!;
       const row = rows.get(`${c.dataset}:${c.rowId}`);
       if (!row) continue; // deleted, or outside this role's rows
-      const text = rule.text(c.newValue!, row);
-      if (!text) continue;
+      const parts = rule.parts(c.newValue!, row);
+      if (!parts) continue;
       const spec = DB_MODELS[c.dataset];
       const key = row[spec.key] == null ? null : String(row[spec.key]);
       const title = TITLE_FIELDS.map((f) => row[f]).find((v) => v != null && String(v).trim() !== '');
@@ -111,8 +114,10 @@ export class NewsfeedService {
         createdAt: c.createdAt,
         title: String(title ?? key ?? c.rowId),
         ref: { dataset: c.dataset, list: TABS.find((t) => t.key === c.dataset)?.label ?? c.dataset, rowId: c.rowId, key },
-        text,
+        parts,
+        text: plain(parts),
         source: c.actorRole === IMPORT_ROLE ? 'import' : 'app',
+        // Who made the change in the app. A sheet reload has no editor to name.
         actorEmail: c.actorRole === IMPORT_ROLE ? null : c.actorEmail,
         dismissed: dismissed.has(c.id),
       });

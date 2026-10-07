@@ -1348,12 +1348,17 @@ export interface DatasetPage {
 }
 
 // ─── Newsfeed ───────────────────────────────────────────────────────────────
+export type NewsPart =
+  | { t: 'text'; v: string }
+  | { t: 'date'; v: string }
+  | { t: 'channel'; v: 'airbnb' | 'booking' };
 export interface NewsItem {
   id: string;
   rule: string;
   createdAt: string;
   title: string;
   ref: { dataset: string; list: string; rowId: string; key: string | null };
+  parts: NewsPart[];
   text: string;
   source: 'app' | 'import';
   actorEmail: string | null;
