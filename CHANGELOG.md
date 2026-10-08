@@ -23,7 +23,21 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/nightly-safety-sweep`
+## Unreleased — branch `chore/sweep-skip-reasons`
+
+**The sweep says why it skipped bookings.** The first dry run found 258
+bookings at Avantio with no row here and skipped all of them without saying
+why. The log now prints one line per reason with a count (`skipped 250×
+cancelled in Avantio and absent locally …`), and the audit row carries the
+same counts in `metadata.bookings.skipReasons`.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #62
 
 **Nightly safety sweep at 03:20 Prague.** For every tenant that syncs with
 Avantio: (1) bookings Avantio updated in the last 7 days that are missing here
@@ -44,10 +58,6 @@ the same time (single Railway instance assumed). Run it by hand with
 
 *Migrations:* None. *Env:* `SAFETY_SWEEP_ENABLED=false` turns it off
 (default on). Turnovers are only swept when `TURNOVER_SYNC_ENABLED=true`.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #61
 
