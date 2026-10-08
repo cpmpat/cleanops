@@ -9,6 +9,7 @@ import {
   StickyNote,
   RefreshCw,
   MessagesSquare,
+  ArrowUpDown,
 } from 'lucide-react';
 import { SignedImage } from './SignedImage';
 import type { StreamItem, StreamItemType } from '@/lib/api';
@@ -24,6 +25,7 @@ const ICONS: Record<StreamItemType, any> = {
   // replaces, kept until those are retired.
   TURNOVER: RefreshCw,
   DIRECT_CHAT: MessagesSquare,
+  PRICING: ArrowUpDown,
 };
 
 const COLORS: Record<StreamItemType, { bg: string; text: string; border: string }> = {
@@ -37,7 +39,21 @@ const COLORS: Record<StreamItemType, { bg: string; text: string; border: string 
   // have everywhere else.
   TURNOVER:    { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300' },
   DIRECT_CHAT: { bg: 'bg-[#eef2fa]', text: 'text-[#243b6b]', border: 'border-[#c8d4ea]' },
+  PRICING:     { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-200' },
 };
+
+/** The UP / DOWN logo in front of a Pricing Group move. */
+export function MoveMark({ move }: { move?: StreamItem['move'] }) {
+  if (move !== 'UP' && move !== 'DOWN') return null;
+  return (
+    <img
+      src={move === 'UP' ? '/brands/up.svg' : '/brands/down.png'}
+      alt={move === 'UP' ? 'up' : 'down'}
+      title={move === 'UP' ? 'up' : 'down'}
+      className="inline-block h-[1.3em] w-auto align-[-0.3em] mr-1.5"
+    />
+  );
+}
 
 interface Props {
   item: StreamItem;
@@ -81,7 +97,10 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
               </Link>
             )}
           </div>
-          <p className="font-semibold text-sm text-ink truncate">{item.title}</p>
+          <p className="font-semibold text-sm text-ink truncate">
+            <MoveMark move={item.move} />
+            {item.title}
+          </p>
           {item.subtitle && (
             <p className="text-xs text-ink-muted mt-0.5 line-clamp-2">{item.subtitle}</p>
           )}

@@ -87,6 +87,7 @@ const PICKLIST_BINDINGS: Record<string, Record<string, string>> = {
     accommodationStandard: 'accommodation.accommodationStandard',
     checkInMethod: 'accommodation.checkInMethod',
     terraceType: 'accommodation.terraceType',
+    pricingGroup: 'accommodation.pricingGroup',
   },
 };
 

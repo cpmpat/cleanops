@@ -42,7 +42,7 @@ export class StreamsController {
   @ApiQuery({ name: 'from', required: false, description: 'ISO date inclusive lower bound' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date inclusive upper bound' })
   getFeed(@Req() req: TenantRequest, @Query() query: any) {
-    return this.service.getFeed(req.tenantId!, query);
+    return this.service.getFeed(req.tenantId!, query, req.userRole as string | undefined);
   }
 
   // ─── Manual event CRUD (manager only) ──────────────────────

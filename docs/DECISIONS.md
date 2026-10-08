@@ -233,6 +233,18 @@ from audit_events where "actorEmail" = 'safety-sweep@cleanops'
 order by "createdAt" desc limit 14;
 ```
 
+## 2026-10-08 — Pricing Group moves are recorded by a database trigger
+
+The ranking lives in the pick list `accommodation.pricingGroup`
+(`dataset_picklist_values.sortOrder`, 1 = LUX A highest, 12 = CKC lowest), so
+the Data dropdown and "up/down" can never disagree. A move is written to
+`pricing_group_moves` by an AFTER INSERT trigger on `dataset_field_changes`
+rather than in the two writers (app save, sheet import): one place, it cannot
+be forgotten by a third writer, and history already recorded was backfilled
+the same way. The direction is frozen when written; re-ordering the list
+later does not rewrite past moves. A failure inside the trigger is a WARNING,
+never a failed save. Names match ignoring case and spaces ("CK A" = "CKA").
+
 ---
 
 ## Open items

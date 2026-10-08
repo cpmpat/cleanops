@@ -14,6 +14,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { CleanOpsGateway } from '../websocket/websocket.module';
+import { FULL_EDIT_ROLES } from '../datasets/datasets.service';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -27,7 +28,9 @@ export type StreamItemType =
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
-  | 'MANUAL';
+  | 'MANUAL'
+  /** An accommodation's Pricing Group moved (pricing_group_moves). */
+  | 'PRICING';
 
 export interface StreamItem {
   id: string;
@@ -54,10 +57,12 @@ export interface StreamItem {
     lastMessage?: string | null;
   };
   source: {
-    kind: 'booking' | 'cleaning' | 'turnover' | 'direct_chat' | 'incident' | 'manual';
+    kind: 'booking' | 'cleaning' | 'turnover' | 'direct_chat' | 'incident' | 'manual' | 'pricing';
     id: string;
   };
   authorName?: string;
+  /** PRICING only: which way the Pricing Group moved. */
+  move?: 'UP' | 'DOWN' | 'SET' | 'CLEARED' | 'SAME' | 'UNRANKED';
 }
 
 interface CreateManualDto {
@@ -109,7 +114,7 @@ export class StreamsService {
 
   // ─── FEED AGGREGATION ──────────────────────────────────────
 
-  async getFeed(tenantId: string, q: FeedQuery): Promise<{
+  async getFeed(tenantId: string, q: FeedQuery, role?: string): Promise<{
     items: StreamItem[];
     nextCursor: string | null;
   }> {
@@ -132,7 +137,7 @@ export class StreamsService {
 
     const fetchSize = limit * OVERFETCH_PER_SOURCE;
 
-    const [reservations, cleanings, turnovers, directChats, incidents, manuals] =
+    const [reservations, cleanings, turnovers, directChats, incidents, manuals, pricing] =
       await Promise.all([
         this.fetchReservations(tenantId, scoped, cursor, from, to, fetchSize),
         this.fetchCleanings(tenantId, scoped, cursor, from, to, fetchSize),
@@ -144,6 +149,7 @@ export class StreamsService {
         scoped ? Promise.resolve([]) : this.fetchDirectChats(tenantId, cursor, from, to, fetchSize),
         this.fetchIncidents(tenantId, scoped, cursor, from, to, fetchSize),
         this.fetchManualEvents(tenantId, scoped, cursor, from, to, fetchSize),
+        this.fetchPricingMoves(tenantId, role, scoped, cursor, from, to, fetchSize),
       ]);
 
     let merged: StreamItem[] = [
@@ -153,6 +159,7 @@ export class StreamsService {
       ...directChats,
       ...incidents,
       ...manuals,
+      ...pricing,
     ];
 
     if (requestedTypes) {
@@ -515,6 +522,91 @@ export class StreamsService {
       authorName: r.author.name,
       source: { kind: 'manual' as const, id: r.id },
     }));
+  }
+
+  // ─── SOURCE: Pricing Group moves → PRICING items ───────────
+  //
+  // Written by a database trigger for every recorded change of
+  // accommodation.pricingGroup. Shown only to roles that may see that column
+  // in Data. A move whose unit had no Avantio property when it was written is
+  // matched again by idAvantio here, so it lands on the unit once it exists.
+
+  private async fetchPricingMoves(
+    tenantId: string,
+    role: string | undefined,
+    propertyIds: string[] | null,
+    cursor: Date | null,
+    from: Date | null,
+    to: Date | null,
+    fetchSize: number,
+  ): Promise<StreamItem[]> {
+    if (!role) return [];
+    if (!FULL_EDIT_ROLES.includes(role)) {
+      const grant = await this.prisma.datasetFieldAccess.findFirst({
+        where: { tenantId, role: role as UserRole, dataset: 'accommodation', field: 'pricingGroup', canView: true },
+        select: { field: true },
+      });
+      if (!grant) return [];
+    }
+
+    const where: Prisma.PricingGroupMoveWhereInput = {
+      tenantId,
+      direction: { notIn: ['SAME', 'CLEARED'] },
+    };
+    if (propertyIds?.length) {
+      const props = await this.prisma.property.findMany({
+        where: { tenantId, id: { in: propertyIds } },
+        select: { pmsPropertyId: true },
+      });
+      const pms = props.map((p) => p.pmsPropertyId).filter((x): x is string => !!x);
+      where.OR = [{ propertyId: { in: propertyIds } }, ...(pms.length ? [{ idAvantio: { in: pms } }] : [])];
+    }
+    if (cursor || from || to) {
+      where.occurredAt = {
+        ...(cursor ? { lt: cursor } : {}),
+        ...(from ? { gte: from } : {}),
+        ...(to ? { lte: to } : {}),
+      };
+    }
+
+    const rows = await this.prisma.pricingGroupMove.findMany({
+      where,
+      include: { property: { select: { id: true, name: true } } },
+      orderBy: { occurredAt: 'desc' },
+      take: fetchSize,
+    });
+
+    // Units written before their property existed.
+    const missing = [...new Set(rows.filter((r) => !r.propertyId && r.idAvantio).map((r) => r.idAvantio!))];
+    const late = missing.length
+      ? new Map(
+          (await this.prisma.property.findMany({
+            where: { tenantId, pmsPropertyId: { in: missing } },
+            select: { id: true, name: true, pmsPropertyId: true },
+          })).map((p) => [p.pmsPropertyId!, p]),
+        )
+      : new Map<string, { id: string; name: string }>();
+
+    const word: Record<string, string> = {
+      UP: 'nahoru', DOWN: 'dolů', SET: 'nastavena', UNRANKED: 'změněna',
+    };
+    return rows.map((r) => {
+      const prop = r.property ?? (r.idAvantio ? late.get(r.idAvantio) : undefined) ?? null;
+      const name = prop?.name ?? r.accommodationTitle ?? null;
+      return {
+        id: `prc-${r.id}`,
+        type: 'PRICING' as const,
+        occurredAt: r.occurredAt.toISOString(),
+        propertyId: prop?.id ?? null,
+        propertyName: name,
+        title: r.fromGroup ? `Cenová skupina: ${r.fromGroup} → ${r.toGroup}` : `Cenová skupina: ${r.toGroup}`,
+        subtitle: `Cenová skupina ${word[r.direction] ?? r.direction.toLowerCase()}`,
+        status: r.direction,
+        move: r.direction as StreamItem['move'],
+        authorName: r.actorRole === 'IMPORT' ? 'ze sheetu' : r.actorEmail ?? undefined,
+        source: { kind: 'pricing' as const, id: r.changeId },
+      };
+    });
   }
 
   private mapManualCategoryToStreamType(c: StreamEventCategory): StreamItemType {

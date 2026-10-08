@@ -57,6 +57,7 @@ model Tenant {
   datasetFieldNotify  DatasetFieldNotify[]
   datasetRowFilters   DatasetRowFilter[]
   newsfeedDismissals  NewsfeedDismissal[]
+  pricingGroupMoves   PricingGroupMove[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
   cdmOxPoints         CdmOxPoint[]
@@ -228,6 +229,7 @@ model Property {
   repairs             Repair[]
   turnovers           Turnover[]
   noteTargets         NoteTarget[]
+  pricingGroupMoves   PricingGroupMove[]
 
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
@@ -1772,6 +1774,7 @@ model DatasetFieldChange {
 
   tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   event  AuditEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  pricingGroupMove PricingGroupMove?
 
   @@index([tenantId, dataset, rowId, createdAt])
   @@index([tenantId, createdAt])
@@ -1874,4 +1877,44 @@ model CdmOwner {
 
   @@unique([tenantId, id])
   @@map("cdm_owners")
+}
+
+/// One change of an accommodation's Pricing Group, with which way it moved.
+/// Written by the database itself: a trigger on dataset_field_changes
+/// (migration 20261008150000_pricing_group_moves) fires for every recorded
+/// change of accommodation.pricingGroup — app save or sheet reload alike — and
+/// ranks old and new against the pick list `accommodation.pricingGroup`
+/// (dataset_picklist_values, sortOrder 1 = highest). The direction is frozen
+/// at that moment, so re-ordering the list later does not rewrite history.
+/// Shown in Stream on the unit's timeline.
+model PricingGroupMove {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  /// The dataset_field_changes row this move came from.
+  changeId           String   @unique
+  accommodationRowId String
+  idAvantio          String?
+  accommodationTitle String?
+  /// Resolved from idAvantio = properties.pmsPropertyId when written; null for
+  /// units with no Avantio property (looked up again by idAvantio on read).
+  propertyId         String?
+  fromGroup          String?
+  toGroup            String?
+  /// Positions in the pick list, 1 = highest. Null = not in the list.
+  fromRank           Int?
+  toRank             Int?
+  /// UP | DOWN | SET (was empty) | CLEARED | SAME | UNRANKED (a value not in the list)
+  direction          String
+  actorEmail         String?
+  actorRole          String?
+  occurredAt         DateTime
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  change   DatasetFieldChange  @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  property Property?           @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, propertyId, occurredAt])
+  @@index([tenantId, idAvantio, occurredAt])
+  @@map("pricing_group_moves")
 }
