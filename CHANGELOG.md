@@ -23,7 +23,44 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/newsfeed-badge`
+## Unreleased — branch `fix/orphan-cancel-carryover`
+
+**A reconcile orphan-cancel no longer sticks to a real cleaning.** When
+`reconcile:turnovers --apply` cancelled a turnover as an orphan, the row
+stayed in the chain; a later change to a booking's times superseded it and
+copied CANCELLED onto the new version, so a cleaning the bookings justified
+never reached the pool (Mon 5 Oct, cancelled by the 25 Sep run). Now the
+reconcile marks its cancels `skipReason = 'ORPHAN_RECONCILE'`; `supersede()`
+brings such a row back to PENDING (ASSIGNED if it has assignments), a new
+booking is no longer blocked by it, and the reconcile revives it when its slot
+is justified again. A manager's cancel is unchanged and stays cancelled.
+
+**The reconcile sees the cleaning after a long stay.** When nobody arrived
+inside `--since`, it expected no slots at all for the unit, so the trailing
+turnover of a guest who arrived before the window (Hartigova 8/110: in 30 Aug,
+out 5 Oct) looked like an orphan and was cancelled on 25 Sep. It now expects
+that guest's departure as the trailing slot while it falls inside the window.
+
+**The reconcile no longer cancels a turnover whose bookings are valid.** It
+cancels an orphan only when one of its bookings is gone (CANCELLED, deleted,
+moved property). If both are still CONFIRMED and only the order disagrees (an
+extra booking in between, a moved time, the `--since` window) it reports the
+row as needs-review and names the booking in between.
+
+New `repair:orphan-cancels` (dry run by default) tags the rows affected before
+this fix; then a reconcile revives the upcoming ones. New `inspect:turnover`
+(`./scripts/prod.sh inspect:turnover -- <turnover id | booking ref>`) now
+follows every predecessor of a turnover, lists every booking each version
+pointed at and all bookings at the unit (cancelled included), and the
+bookings' audit events.
+
+*Migrations:* None (`skipReason` is an existing text column). *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #60
 
 **The Newsfeed badge in the menu keeps up.** It used to refresh only once a
 minute, so it lagged behind the count on the Newsfeed page. Now the page hands
@@ -36,10 +73,6 @@ the Airbnb / Booking logos are a little larger than the text so they stand
 out (new `strong` sentence part).
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #59
 

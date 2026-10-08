@@ -12,6 +12,28 @@ import { PrismaService } from '../common/prisma.service';
 
 type Tx = Prisma.TransactionClient;
 
+/**
+ * skipReason stamped on a turnover the reconcile cancelled because, when it
+ * ran, no pair of bookings justified it. That is a machine's reading of the
+ * data at one moment, not a person deciding there is no cleaning, so it must
+ * not outlive the data changing:
+ *
+ *  * supersede() brings such a row back to PENDING/ASSIGNED, because the sync
+ *    only supersedes a row when the bookings say it is the slot's turnover;
+ *  * onBookingInserted() does not let it block a new chain;
+ *  * the reconcile does not count its slot as closed by a human.
+ *
+ * A manager's cancel (TurnoversService.cancel) leaves skipReason null and stays
+ * sticky. Before this existed, supersede() copied the reconcile's CANCELLED
+ * onto every later version of the row and a real cleaning vanished from the
+ * pool (incident 2026-10-05).
+ */
+export const ORPHAN_CANCEL_REASON = 'ORPHAN_RECONCILE';
+
+export function isOrphanCancelled(t: { status: TurnoverStatus | string; skipReason: string | null }): boolean {
+  return t.status === TurnoverStatus.CANCELLED && t.skipReason === ORPHAN_CANCEL_REASON;
+}
+
 @Injectable()
 export class TurnoverSyncService {
   private readonly logger = new Logger(TurnoverSyncService.name);
@@ -34,14 +56,18 @@ export class TurnoverSyncService {
     }
 
     // Idempotency check: only block if a NON-SKIPPED active turnover exists
-    // for this booking. SKIPPED orphans should not prevent re-insertion.
-    const existing = await tx.turnover.findFirst({
+    // for this booking. SKIPPED orphans should not prevent re-insertion, and
+    // neither should a row the reconcile cancelled as an orphan. Filtered in
+    // code: Prisma's NOT over a nullable column also drops the NULL rows.
+    const existingRows = await tx.turnover.findMany({
       where: {
         supersededById: null,
         status: { not: 'SKIPPED' },
         OR: [{ fromBookingId: bookingId }, { toBookingId: bookingId }],
       },
+      select: { id: true, status: true, skipReason: true },
     });
+    const existing = existingRows.find((t) => !isOrphanCancelled(t));
     if (existing) {
       this.logger.debug(
         `onBookingInserted: booking ${bookingId} already has active turnovers, skipping`,
@@ -442,6 +468,16 @@ export class TurnoverSyncService {
       throw new Error(`Supersede: turnover ${oldId} is already superseded by ${old.supersededById}`);
     }
 
+    // A reconcile orphan-cancel is undone here: the caller is superseding this
+    // row because the bookings now point at it. A manager's cancel is kept.
+    const revive = isOrphanCancelled(old);
+    if (revive) {
+      this.logger.warn(
+        `supersede: turnover ${oldId} was cancelled by the reconcile as an orphan; ` +
+        `the bookings now point at it, so the new version is live again`,
+      );
+    }
+
     const fresh = await tx.turnover.create({
       data: {
         tenantId: old.tenantId,
@@ -450,16 +486,18 @@ export class TurnoverSyncService {
         toBookingId:   'toBookingId'   in changes ? changes.toBookingId!   : old.toBookingId,
         availableFrom: 'availableFrom' in changes ? changes.availableFrom! : old.availableFrom,
         dueBy:         'dueBy'         in changes ? changes.dueBy!         : old.dueBy,
-        status: old.status,
+        status: revive
+          ? old.assignments.length > 0 ? TurnoverStatus.ASSIGNED : TurnoverStatus.PENDING
+          : old.status,
         startedAt: old.startedAt,
         completedAt: old.completedAt,
-        cancelledAt: old.cancelledAt,
+        cancelledAt: revive ? null : old.cancelledAt,
         completedAllGood: old.completedAllGood,
         maxCleaners: old.maxCleaners,
         managerNote: old.managerNote,
         cleanerNote: old.cleanerNote,
         supplyNote: old.supplyNote,
-        skipReason: old.skipReason,
+        skipReason: revive ? null : old.skipReason,
         isOwnerStay:
           'isOwnerStay' in changes ? changes.isOwnerStay! : old.isOwnerStay,
       },

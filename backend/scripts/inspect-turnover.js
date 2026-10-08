@@ -16,7 +16,10 @@
  *
  * Read-only. Plain JS so it needs no ts-node.
  *
- * Usage:
+ * Usage (production, credentials from backend/.env.production):
+ *   ./scripts/prod.sh inspect:turnover -- <turnover id | booking ref>
+ *
+ * Or:
  *   railway run node scripts/inspect-turnover.js <turnover id>
  *   railway run node scripts/inspect-turnover.js <booking id, e.g. a fromBookingId>
  *   railway run node scripts/inspect-turnover.js A203-HME9J22T2S
@@ -53,7 +56,8 @@ function printTurnover(t, label) {
 }
 
 async function main() {
-  const needle = process.argv[2];
+  // pnpm forwards a literal `--`; npm strips it.
+  const needle = process.argv.slice(2).filter((a) => a !== '--')[0];
   if (!needle) {
     console.error('Usage: node scripts/inspect-turnover.js <turnoverId|bookingRef|pmsBookingId>');
     process.exit(2);
@@ -128,24 +132,42 @@ async function main() {
   if (turnover) {
     console.log(`\n── SUPERSESSION CHAIN (${turnover.property?.name ?? ''}) ─────────────`);
 
-    // Walk backwards to the origin.
+    // Walk backwards to the origin. A row can have SEVERAL predecessors:
+    // supersede() retires the row it copies, and enforceUniqueActive() also
+    // points every other active row sharing a booking at the new one. Follow
+    // all of them, or a healthy row retired that way never shows up here.
     const backwards = [];
-    let cursor = turnover;
     const guard = new Set();
-    while (cursor) {
-      if (guard.has(cursor.id)) { console.log('  !! cycle detected, stopping'); break; }
-      guard.add(cursor.id);
-      backwards.unshift(cursor);
-      cursor = await prisma.turnover.findFirst({
-        where: { supersededById: cursor.id },
-        include: { assignments: ASSIGNMENT_SELECT },
-      });
+    let level = [turnover];
+    while (level.length) {
+      const nextLevel = [];
+      for (const row of level) {
+        if (guard.has(row.id)) continue;
+        guard.add(row.id);
+        backwards.unshift(row);
+        const preds = await prisma.turnover.findMany({
+          where: { supersededById: row.id },
+          include: { assignments: ASSIGNMENT_SELECT },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (preds.length > 1) {
+          console.log(
+            `  note: ${short(row.id)} replaced ${preds.length} rows at once: ` +
+            preds.map((p) => `${short(p.id)}(${p.status})`).join(', '),
+          );
+        }
+        nextLevel.push(...preds);
+      }
+      level = nextLevel;
     }
+    backwards.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    let cursor;
 
     // Walk forwards to whatever is live.
     const forwards = [];
     cursor = turnover;
     guard.clear();
+    guard.add(turnover.id);
     while (cursor && cursor.supersededById) {
       if (guard.has(cursor.supersededById)) { console.log('  !! cycle detected, stopping'); break; }
       guard.add(cursor.supersededById);
@@ -187,6 +209,26 @@ async function main() {
     all.forEach((t) => { chainIds.add(t.id); printTurnover(t, '  -'); });
   }
 
+  // ── 4b. Every booking any version of this turnover pointed at ──
+  const chainRows = await prisma.turnover.findMany({ where: { id: { in: [...chainIds] } } });
+  const chainBookingIds = [
+    ...new Set(chainRows.flatMap((t) => [t.fromBookingId, t.toBookingId]).filter(Boolean)),
+  ];
+  for (const b of bookings) chainBookingIds.includes(b.id) || chainBookingIds.push(b.id);
+  if (chainBookingIds.length) {
+    console.log('\n── BOOKINGS ANY VERSION POINTED AT ───────────────────────');
+    const bs = await prisma.booking.findMany({
+      where: { id: { in: chainBookingIds } },
+      orderBy: { checkInTime: 'asc' },
+    });
+    for (const b of bs) {
+      console.log(
+        `  ${short(b.id)} ${b.bookingRef}  ${b.status}${b.cancelledAt ? ` cancelledAt=${iso(b.cancelledAt)}` : ''}  ` +
+        `in=${iso(b.checkInTime)} out=${iso(b.checkOutTime)}  created=${iso(b.createdAt)} updated=${iso(b.updatedAt)}`,
+      );
+    }
+  }
+
   // ── 5. The property's live chain nearby ──
   const propertyId = turnover?.propertyId || bookings[0]?.propertyId;
   const anchor =
@@ -211,13 +253,41 @@ async function main() {
     });
     if (!live.length) console.log('  (none)');
     live.forEach((t) => printTurnover(t, '  *'));
+
+    // Every booking at the unit in the window, cancelled ones included: an
+    // extra or since-cancelled booking between two guests is what makes the
+    // reconcile see a different neighbour than the chain.
+    console.log(`\n── ALL BOOKINGS AT THIS PROPERTY, ${iso(from).slice(0, 10)} .. ${iso(to).slice(0, 10)} ──`);
+    const around = await prisma.booking.findMany({
+      where: {
+        propertyId,
+        OR: [
+          { checkInTime: { gte: from, lte: to } },
+          { checkOutTime: { gte: from, lte: to } },
+        ],
+      },
+      orderBy: [{ checkInTime: 'asc' }, { id: 'asc' }],
+    });
+    if (!around.length) console.log('  (none)');
+    for (const b of around) {
+      console.log(
+        `  ${short(b.id)} ${String(b.bookingRef).padEnd(20)} ${b.status.padEnd(9)} ` +
+        `in=${iso(b.checkInTime)} out=${iso(b.checkOutTime)}  ` +
+        `created=${iso(b.createdAt)}${b.cancelledAt ? ` cancelledAt=${iso(b.cancelledAt)}` : ''}`,
+      );
+    }
   }
 
   // ── 6. Audit trail ──
   if (chainIds.size) {
     console.log('\n── AUDIT EVENTS ──────────────────────────────────────────');
     const events = await prisma.auditEvent.findMany({
-      where: { targetType: 'Turnover', targetId: { in: [...chainIds] } },
+      where: {
+        OR: [
+          { targetType: 'Turnover', targetId: { in: [...chainIds] } },
+          { targetType: 'Booking', targetId: { in: chainBookingIds } },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
     });
     if (!events.length) console.log('  (none — nothing the audit trail covers touched these rows)');

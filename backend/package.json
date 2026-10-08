@@ -13,6 +13,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
     "reconcile:turnovers": "ts-node -P tsconfig.scripts.json scripts/reconcile-turnovers.ts",
+    "repair:orphan-cancels": "ts-node -P tsconfig.scripts.json scripts/repair-orphan-cancels.ts",
+    "inspect:turnover": "node scripts/inspect-turnover.js",
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
     "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
     "backfill:checkin-times": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-times.ts",
