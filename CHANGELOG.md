@@ -23,7 +23,33 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/newsfeed-look`
+## Unreleased — branch `fix/sheet-date-serials`
+
+**Dates are read from the sheet's cell values, not their display.** The
+importer read each date from the text the cell shows. That text depends on
+the cell's own number format, which differs from cell to cell (3/6/2026 under
+one format, 06/03/2026 under another), so some dates were imported with day
+and month swapped — and every later reload agreed with itself, so the dry run
+showed no difference. Date columns are now also read with
+UNFORMATTED_VALUE / SERIAL_NUMBER: a real date cell is a day number, exact
+whatever its format. Text typed into a date column still falls back to text
+parsing. The dry run lists every date cell not written the agreed way
+(MM/DD/YYYY on Accommodation, DD/MM/YYYY on User) with its sheet address
+(e.g. CR57), what it shows and what it is imported as — the list to fix.
+
+**Newsfeed shows the record's current date**, not the value the triggering
+change wrote, so a later correction (or a fix loaded with --no-history) is
+reflected, and an item whose date was cleared disappears.
+
+Script + backend; nothing in the schema.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #57
 
 **Newsfeed reads better.** No "@" before the unit; the date is bold; Airbnb.com
 and Booking.com show as their logos (`frontend/public/brands/`, from the
@@ -39,10 +65,6 @@ person's confirmation, stored with its time in `newsfeed_dismissals`
 them; audit in the database.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #56
 

@@ -424,6 +424,25 @@ function coerce(
     return null;
   }
   if (type === 'date') {
+    const date = parseDateText(raw, dateOrder);
+    if (!date) note(field, raw);
+    return date;
+  }
+  return raw;
+}
+
+/**
+ * A Google Sheets serial day (days since 1899-12-30) as a calendar day at UTC
+ * midnight. This is the cell's actual value, so it never depends on how the
+ * cell is displayed.
+ */
+function serialToDate(serial: number): Date {
+  return new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
+}
+
+/** A date typed as text. Null when it is not one of the accepted shapes. */
+function parseDateText(raw: string, dateOrder: 'mdy' | 'dmy'): Date | null {
+  {
     // A calendar day, stored as UTC midnight — the same as an app save
     // (datasets.service parse()). `new Date(raw)` used to read "9/18/2026" as
     // midnight on the machine running the import: in Prague that is
@@ -440,15 +459,11 @@ function coerce(
       y = +hit[3];
     }
     else if ((hit = raw.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})$/))) { d = +hit[1]; m = +hit[2]; y = +hit[3]; }
-    else { note(field, raw); return null; }
+    else return null;
     const date = new Date(Date.UTC(y, m - 1, d));
-    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
-      note(field, raw);
-      return null;
-    }
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
     return date;
   }
-  return raw;
 }
 
 /** Who a sheet reload is, in dataset_field_changes and audit_events. */
@@ -641,6 +656,22 @@ async function main() {
     // Read first: without a mapping tab, its header row is the metadata.
     const { columns, rows } = await sheets.readTab(row.datasetsSheetId, dataTab);
 
+    // Date columns are read from the cells' VALUES, not their display. The
+    // text a date cell shows depends on that one cell's number format —
+    // 3/6/2026 under one, 06/03/2026 under another — and no reading of the
+    // text can tell which day was meant. A real date cell's value is a serial
+    // day number, which can. Only a date typed as text falls back to text
+    // parsing (in the list's dateOrder). Fixed 8 Oct 2026, after imported
+    // dates did not match the sheet.
+    const hasDates = Object.values(spec.types).includes('date');
+    const rawRows: any[][] = hasDates
+      ? ((await sheets.readValues(row.datasetsSheetId, dataTab, { unformatted: true })) ?? []).slice(1)
+      : [];
+    // Date cells not written the agreed way (MM/DD/YYYY on Accommodation,
+    // DD/MM/YYYY on User), with their sheet address so they can be fixed.
+    const offFormat: Array<{ cell: string; key: string; field: string; shown: string; actual: string | null; textRead: string | null }> = [];
+    const agreed = spec.dateOrder === 'dmy' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+
     // ── metadata ───────────────────────────────────────────────────────────
     const mapRows: string[][] = mappingTab
       ? ((await sheets.readValues(row.datasetsSheetId, mappingTab)) ?? [])
@@ -795,13 +826,31 @@ async function main() {
 
     const planned: Array<{ key: string; data: Record<string, unknown> }> = [];
     let skipped = 0;
-    for (const r of rows) {
+    for (const [ri, r] of rows.entries()) {
       const key = clean(r[keyIndex]);
       if (!key) { skipped++; continue; }
       const data: Record<string, unknown> = {};
       for (const f of fields) {
         const i = columns.indexOf(f.source);
         if (i < 0 || !modelFields.has(f.field)) continue;
+        const cell = rawRows[ri]?.[i];
+        if (spec.types[f.field] === 'date') {
+          const shown = clean(r[i]) ?? '';
+          const actual = typeof cell === 'number' ? serialToDate(cell) : null;
+          // Written the agreed way = slashes, in the list's order, and reading
+          // as the cell's real date (when it has one).
+          const slashed = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(shown);
+          const asText = slashed ? parseDateText(shown, spec.dateOrder ?? 'mdy') : null;
+          const ok = !shown || (!!asText && (!actual || asText.getTime() === actual.getTime()));
+          if (!ok) {
+            offFormat.push({
+              cell: `${indexToLetter(i + 1)}${ri + 2}`, key, field: f.field, shown,
+              actual: actual ? actual.toISOString().slice(0, 10) : null,
+              textRead: actual ? null : (parseDateText(shown, spec.dateOrder ?? 'mdy')?.toISOString().slice(0, 10) ?? null),
+            });
+          }
+          if (actual) { data[f.field] = actual; continue; }
+        }
         data[f.field] = coerce(f.field, clean(r[i]), spec.types[f.field] ?? 'text', spec.dateOrder);
       }
       delete data[spec.key];
@@ -867,6 +916,21 @@ async function main() {
       for (const c of conflicts.slice(0, 40)) console.log(`  ${c.key.padEnd(14)} ${c.field}`);
       if (conflicts.length > 40) console.log(`  … +${conflicts.length - 40} more`);
       console.log('  The apply stops on these unless you pass --overwrite-app-edits (the sheet wins).');
+    }
+
+    if (offFormat.length) {
+      console.log(`\n${offFormat.length} date cell(s) not written as ${agreed} — fix these in the sheet:`);
+      console.log('  cell    key        field                      shows          real date');
+      for (const m of offFormat) {
+        console.log(
+          `  ${m.cell.padEnd(7)} ${m.key.padEnd(10)} ${m.field.padEnd(26)} ${JSON.stringify(m.shown).padEnd(14)} ` +
+          (m.actual ? `${m.actual} (date cell; imported as this)`
+            : m.textRead ? `${m.textRead} (text; imported as this)`
+            : 'not a date — imports empty'),
+        );
+      }
+    } else if (hasDates) {
+      console.log(`\nEvery date cell is written as ${agreed}.`);
     }
 
     if (unparseable.size > 0) {

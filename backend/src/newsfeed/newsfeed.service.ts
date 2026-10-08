@@ -77,7 +77,8 @@ export class NewsfeedService {
       const modelName = spec.model.charAt(0).toUpperCase() + spec.model.slice(1);
       const has = new Set(Prisma.dmmf.datamodel.models.find((m) => m.name === modelName)?.fields.map((f) => f.name) ?? []);
       const select: Record<string, true> = { [spec.pk]: true, [spec.key]: true };
-      for (const f of [...TITLE_FIELDS, ...rules.filter((r) => r.dataset === dataset).flatMap((r) => r.needs)]) {
+      const own = rules.filter((r) => r.dataset === dataset);
+      for (const f of [...TITLE_FIELDS, ...own.map((r) => r.field), ...own.flatMap((r) => r.needs)]) {
         if (has.has(f)) select[f] = true;
       }
       const found: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
@@ -103,7 +104,15 @@ export class NewsfeedService {
       const rule = rules.find((r) => r.dataset === c.dataset && r.field === c.field)!;
       const row = rows.get(`${c.dataset}:${c.rowId}`);
       if (!row) continue; // deleted, or outside this role's rows
-      const parts = rule.parts(c.newValue!, row);
+      // The date in the sentence is the record's CURRENT value, not the one the
+      // change wrote: a value corrected later (e.g. the 8 Oct date fix, loaded
+      // without history) must not leave the news saying the old date. The
+      // change only says THAT there is news; cleared since → no news.
+      const current = row[rule.field];
+      const value = current instanceof Date ? current.toISOString().slice(0, 10)
+        : current == null ? '' : String(current).trim();
+      if (!value) continue;
+      const parts = rule.parts(value, row);
       if (!parts) continue;
       const spec = DB_MODELS[c.dataset];
       const key = row[spec.key] == null ? null : String(row[spec.key]);
