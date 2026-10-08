@@ -6,6 +6,7 @@ import { AvantioAdapter } from './avantio/avantio.adapter';
 import { BookingSyncService } from './booking-sync.service';
 import { TurnoverSyncService } from './turnover-sync.service';
 import { TurnoverReconcileService } from './turnover-reconcile.service';
+import { SafetySweepService } from './safety-sweep.service';
 import { IntegrationsController } from './integrations.controller';
 
 @Module({
@@ -16,12 +17,14 @@ import { IntegrationsController } from './integrations.controller';
     BookingSyncService,
     TurnoverSyncService,
     TurnoverReconcileService,
+    SafetySweepService,
   ],
   exports: [
     BookingSyncService,
     AvantioAdapter,
     TurnoverSyncService,
     TurnoverReconcileService,
+    SafetySweepService,
   ],
 })
 export class IntegrationsModule {}

@@ -5,18 +5,13 @@ import { PrismaService } from '../common/prisma.service';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { BookingSyncService } from '../integrations/booking-sync.service';
 import { APP_TIME_ZONE } from '../common/time';
+import { pmsSyncLock } from './pms-sync-lock';
+import { SafetySweepJob } from './safety-sweep.job';
 
 // ─── PMS Sync Job ───
 @Injectable()
 export class PmsSyncJob {
   private readonly logger = new Logger(PmsSyncJob.name);
-
-  /**
-   * Lock flag to prevent overlapping sync runs.
-   * If a sync is still running when the cron fires again, the new run
-   * is skipped entirely rather than running concurrently.
-   */
-  private isSyncing = false;
 
   constructor(
     private prisma: PrismaService,
@@ -34,12 +29,13 @@ export class PmsSyncJob {
    */
   @Cron('7,37 * * * *', { timeZone: APP_TIME_ZONE })
   async syncAllTenants() {
-    if (this.isSyncing) {
-      this.logger.warn('PMS sync already in progress — skipping this run');
+    // Shared with the nightly safety sweep: one writer at a time. A run that
+    // finds the lock taken is skipped, not queued — the next one is 30 min away.
+    if (!pmsSyncLock.tryAcquire('pms-sync')) {
+      this.logger.warn(`PMS sync skipped — ${pmsSyncLock.holder} is running`);
       return;
     }
 
-    this.isSyncing = true;
     this.logger.log('Starting PMS sync for all tenants...');
 
     try {
@@ -62,7 +58,7 @@ export class PmsSyncJob {
       }
     } finally {
       // Always release the lock, even if an error is thrown
-      this.isSyncing = false;
+      pmsSyncLock.release('pms-sync');
       this.logger.log('PMS sync complete');
     }
   }
@@ -203,6 +199,6 @@ export class MorningSummaryJob {
 // ─── Module ───
 @Module({
   imports: [IntegrationsModule],
-  providers: [PmsSyncJob, OverdueCheckJob, MorningSummaryJob],
+  providers: [PmsSyncJob, OverdueCheckJob, MorningSummaryJob, SafetySweepJob],
 })
 export class JobsModule {}

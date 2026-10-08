@@ -122,6 +122,8 @@ export interface DriftItem {
   /** True when a human has to look at this — never auto-fixed. */
   needsReview: boolean;
   applied: boolean;
+  /** The bookings involved, where a fix belongs in the bookings (IMPOSSIBLE_WINDOW). */
+  bookingIds?: string[];
 }
 
 export interface ReconcileOptions {
@@ -401,7 +403,7 @@ export class TurnoverReconcileService {
       kind: DriftKind,
       detail: string,
       action: string,
-      extra: { turnoverId?: string; needsReview?: boolean; applied?: boolean } = {},
+      extra: { turnoverId?: string; needsReview?: boolean; applied?: boolean; bookingIds?: string[] } = {},
     ) => {
       drift.push({
         kind,
@@ -412,6 +414,7 @@ export class TurnoverReconcileService {
         turnoverId: extra.turnoverId,
         needsReview: extra.needsReview ?? false,
         applied: extra.applied ?? false,
+        bookingIds: extra.bookingIds,
       });
     };
 
@@ -507,7 +510,12 @@ export class TurnoverReconcileService {
             'backfill:checkin-times for this booking'
           : 'left alone — check both bookings in the PMS; one is probably ' +
             'cancelled there and still CONFIRMED here',
-        { needsReview: true },
+        {
+          needsReview: true,
+          bookingIds: [slot.fromBookingId, slot.toBookingId].filter(
+            (id): id is string => id !== null,
+          ),
+        },
       );
     }
 
