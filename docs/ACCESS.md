@@ -68,6 +68,11 @@ Accommodation now. Sheet-backed lists (none left) would follow the matrix for
 every role but MANAGER and ADMIN, matched on the sheet's header names, view
 only.
 
+## MANAGER in Data
+
+View and edit on every column of every CDM list, outside the matrix
+(`FULL_EDIT_ROLES`, 8 Oct 2026); the record key stays read-only.
+
 ## Newsfeed
 
 MANAGER, ADMIN, FRONT_DESK_MANAGER, FRONT_DESK, DIRECTOR, FINANCE,

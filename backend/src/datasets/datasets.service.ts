@@ -114,6 +114,13 @@ export interface DatasetColumn {
 /** Roles that keep today's access to the sheet-backed lists (Owner). */
 const SHEET_READERS: string[] = ['MANAGER', 'ADMIN'];
 
+/**
+ * Roles that may view and edit every column of every CDM list, not governed
+ * by the access matrix (8 Oct 2026: MANAGER). Row filters do not apply to
+ * them either — none are defined for them.
+ */
+export const FULL_EDIT_ROLES: string[] = ['MANAGER'];
+
 const STALE_MESSAGE =
   'Someone else changed this record since you opened it. Reload to see their ' +
   'changes, then make yours again.';
@@ -153,11 +160,14 @@ export class DatasetsService {
    * always have.
    */
   async list(tenantId: string, role: UserRole) {
-    const granted = await this.prisma.datasetFieldAccess.findMany({
-      where: { tenantId, role, canView: true },
-      distinct: ['dataset'],
-      select: { dataset: true },
-    });
+    const granted = FULL_EDIT_ROLES.includes(role)
+      // Every list that has columns, whatever the matrix says.
+      ? await this.prisma.datasetField.findMany({ where: { tenantId }, distinct: ['dataset'], select: { dataset: true } })
+      : await this.prisma.datasetFieldAccess.findMany({
+          where: { tenantId, role, canView: true },
+          distinct: ['dataset'],
+          select: { dataset: true },
+        });
     const has = new Set(granted.map((g: { dataset: string }) => g.dataset));
     return TABS
       .filter((t) => has.has(t.key) || (t.source === 'sheet' && SHEET_READERS.includes(role)))
@@ -199,6 +209,15 @@ export class DatasetsService {
     dataset: string,
     role: UserRole,
   ): Promise<Map<string, 'view' | 'edit'>> {
+    if (FULL_EDIT_ROLES.includes(role)) {
+      // View and edit on every column of every list, new columns included,
+      // without a matrix row. The record's key stays read-only: it is how a
+      // sheet reload finds the record, and changing it would split one unit
+      // into two.
+      const all = await this.prisma.datasetField.findMany({ where: { tenantId, dataset }, select: { field: true } });
+      const key = DB_MODELS[dataset]?.key;
+      return new Map(all.map((f: { field: string }) => [f.field, f.field === key ? 'view' : 'edit'] as const));
+    }
     const grants = await this.prisma.datasetFieldAccess.findMany({
       where: { tenantId, dataset, role, canView: true },
       select: { field: true, canEdit: true },
