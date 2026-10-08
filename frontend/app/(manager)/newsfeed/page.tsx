@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Newspaper, Check, CheckCheck, Loader2, RefreshCw, Sheet, PencilLine } from 'lucide-react';
-import { newsfeed as api, NEWSFEED_CHANGED, type NewsItem, type NewsPart } from '@/lib/api';
+import { newsfeed as api, announceNewsfeed, type NewsItem, type NewsPart } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,19 +36,20 @@ const CHANNEL: Record<'airbnb' | 'booking', { src: string; name: string }> = {
   booking: { src: '/brands/booking.png', name: 'Booking.com' },
 };
 
-/** The sentence: dates bold, channels as their logo (name on hover). */
+/** The sentence: "online"/"delisted" and dates bold, channels as their logo
+ *  a little larger than the text (name on hover). */
 function Sentence({ parts }: { parts: NewsPart[] }) {
   return (
     <>
       {parts.map((p, i) =>
-        p.t === 'date' ? <strong key={i} className="font-semibold">{p.v}</strong>
+        p.t === 'date' || p.t === 'strong' ? <strong key={i} className="font-semibold">{p.v}</strong>
         : p.t === 'channel' ? (
           <img
             key={i}
             src={CHANNEL[p.v].src}
             alt={CHANNEL[p.v].name}
             title={CHANNEL[p.v].name}
-            className="inline-block h-[1.05em] w-[1.05em] align-[-0.15em] mx-[0.1em]"
+            className="inline-block h-[1.4em] w-[1.4em] align-[-0.32em] mx-[0.15em]"
           />
         )
         : <span key={i}>{p.v}</span>,
@@ -78,6 +79,8 @@ export default function NewsfeedPage() {
     try {
       const res = await api.list(all);
       setItems(res.items); setUnread(res.unread);
+      // The menu badge shows the same number as this page, at once.
+      announceNewsfeed(res.unread);
     } catch (e: any) {
       setError(e?.message ?? 'Could not load the newsfeed');
     } finally {
@@ -90,19 +93,20 @@ export default function NewsfeedPage() {
   const close = async (id: string) => {
     // Optimistic: the item goes (or greys out) at once; a failure brings it back.
     const before = items;
+    const next = Math.max(0, unread - 1);
     setItems((xs) => showClosed ? xs.map((x) => x.id === id ? { ...x, dismissed: true } : x) : xs.filter((x) => x.id !== id));
-    setUnread((n) => Math.max(0, n - 1));
+    setUnread(next);
+    announceNewsfeed(next);
     try {
       await api.dismiss(id);
-      window.dispatchEvent(new Event(NEWSFEED_CHANGED));
     } catch {
-      setItems(before); setUnread((n) => n + 1);
+      setItems(before); setUnread(unread); announceNewsfeed(unread);
     }
   };
 
   const closeAll = async () => {
     await api.dismissAll();
-    window.dispatchEvent(new Event(NEWSFEED_CHANGED));
+    announceNewsfeed(0);
     load(showClosed);
   };
 

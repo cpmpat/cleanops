@@ -23,7 +23,25 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/manager-full-edit`
+## Unreleased — branch `fix/newsfeed-badge`
+
+**The Newsfeed badge in the menu keeps up.** It used to refresh only once a
+minute, so it lagged behind the count on the Newsfeed page. Now the page hands
+its count to the badge whenever it loads or an item is confirmed, a save in
+Data makes the badge recheck at once, and it also rechecks on every screen
+change and every 30 s.
+
+**Newsfeed sentences:** "online" and "delisted" are bold like the date, and
+the Airbnb / Booking logos are a little larger than the text so they stand
+out (new `strong` sentence part).
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #59
 
 **MANAGER edits everything in Data.** View and edit on every column of every
 CDM list (Accommodation, Owner, User, OX Point), new columns included, without
@@ -32,10 +50,6 @@ stays read-only — a sheet reload finds records by it. Every save is in the
 change history as before.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #58
 

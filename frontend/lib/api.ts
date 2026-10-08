@@ -1350,6 +1350,7 @@ export interface DatasetPage {
 // ─── Newsfeed ───────────────────────────────────────────────────────────────
 export type NewsPart =
   | { t: 'text'; v: string }
+  | { t: 'strong'; v: string }
   | { t: 'date'; v: string }
   | { t: 'channel'; v: 'airbnb' | 'booking' };
 export interface NewsItem {
@@ -1370,8 +1371,16 @@ export const newsfeed = {
   dismiss: (id: string) => post<{ ok: boolean }>(`/newsfeed/${encodeURIComponent(id)}/dismiss`, {}),
   dismissAll: () => post<{ dismissed: number }>('/newsfeed/dismiss-all', {}),
 };
-/** Fired after a news item is closed, so the menu badge updates at once. */
+/**
+ * Tells the menu badge the unread count may have changed. With a number in
+ * `detail.unread` the badge takes it as is (the Newsfeed page already knows
+ * it); without, the badge asks the server.
+ */
 export const NEWSFEED_CHANGED = 'newsfeed:changed';
+export function announceNewsfeed(unread?: number) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(NEWSFEED_CHANGED, { detail: unread === undefined ? {} : { unread } }));
+}
 
 // ─── Notifications → Data ───────────────────────────────────────────────────
 export interface DataChange {

@@ -17,6 +17,7 @@
  */
 export type NewsPart =
   | { t: 'text'; v: string }
+  | { t: 'strong'; v: string }
   | { t: 'date'; v: string }
   | { t: 'channel'; v: 'airbnb' | 'booking' };
 
@@ -64,8 +65,8 @@ export const NEWS_RULES: NewsRule[] = [
     parts: (value, row) => {
       const on = channels(row);
       return on.length
-        ? [{ t: 'text', v: 'is going to be delisted from ' }, ...on, { t: 'text', v: ' on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }]
-        : [{ t: 'text', v: 'is going to be delisted on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }];
+        ? [{ t: 'text', v: 'is going to be ' }, { t: 'strong', v: 'delisted' }, { t: 'text', v: ' from ' }, ...on, { t: 'text', v: ' on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }]
+        : [{ t: 'text', v: 'is going to be ' }, { t: 'strong', v: 'delisted' }, { t: 'text', v: ' on ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' }];
     },
   },
   {
@@ -74,7 +75,7 @@ export const NEWS_RULES: NewsRule[] = [
     field: 'otaAirbnbSalesStarted',
     needs: [],
     parts: (value) => [
-      { t: 'text', v: 'is online on ' }, { t: 'channel', v: 'airbnb' },
+      { t: 'text', v: 'is ' }, { t: 'strong', v: 'online' }, { t: 'text', v: ' on ' }, { t: 'channel', v: 'airbnb' },
       { t: 'text', v: ' from ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' },
     ],
   },
@@ -84,7 +85,7 @@ export const NEWS_RULES: NewsRule[] = [
     field: 'otaBookingSalesStarted',
     needs: [],
     parts: (value) => [
-      { t: 'text', v: 'is online on ' }, { t: 'channel', v: 'booking' },
+      { t: 'text', v: 'is ' }, { t: 'strong', v: 'online' }, { t: 'text', v: ' on ' }, { t: 'channel', v: 'booking' },
       { t: 'text', v: ' from ' }, { t: 'date', v: day(value) }, { t: 'text', v: '.' },
     ],
   },
