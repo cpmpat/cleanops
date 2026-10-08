@@ -70,16 +70,22 @@ export class GoogleSheetsClient {
   async readValues(
     spreadsheetId: string,
     tab: string,
-    opts: { optional?: boolean } = {},
-  ): Promise<string[][] | null> {
+    opts: { optional?: boolean; unformatted?: boolean } = {},
+  ): Promise<any[][] | null> {
     const client = await this.getAuth().getClient();
     const range = encodeURIComponent(`'${tab.replace(/'/g, "''")}'`);
+    // Formatted: each cell as the sheet shows it (always a string).
+    // Unformatted: the cell's value — a real date cell comes back as a serial
+    // day number, whatever display format that one cell happens to have.
+    const render = opts.unformatted
+      ? 'valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER'
+      : 'valueRenderOption=FORMATTED_VALUE';
     const url =
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
-      `/values/${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`;
+      `/values/${range}?majorDimension=ROWS&${render}`;
 
     try {
-      const res = await client.request<{ values?: string[][] }>({ url });
+      const res = await client.request<{ values?: any[][] }>({ url });
       return res.data.values ?? [];
     } catch (err: any) {
       const status = err?.response?.status;
