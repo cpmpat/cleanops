@@ -158,6 +158,10 @@ function DatasetsPageInner() {
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [columnSearch, setColumnSearch] = useState('');
   const [valueSearch, setValueSearch] = useState('');
+  const matchingColumns = useMemo(() => {
+    const q = columnSearch.toLowerCase();
+    return (data?.columns ?? []).filter(c => !q || c.label.toLowerCase().includes(q) || c.key.toLowerCase().includes(q));
+  }, [data, columnSearch]);
 
   // `?d=<key>` is the address of a list — the sidebar links to it, and the
   // footer tabs write it, so a reload or a shared link lands on the same list.
@@ -347,6 +351,26 @@ function DatasetsPageInner() {
     setDrafts(prev => omit(prev, r));
     setRowErrors(prev => omit(prev, r));
     if (editing?.row === r) setEditing(null);
+  }
+
+  function discardAll() {
+    setDrafts({});
+    setRowErrors({});
+    setEditing(null);
+  }
+
+  // One at a time: each record has its own version check, and a failure on one
+  // must not stop or roll back the others. A failed one keeps its draft and
+  // its error; the rest leave the bar as they save.
+  const [savingAll, setSavingAll] = useState(false);
+  async function saveAll() {
+    if (savingAll) return;
+    setSavingAll(true);
+    try {
+      for (const r of Object.keys(drafts).map(Number)) await saveRow(r);
+    } finally {
+      setSavingAll(false);
+    }
   }
 
   async function saveRow(r: number) {
@@ -723,16 +747,33 @@ function DatasetsPageInner() {
               placeholder="Find a column…"
               className="ml-auto px-2.5 py-1 rounded-lg border border-surface-border text-xs w-48 focus:outline-none focus:ring-1 focus:ring-accent"
             />
-            <button onClick={() => setHidden(new Set())} className="text-xs text-accent font-semibold whitespace-nowrap">
+            {/* With a search typed, both act on the matching columns only — hide
+                all, then show the few you want, or the other way round. */}
+            <button
+              onClick={() => setHidden(prev => {
+                if (!columnSearch) return new Set();
+                const next = new Set(prev);
+                for (const c of matchingColumns) next.delete(c.key);
+                return next;
+              })}
+              className="text-xs text-accent font-semibold whitespace-nowrap"
+            >
               Show all
+            </button>
+            <button
+              onClick={() => setHidden(prev => {
+                const next = new Set(prev);
+                for (const c of columnSearch ? matchingColumns : data.columns) next.add(c.key);
+                return next;
+              })}
+              className="text-xs text-accent font-semibold whitespace-nowrap"
+            >
+              Hide all
             </button>
           </div>
           <p className="text-[11px] text-ink-faint mb-2">Hover a column for its description.</p>
           <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
-            {data.columns
-              .filter(c => !columnSearch ||
-                c.label.toLowerCase().includes(columnSearch.toLowerCase()) ||
-                c.key.toLowerCase().includes(columnSearch.toLowerCase()))
+            {matchingColumns
               .map(c => (
                 <button
                   key={c.key}
@@ -1022,6 +1063,9 @@ function DatasetsPageInner() {
           onSave={(r) => void saveRow(r)}
           onDiscard={discardRow}
           onOpen={setDrawer}
+          onSaveAll={() => void saveAll()}
+          onDiscardAll={discardAll}
+          savingAll={savingAll}
         />
       )}
 

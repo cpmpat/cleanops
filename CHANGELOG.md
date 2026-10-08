@@ -23,7 +23,32 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/pricing-group-moves`
+## Unreleased — branch `feat/data-bulk-save`
+
+**Data: one Save bar for many records.** Edits across several rows no longer
+stack one bar per row. A single bar says "3 records · 5 unsaved changes" with
+**Save all** and **Discard all** (asks once more before discarding). The count
+opens a list of the records, each with its own save / discard and its error if
+it failed; it opens by itself on a failure. Records save one after another, so
+one failing does not stop the rest. Changed cells stay yellow until saved.
+
+**Columns panel: Hide all.** Next to Show all. With a column search typed, both
+act only on the matching columns.
+
+**Group RD is a dropdown** from the same ranked list as Group RD Pricing
+(`accommodation.pricingGroup`).
+
+**UP / DOWN logos sit on the text line.** The letters match the text's capitals
+on the baseline and the arrow hangs into the line gap, so the line is no taller
+than the others (Newsfeed and Stream).
+
+*Migrations:* `20261008170000_group_rd_picklist`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #64
 
 **Pricing Group moves: ranked list, Newsfeed, Stream.**
 - The 12 Pricing Groups are a ranked pick list in the database
@@ -45,10 +70,6 @@ Entries are newest first. Dates are the merge date.
 unit rows scroll (only the day strip was pinned before).
 
 *Migrations:* `20261008150000_pricing_group_moves`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #63
 
