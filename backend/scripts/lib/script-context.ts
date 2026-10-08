@@ -23,6 +23,7 @@ import { AvantioAdapter } from '../../src/integrations/avantio/avantio.adapter';
 import { BookingSyncService } from '../../src/integrations/booking-sync.service';
 import { TurnoverSyncService } from '../../src/integrations/turnover-sync.service';
 import { TurnoverReconcileService } from '../../src/integrations/turnover-reconcile.service';
+import { SafetySweepService } from '../../src/integrations/safety-sweep.service';
 import { PrismaService } from '../../src/common/prisma.service';
 
 @Module({
@@ -36,6 +37,7 @@ import { PrismaService } from '../../src/common/prisma.service';
     BookingSyncService,
     TurnoverSyncService,
     TurnoverReconcileService,
+    SafetySweepService,
   ],
 })
 class ScriptsModule {}
@@ -46,6 +48,7 @@ export interface ScriptContext {
   bookingSync: BookingSyncService;
   turnoverSync: TurnoverSyncService;
   reconcile: TurnoverReconcileService;
+  sweep: SafetySweepService;
   close: () => Promise<void>;
 }
 
@@ -66,6 +69,7 @@ export async function bootScriptContext(
     bookingSync: app.get(BookingSyncService),
     turnoverSync: app.get(TurnoverSyncService),
     reconcile: app.get(TurnoverReconcileService),
+    sweep: app.get(SafetySweepService),
     close: () => app.close(),
   };
 }

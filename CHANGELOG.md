@@ -23,7 +23,33 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/orphan-cancel-carryover`
+## Unreleased — branch `feat/nightly-safety-sweep`
+
+**Nightly safety sweep at 03:20 Prague.** For every tenant that syncs with
+Avantio: (1) bookings Avantio updated in the last 7 days that are missing here
+are synced, with the usual notifications; (2) the turnover reconcile runs over
+bookings arriving in the same 7 days with `--apply --verify`: missing
+turnovers are created, stale ones re-threaded, its own orphan-cancels revived.
+Since #61 it never cancels a turnover whose bookings are CONFIRMED; (3) for
+every pair of overlapping CONFIRMED bookings (IMPOSSIBLE_WINDOW — usually a
+cancellation Avantio never sent) both bookings are re-fetched from Avantio by
+id and, if that changed anything, those units are reconciled again. What is
+left needing a person (real overlaps, work-carrying rows) is only reported. Each night writes one audit row (`sweep.completed` /
+`sweep.failed`, actor `safety-sweep@cleanops`) and log lines prefixed
+`[sweep …]`. No UI.
+
+The 30-minute sync and the sweep now share one lock, so they never write at
+the same time (single Railway instance assumed). Run it by hand with
+`./scripts/prod.sh sweep:run -- --tenant prague-stays [--apply] [--days n]`.
+
+*Migrations:* None. *Env:* `SAFETY_SWEEP_ENABLED=false` turns it off
+(default on). Turnovers are only swept when `TURNOVER_SYNC_ENABLED=true`.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #61
 
 **A reconcile orphan-cancel no longer sticks to a real cleaning.** When
 `reconcile:turnovers --apply` cancelled a turnover as an orphan, the row
@@ -55,10 +81,6 @@ pointed at and all bookings at the unit (cancelled included), and the
 bookings' audit events.
 
 *Migrations:* None (`skipReason` is an existing text column). *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #60
 

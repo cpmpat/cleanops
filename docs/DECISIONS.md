@@ -214,6 +214,25 @@ The reconcile also cancels an orphan only when one of its bookings is gone
 pairs differently from the reconcile is a disagreement about order, not proof
 that no cleaning is needed: it is reported for a person, never cancelled.
 
+## 2026-10-08 — the nightly sweep fixes, reports, and keeps notifications on
+
+The sweep (03:20 Prague, `SafetySweepService`) applies only what the
+reconcile is already allowed to do unattended and reports the rest. It sends
+the normal notifications for bookings it finds: a booking the 30-minute sync
+missed is one staff should have heard about, and suppressing notifications
+in the server process would leak to concurrent requests. Its report is the
+log plus one `sweep.completed` audit row per tenant per night — no screen, by
+choice:
+
+```sql
+select "createdAt", action,
+       metadata->'bookings'->'outcomes'  as bookings,
+       metadata->'turnovers'->'applied'  as fixed,
+       metadata->'turnovers'->'needsReview' as review
+from audit_events where "actorEmail" = 'safety-sweep@cleanops'
+order by "createdAt" desc limit 14;
+```
+
 ---
 
 ## Open items
@@ -249,10 +268,6 @@ item in the same PR that finishes it; delete it once the PR is deployed.
 - [ ] After deploy, before anyone edits: optionally run
       `import:cdm --list accommodation --apply` once to fill the five new
       columns from the sheet (it refuses once app edits exist).
-- [ ] **Nightly safety sweep** on the `@Cron` scheduler: `--find-missing`
-      over 7 days (notifications suppressed) plus reconcile of orphan
-      turnovers, with a log of what it fixed. Evidence: 7 missed bookings
-      (Sep 13–15), 9 orphans (Sep 25).
 - [ ] A log line per `'skipped'` sync result, with reference and raw status.
 
 ### Build — smaller
