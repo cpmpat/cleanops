@@ -88,6 +88,8 @@ const PICKLIST_BINDINGS: Record<string, Record<string, string>> = {
     checkInMethod: 'accommodation.checkInMethod',
     terraceType: 'accommodation.terraceType',
     pricingGroup: 'accommodation.pricingGroup',
+    // Same ranked list as pricingGroup ("Group RD Pricing").
+    groupRd: 'accommodation.pricingGroup',
   },
 };
 

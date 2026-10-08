@@ -43,14 +43,19 @@ const COLORS: Record<StreamItemType, { bg: string; text: string; border: string 
 };
 
 /** The UP / DOWN logo in front of a Pricing Group move. */
-export function MoveMark({ move }: { move?: StreamItem['move'] }) {
+export function MoveMark({ move, block }: { move?: StreamItem['move']; block?: boolean }) {
   if (move !== 'UP' && move !== 'DOWN') return null;
   return (
     <img
       src={move === 'UP' ? '/brands/up.svg' : '/brands/down.png'}
       alt={move === 'UP' ? 'up' : 'down'}
       title={move === 'UP' ? 'up' : 'down'}
-      className="inline-block h-[1.3em] w-auto align-[-0.3em] mr-1.5"
+      // Letters on the baseline at cap height; the arrow hangs into the line
+      // gap (same sizing as the Newsfeed sentence).
+      className={block
+        // Beside a truncated line (which would clip anything hanging out of it).
+        ? 'h-5 w-auto flex-shrink-0'
+        : `inline-block w-auto mr-1.5 align-baseline ${move === 'UP' ? 'h-[1.45em] -mt-[0.75em]' : 'h-[1.25em] -mb-[0.53em]'}`}
     />
   );
 }
@@ -97,10 +102,10 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
               </Link>
             )}
           </div>
-          <p className="font-semibold text-sm text-ink truncate">
-            <MoveMark move={item.move} />
-            {item.title}
-          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <MoveMark move={item.move} block />
+            <p className="font-semibold text-sm text-ink truncate">{item.title}</p>
+          </div>
           {item.subtitle && (
             <p className="text-xs text-ink-muted mt-0.5 line-clamp-2">{item.subtitle}</p>
           )}

@@ -37,9 +37,15 @@ const CHANNEL: Record<'airbnb' | 'booking', { src: string; name: string }> = {
   booking: { src: '/brands/booking.png', name: 'Booking.com' },
 };
 
-const MOVE: Record<'up' | 'down', { src: string; name: string }> = {
-  up: { src: '/brands/up.svg', name: 'up' },
-  down: { src: '/brands/down.png', name: 'down' },
+/**
+ * The logos are lettering with an arrow: UP's arrow rises above the letters,
+ * DOWN's falls below them. Each is sized so its letters match the text's
+ * capitals and sit on the baseline, and the arrow hangs into the line gap
+ * through a negative margin, so the line is no taller than its neighbours.
+ */
+const MOVE: Record<'up' | 'down', { src: string; name: string; cls: string }> = {
+  up: { src: '/brands/up.svg', name: 'up', cls: 'h-[1.45em] -mt-[0.75em] align-baseline' },
+  down: { src: '/brands/down.png', name: 'down', cls: 'h-[1.25em] -mb-[0.53em] align-baseline' },
 };
 
 /** The sentence: "online"/"delisted" and dates bold, channels and moves as
@@ -58,7 +64,7 @@ function Sentence({ parts, title }: { parts: NewsPart[]; title: React.ReactNode 
             src={MOVE[p.v].src}
             alt={MOVE[p.v].name}
             title={MOVE[p.v].name}
-            className="inline-block h-[1.4em] w-auto align-[-0.32em] mx-[0.15em]"
+            className={cn('inline-block w-auto mx-[0.15em]', MOVE[p.v].cls)}
           />
         )
         : p.t === 'date' || p.t === 'strong' ? <strong key={i} className="font-semibold">{p.v}</strong>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { History, Loader2, Lock, Save, X, RotateCcw } from 'lucide-react';
+import { History, Loader2, Lock, Save, X, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   datasets as api,
   type DatasetColumn,
@@ -104,8 +104,15 @@ export function ValueInput({
  * The per-row Save bar. One entry per row with unsaved edits; each saves or
  * discards that row alone, so a failed save never takes other rows with it.
  */
+/**
+ * One bar for every pending change on the page, however many rows they touch.
+ * One row: its name, Discard, Save — as before. Several: "3 records · 5
+ * changes" with Save all / Discard all, and a list (open it from the count) to
+ * open, save or drop a single record. A record that failed stays listed with
+ * its error; the list opens by itself when that happens.
+ */
 export function SaveBar({
-  page, drafts, saving, errors, onSave, onDiscard, onOpen,
+  page, drafts, saving, errors, onSave, onDiscard, onOpen, onSaveAll, onDiscardAll, savingAll = false,
 }: {
   page: DatasetPage;
   drafts: Record<number, RowDraft>;
@@ -114,51 +121,109 @@ export function SaveBar({
   onSave: (row: number) => void;
   onDiscard: (row: number) => void;
   onOpen: (row: number) => void;
+  onSaveAll: () => void;
+  onDiscardAll: () => void;
+  /** Save all is working through the list (between two rows nothing is "saving"). */
+  savingAll?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const dirty = Object.keys(drafts).map(Number).filter((r) => Object.keys(drafts[r] ?? {}).length > 0);
+  const failed = dirty.filter((r) => errors[r]);
+  const busy = savingAll || dirty.some((r) => saving[r]);
+  const changes = dirty.reduce((n, r) => n + Object.keys(drafts[r]).length, 0);
+
+  useEffect(() => { if (failed.length > 0 && dirty.length > 1) setOpen(true); }, [failed.length, dirty.length]);
+  useEffect(() => { if (dirty.length <= 1) { setOpen(false); setConfirmDiscard(false); } }, [dirty.length]);
+
   if (dirty.length === 0) return null;
+  const single = dirty.length === 1 ? dirty[0] : null;
+
   return (
     <div className="fixed bottom-0 left-56 right-0 z-50 pointer-events-none">
-      <div className="max-w-5xl mx-auto px-6 pb-5 space-y-2">
-        {dirty.map((r) => {
-          const n = Object.keys(drafts[r]).length;
-          return (
-            <div
-              key={r}
-              className="pointer-events-auto flex items-center gap-3 bg-ink text-white rounded-2xl shadow-modal px-5 py-3 animate-scale-in"
-            >
-              <button
-                type="button"
-                onClick={() => onOpen(r)}
-                className="flex-1 min-w-0 text-left"
-                title="Open the record"
-              >
-                <span className="block text-sm font-semibold truncate">{rowTitle(page, r)}</span>
-                <span className={cn('block text-xs', errors[r] ? 'text-red-300' : 'text-white/60')}>
-                  {errors[r] ?? `${n} unsaved change${n === 1 ? '' : 's'}`}
+      <div className="max-w-5xl mx-auto px-6 pb-5">
+        <div className="pointer-events-auto bg-ink text-white rounded-2xl shadow-modal animate-scale-in overflow-hidden">
+          {open && single === null && (
+            <ul className="max-h-[40vh] overflow-y-auto divide-y divide-white/10 border-b border-white/10">
+              {dirty.map((r) => {
+                const n = Object.keys(drafts[r]).length;
+                return (
+                  <li key={r} className="flex items-center gap-3 px-5 py-2">
+                    <button type="button" onClick={() => onOpen(r)} className="flex-1 min-w-0 text-left" title="Open the record">
+                      <span className="block text-[13px] font-medium truncate">{rowTitle(page, r)}</span>
+                      <span className={cn('block text-[11px]', errors[r] ? 'text-red-300' : 'text-white/50')}>
+                        {errors[r] ?? `${n} change${n === 1 ? '' : 's'}`}
+                      </span>
+                    </button>
+                    {saving[r] ? <Loader2 size={14} className="animate-spin text-white/70" /> : (
+                      <>
+                        <button type="button" onClick={() => onDiscard(r)} title="Discard this record's changes"
+                          className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"><RotateCcw size={13} /></button>
+                        <button type="button" onClick={() => onSave(r)} title="Save only this record"
+                          className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"><Save size={13} /></button>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="flex items-center gap-3 px-5 py-3">
+            {single !== null ? (
+              <button type="button" onClick={() => onOpen(single)} className="flex-1 min-w-0 text-left" title="Open the record">
+                <span className="block text-sm font-semibold truncate">{rowTitle(page, single)}</span>
+                <span className={cn('block text-xs', errors[single] ? 'text-red-300' : 'text-white/60')}>
+                  {errors[single] ?? `${changes} unsaved change${changes === 1 ? '' : 's'}`}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => onDiscard(r)}
-                disabled={saving[r]}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 transition disabled:opacity-50"
-              >
-                <RotateCcw size={13} />
-                Discard
+            ) : (
+              <button type="button" onClick={() => setOpen((o) => !o)} className="flex-1 min-w-0 text-left flex items-center gap-2" title={open ? 'Hide the list' : 'Show which records'}>
+                {open ? <ChevronDown size={16} className="text-white/60" /> : <ChevronUp size={16} className="text-white/60" />}
+                <span>
+                  <span className="block text-sm font-semibold">
+                    {dirty.length} records · {changes} unsaved change{changes === 1 ? '' : 's'}
+                  </span>
+                  <span className={cn('block text-xs', failed.length ? 'text-red-300' : 'text-white/60')}>
+                    {busy
+                      ? `Saving… ${dirty.length} left`
+                      : failed.length
+                        ? `${failed.length} record${failed.length === 1 ? '' : 's'} could not be saved — see the list`
+                        : 'Changed cells are marked yellow'}
+                  </span>
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={() => onSave(r)}
-                disabled={saving[r]}
-                className="flex items-center gap-2 px-4 py-2 bg-white text-ink rounded-xl text-sm font-semibold hover:bg-surface transition disabled:opacity-50"
-              >
-                {saving[r] ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Save
-              </button>
-            </div>
-          );
-        })}
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                if (single !== null) return onDiscard(single);
+                if (!confirmDiscard) return setConfirmDiscard(true);
+                setConfirmDiscard(false);
+                onDiscardAll();
+              }}
+              onBlur={() => setConfirmDiscard(false)}
+              disabled={busy}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50',
+                confirmDiscard ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30' : 'text-white/80 hover:text-white hover:bg-white/10',
+              )}
+            >
+              <RotateCcw size={13} />
+              {single !== null ? 'Discard' : confirmDiscard ? `Discard ${dirty.length} records?` : 'Discard all'}
+            </button>
+            <button
+              type="button"
+              onClick={() => (single !== null ? onSave(single) : onSaveAll())}
+              disabled={busy}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-ink rounded-xl text-sm font-semibold hover:bg-surface transition disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {single !== null ? 'Save' : `Save all (${dirty.length})`}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
