@@ -23,7 +23,21 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/sheet-date-serials`
+## Unreleased — branch `feat/manager-full-edit`
+
+**MANAGER edits everything in Data.** View and edit on every column of every
+CDM list (Accommodation, Owner, User, OX Point), new columns included, without
+matrix rows (`FULL_EDIT_ROLES`). The record's key (idAvantio, id, internalId)
+stays read-only — a sheet reload finds records by it. Every save is in the
+change history as before.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #58
 
 **Dates are read from the sheet's cell values, not their display.** The
 importer read each date from the text the cell shows. That text depends on
@@ -44,10 +58,6 @@ reflected, and an item whose date was cleared disappears.
 Script + backend; nothing in the schema.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #57
 
