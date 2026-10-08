@@ -38,7 +38,9 @@
 //    status, notes and timestamps onto the fresh row.
 //  * Never resurrect a slot a human closed. A slot covered by a CANCELLED
 //    turnover, or by a SKIPPED turnover that is not a system merge, is left
-//    exactly as it is.
+//    exactly as it is. The one exception is a row this reconcile itself
+//    cancelled as an orphan (skipReason ORPHAN_RECONCILE): when the bookings
+//    later justify its slot again it is revived through supersede().
 //  * Never auto-retire a turnover that is IN_PROGRESS / COMPLETED / FLAGGED or
 //    that carries assignments. Those get reported as needsReview instead.
 //  * Dry run is the default. The caller has to ask for writes.
@@ -47,7 +49,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, Booking, Turnover, TurnoverStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
-import { TurnoverSyncService } from './turnover-sync.service';
+import {
+  TurnoverSyncService,
+  ORPHAN_CANCEL_REASON,
+  isOrphanCancelled,
+} from './turnover-sync.service';
 import { timeInAppZone } from '../common/time';
 
 type Tx = Prisma.TransactionClient;
@@ -436,7 +442,7 @@ export class TurnoverReconcileService {
         })
       : null;
 
-    const expected = this.buildExpectedSlots(bookings, anchor);
+    const expected = this.buildExpectedSlots(bookings, anchor, opts.fromDate ?? null);
 
     // A slot that ends before it starts means two CONFIRMED bookings occupy
     // the unit at once — one guest still in when the next is already due. The
@@ -524,8 +530,10 @@ export class TurnoverReconcileService {
     // Slots a human closed: covered, never recreated.
     const closedSlotKeys = new Set<string>();
     for (const t of actives) {
+      // A CANCELLED row is a human's decision unless this reconcile wrote it
+      // as an orphan; those slots may be recreated once bookings justify them.
       const humanClosed =
-        t.status === TurnoverStatus.CANCELLED ||
+        (t.status === TurnoverStatus.CANCELLED && !isOrphanCancelled(t)) ||
         (t.status === TurnoverStatus.SKIPPED &&
           (t.skipReason === 'MANAGER_SKIPPED' ||
             (t.skipReason === null && opts.respectUnknownSkips)));
@@ -650,11 +658,53 @@ export class TurnoverReconcileService {
       );
     }
 
-    // 2) Expected slots with no live turnover: re-thread a stale one if we can
-    //    identify it, otherwise create.
+    // 2) Expected slots with no live turnover: revive our own orphan-cancel if
+    //    one covers the slot, else re-thread a stale one if we can identify
+    //    it, otherwise create.
+    const orphanCancelledByKey = new Map<string, TurnoverWithAssignmentCount>();
+    for (const t of actives) {
+      if (isOrphanCancelled(t)) orphanCancelledByKey.set(slotKey(t.fromBookingId, t.toBookingId), t);
+    }
+
     for (const [key, slot] of expectedByKey) {
       if ((liveByKey.get(key) ?? []).length > 0) continue;
       if (closedSlotKeys.has(key)) continue; // a human closed this slot
+
+      const revivable = orphanCancelledByKey.get(key);
+      if (revivable && !claimed.has(revivable.id)) {
+        claimed.add(revivable.id);
+        let applied = false;
+        let newId: string | undefined;
+        if (opts.apply) {
+          // supersede() turns an orphan-cancel back into PENDING/ASSIGNED and
+          // keeps notes, which a fresh createTurnover() would drop.
+          const fresh = await this.turnoverSync.supersede(
+            revivable.id,
+            {
+              availableFrom: slot.availableFrom,
+              dueBy: slot.dueBy,
+              isOwnerStay: slot.isOwnerStay,
+            },
+            tx,
+          );
+          newId = fresh.id;
+          claimed.add(fresh.id);
+          await this.audit(tx, opts.tenantId, 'turnover.orphan_revived', revivable.id, {
+            propertyId: property.id,
+            newTurnoverId: fresh.id,
+            slot: this.describeSlot(slot),
+          });
+          applied = true;
+        }
+        add(
+          'MISSING',
+          `slot ${this.describeSlot(slot)} is covered only by ${revivable.id}, ` +
+          `which an earlier reconcile cancelled as an orphan`,
+          opts.apply ? `revived as ${newId}` : 'revive it (back to PENDING, notes kept)',
+          { turnoverId: newId ?? revivable.id, applied },
+        );
+        continue;
+      }
 
       const candidate = this.findStaleCandidate(slot, live, claimed, expectedByKey);
 
@@ -763,7 +813,25 @@ export class TurnoverReconcileService {
         continue;
       }
 
-      const why = await this.explainOrphan(tx, t);
+      const { why, bookingsAtFault } = await this.explainOrphan(tx, t);
+
+      // Only cancel when a booking the row points at is actually gone
+      // (cancelled, deleted, moved to another property). When both bookings
+      // are still CONFIRMED the row is "orphan" only because the chain sees a
+      // different neighbour — an extra booking in between, a time that moved,
+      // the --since window. That is a disagreement about order, not proof
+      // there is no cleaning, and on 25 Sep cancelling such a row removed a
+      // real cleaning (Mon 5 Oct). Report it; a person decides.
+      if (!bookingsAtFault) {
+        add(
+          'ORPHAN',
+          `turnover ${t.id} (${t.status}) matches no slot, but its bookings are ` +
+          `valid: ${why}`,
+          'left alone — bookings are CONFIRMED; check the chain with inspect:turnover',
+          { turnoverId: t.id, needsReview: true },
+        );
+        continue;
+      }
 
       if (this.isProtected(t) || t._assignmentCount > 0) {
         add(
@@ -791,7 +859,13 @@ export class TurnoverReconcileService {
       if (opts.apply) {
         await tx.turnover.update({
           where: { id: t.id },
-          data: { status: TurnoverStatus.CANCELLED, cancelledAt: new Date() },
+          data: {
+            status: TurnoverStatus.CANCELLED,
+            cancelledAt: new Date(),
+            // Marks this as the reconcile's call, not a manager's: see
+            // ORPHAN_CANCEL_REASON for how it is undone when bookings change.
+            skipReason: ORPHAN_CANCEL_REASON,
+          },
         });
         await this.audit(tx, opts.tenantId, 'turnover.orphan_cancelled', t.id, {
           propertyId: property.id,
@@ -824,9 +898,32 @@ export class TurnoverReconcileService {
   private buildExpectedSlots(
     bookings: Booking[],
     anchor: Booking | null,
+    fromDate: Date | null,
   ): ExpectedSlot[] {
     const slots: ExpectedSlot[] = [];
-    if (bookings.length === 0) return slots;
+    if (bookings.length === 0) {
+      // Nobody arrives inside the window, but the guest who arrived before it
+      // may still be in the unit — a long stay. Their departure is the
+      // property's trailing slot and the cleaning after it is real. Returning
+      // nothing here made that turnover look like an orphan: on 25 Sep the
+      // reconcile cancelled the trailing turnover of a 36-night stay at
+      // Hartigova 8/110 (in 30 Aug, out 5 Oct), and the next guest's cleaning
+      // inherited the cancel.
+      //
+      // Only while that departure is inside the window: an anchor who left
+      // months ago would otherwise get a fresh "missing" cleaning created.
+      if (anchor && (!fromDate || (anchor.checkOutTime !== null && anchor.checkOutTime >= fromDate))) {
+        slots.push({
+          key: slotKey(anchor.id, null),
+          fromBookingId: anchor.id,
+          toBookingId: null,
+          availableFrom: anchor.checkOutTime,
+          dueBy: null,
+          isOwnerStay: false,
+        });
+      }
+      return slots;
+    }
 
     for (let i = 0; i < bookings.length; i++) {
       const to = bookings[i];
@@ -917,29 +1014,66 @@ export class TurnoverReconcileService {
     return ranked[0];
   }
 
+  /**
+   * Why a live turnover matches no expected slot. `bookingsAtFault` is true
+   * only when one of its bookings is gone (missing, CANCELLED, moved property)
+   * or it has no bookings at all — the only cases the reconcile may cancel.
+   */
   private async explainOrphan(
     tx: Tx,
     t: TurnoverWithAssignmentCount,
-  ): Promise<string> {
+  ): Promise<{ why: string; bookingsAtFault: boolean }> {
     const reasons: string[] = [];
+    const ends: Booking[] = [];
     for (const [label, id] of [
       ['fromBooking', t.fromBookingId],
       ['toBooking', t.toBookingId],
     ] as const) {
       if (!id) continue;
-      const b = await tx.booking.findUnique({
-        where: { id },
-        select: { status: true, propertyId: true },
-      });
+      const b = await tx.booking.findUnique({ where: { id } });
       if (!b) reasons.push(`${label} ${id} no longer exists`);
-      else if (b.status === 'CANCELLED') reasons.push(`${label} ${id} is CANCELLED`);
+      else if (b.status === 'CANCELLED') reasons.push(`${label} ${b.bookingRef} is CANCELLED`);
       else if (b.propertyId !== t.propertyId)
-        reasons.push(`${label} ${id} now belongs to another property`);
+        reasons.push(`${label} ${b.bookingRef} now belongs to another property`);
+      else ends.push(b);
     }
     if (t.fromBookingId === null && t.toBookingId === null) {
       reasons.push('both endpoints are NULL');
     }
-    return reasons.length ? reasons.join('; ') : 'no matching adjacency in bookings';
+    if (reasons.length) return { why: reasons.join('; '), bookingsAtFault: true };
+
+    // Both bookings are fine. Name what sits between them, if anything.
+    const [from, to] = [
+      ends.find((b) => b.id === t.fromBookingId),
+      ends.find((b) => b.id === t.toBookingId),
+    ];
+    if (from && to) {
+      const between = await tx.booking.findMany({
+        where: {
+          propertyId: t.propertyId,
+          status: 'CONFIRMED',
+          id: { notIn: [from.id, to.id] },
+          checkInTime: { gte: from.checkInTime, lte: to.checkInTime },
+        },
+        select: { bookingRef: true, checkInTime: true },
+        orderBy: { checkInTime: 'asc' },
+      });
+      if (between.length) {
+        return {
+          why:
+            `${between.length} other CONFIRMED booking(s) arrive between ` +
+            `${from.bookingRef} and ${to.bookingRef}: ` +
+            between.map((b) => `${b.bookingRef} @ ${b.checkInTime.toISOString()}`).join(', '),
+          bookingsAtFault: false,
+        };
+      }
+      return {
+        why: `${from.bookingRef} -> ${to.bookingRef} are adjacent now; ` +
+          `the mismatch is the --since window or a tie on check-in time`,
+        bookingsAtFault: false,
+      };
+    }
+    return { why: 'no matching adjacency in bookings', bookingsAtFault: false };
   }
 
   // ==========================================================================

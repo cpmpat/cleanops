@@ -195,6 +195,25 @@ the dev key in `backend/.env` and `pmsConfigFor()` throws "Stored secret could
 not be decrypted" — which reads like a corrupted row and is not. The
 `AVANTIO_API_KEY` in `backend/.env` is stale (401) and is not a fallback.
 
+## 2026-10-08 — a cancel by the reconcile is provisional; a manager's is final
+
+Both write status CANCELLED, so the code could not tell them apart and
+`supersede()` carried either one forward. They are not the same thing: a
+manager cancelling says "no cleaning for this pair"; the reconcile cancelling
+says "right now no pair of bookings justifies this row". The reconcile now
+writes `skipReason = 'ORPHAN_RECONCILE'` with its cancel, and that cancel is
+undone whenever the bookings point at the row again (sync supersede, a new
+booking, or a later reconcile). `skipReason` NULL on a CANCELLED row means a
+person did it — it is kept everywhere, as before. Rows cancelled before this
+rule were tagged by `repair:orphan-cancels`, recognised by an audit event
+`turnover.orphan_cancelled` on the original row and the same `cancelledAt`
+copied down the chain.
+
+The reconcile also cancels an orphan only when one of its bookings is gone
+(missing, CANCELLED, moved property). Two CONFIRMED bookings that the chain
+pairs differently from the reconcile is a disagreement about order, not proof
+that no cleaning is needed: it is reported for a person, never cancelled.
+
 ---
 
 ## Open items

@@ -898,6 +898,9 @@ model Turnover {
   // Why this turnover was SKIPPED. Lets the reconciler tell a system-merged
   // slot (safe to re-thread) apart from a deliberate human skip (never touch).
   // Values: 'MERGED_ON_CANCELLATION' | 'MANAGER_SKIPPED'
+  // Also set on CANCELLED rows: 'ORPHAN_RECONCILE' marks a cancel the
+  // reconcile made (undone when bookings justify the slot again); NULL on a
+  // CANCELLED row means a manager cancelled it and it stays cancelled.
   skipReason       String?
 
   supersededById   String?         
