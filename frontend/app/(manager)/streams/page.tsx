@@ -9,6 +9,7 @@ import {
 import { streams, properties as propertiesApi, ApiError } from '@/lib/api';
 import type { StreamItem, StreamItemType, Property } from '@/lib/api';
 import { ManualEventComposer } from '@/components/ManualEventComposer';
+import { MoveMark } from '@/components/StreamItemCard';
 import { useSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ const TYPES: {
   { key: 'REPAIR',        label: 'Opravy',     side: 'left',  icon: <Wrench size={12} />,         dot: 'bg-violet-500',  chip: 'text-violet-700 bg-violet-50 border-violet-200' },
   { key: 'INSPECTION',    label: 'Kontroly',   side: 'left',  icon: <ClipboardCheck size={12} />, dot: 'bg-teal-500',    chip: 'text-teal-700 bg-teal-50 border-teal-200' },
   { key: 'MANUAL',        label: 'Ručně',      side: 'left',  icon: <PenLine size={12} />,        dot: 'bg-stone-400',   chip: 'text-stone-700 bg-stone-100 border-stone-300' },
+  { key: 'PRICING',       label: 'Cenová skupina', side: 'left', icon: <ArrowUpDown size={12} />, dot: 'bg-emerald-600', chip: 'text-emerald-800 bg-emerald-50 border-emerald-200' },
   { key: 'CLEANING',      label: 'Úklidy (staré)', side: 'left', icon: <Sparkles size={12} />,    dot: 'bg-stone-300',   chip: 'text-stone-600 bg-stone-50 border-stone-200' },
 ];
 
@@ -489,7 +491,7 @@ function Card({
         )}
       </div>
 
-      <p className="text-[13.5px] font-semibold text-ink mt-1.5 leading-snug">{item.title}</p>
+      <p className="text-[13.5px] font-semibold text-ink mt-1.5 leading-snug"><MoveMark move={item.move} />{item.title}</p>
       {item.subtitle && (
         <p className="text-[11.5px] text-ink-muted mt-1 line-clamp-2">{item.subtitle}</p>
       )}
@@ -537,7 +539,7 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
             <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
               {(META[item.type] ?? META.MANUAL).label}
             </p>
-            <h2 className="text-lg font-bold text-ink mt-1">{item.title}</h2>
+            <h2 className="text-lg font-bold text-ink mt-1"><MoveMark move={item.move} />{item.title}</h2>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center">
             <X size={17} />

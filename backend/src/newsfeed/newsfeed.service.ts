@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
-import { DB_MODELS, TABS } from '../datasets/datasets.service';
+import { DB_MODELS, FULL_EDIT_ROLES, TABS } from '../datasets/datasets.service';
 import { NEWS_RULES, NEWSFEED_DAYS, NewsPart, NewsRule, plain } from './rules';
 
 const IMPORT_ROLE = 'IMPORT';
+/** Pick-list values match ignoring case and spaces ("CK A" = "CKA"), as the database trigger does. */
+const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase();
 const TITLE_FIELDS = ['titleAvantio', 'displayName', 'nickname', 'name', 'lastName'];
 
 export interface NewsItem {
@@ -29,6 +31,8 @@ export class NewsfeedService {
 
   /** Rules this role may see: it must be allowed to view the field the news is about. */
   private async rulesFor(tenantId: string, role: UserRole): Promise<NewsRule[]> {
+    // MANAGER sees every column of every list (FULL_EDIT_ROLES), matrix or not.
+    if (FULL_EDIT_ROLES.includes(role)) return NEWS_RULES;
     const grants = await this.prisma.datasetFieldAccess.findMany({
       where: { tenantId, role, canView: true, dataset: { in: [...new Set(NEWS_RULES.map((r) => r.dataset))] } },
       select: { dataset: true, field: true },
@@ -56,7 +60,7 @@ export class NewsfeedService {
         OR: rules.map((r) => ({ dataset: r.dataset, field: r.field })),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { id: true, dataset: true, rowId: true, field: true, newValue: true, actorEmail: true, actorRole: true, createdAt: true },
+      select: { id: true, dataset: true, rowId: true, field: true, oldValue: true, newValue: true, actorEmail: true, actorRole: true, createdAt: true },
     });
 
     // Latest change per record and field; a cleared value means no news.
@@ -99,6 +103,16 @@ export class NewsfeedService {
       })).map((d) => d.itemId),
     );
 
+    // Ranked pick lists, for rules that say which way a value moved.
+    const ranks = new Map<string, number>();
+    for (const v of await this.prisma.datasetPicklistValue.findMany({
+      where: { tenantId, active: true },
+      select: { list: true, value: true, sortOrder: true },
+    })) {
+      ranks.set(`${v.list}|${norm(v.value)}`, v.sortOrder);
+    }
+    const rank = (list: string, value: string) => ranks.get(`${list}|${norm(value)}`) ?? null;
+
     const out: NewsItem[] = [];
     for (const c of latest) {
       const rule = rules.find((r) => r.dataset === c.dataset && r.field === c.field)!;
@@ -112,19 +126,19 @@ export class NewsfeedService {
       const value = current instanceof Date ? current.toISOString().slice(0, 10)
         : current == null ? '' : String(current).trim();
       if (!value) continue;
-      const parts = rule.parts(value, row);
+      const parts = rule.parts(value, row, { oldValue: c.oldValue, rank });
       if (!parts) continue;
       const spec = DB_MODELS[c.dataset];
       const key = row[spec.key] == null ? null : String(row[spec.key]);
-      const title = TITLE_FIELDS.map((f) => row[f]).find((v) => v != null && String(v).trim() !== '');
+      const title = String(TITLE_FIELDS.map((f) => row[f]).find((v) => v != null && String(v).trim() !== '') ?? key ?? c.rowId);
       out.push({
         id: c.id,
         rule: rule.key,
         createdAt: c.createdAt,
-        title: String(title ?? key ?? c.rowId),
+        title,
         ref: { dataset: c.dataset, list: TABS.find((t) => t.key === c.dataset)?.label ?? c.dataset, rowId: c.rowId, key },
         parts,
-        text: plain(parts),
+        text: plain(parts, title),
         source: c.actorRole === IMPORT_ROLE ? 'import' : 'app',
         // Who made the change in the app. A sheet reload has no editor to name.
         actorEmail: c.actorRole === IMPORT_ROLE ? null : c.actorEmail,

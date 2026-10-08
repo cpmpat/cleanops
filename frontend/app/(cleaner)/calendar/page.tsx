@@ -175,7 +175,10 @@ export default function CalendarPage() {
         </button>
       </div>
 
-      {/* Date navigation */}
+      {/* Date navigation, "back to today" and the day strip stay pinned to the
+          top together while the unit rows scroll: a cleaner with many units
+          must be able to move the window and read the dates at any depth. */}
+      <div className="sticky top-0 z-20 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border bg-white">
         <button
           onClick={goPrev}
@@ -208,9 +211,8 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Day strip — stays pinned to the top while scrolling unit rows
-          so the date headers always align with the bars below. */}
-      <div className="grid grid-cols-10 px-3 py-2.5 bg-surface-sunken border-b border-surface-border select-none sticky top-0 z-20">
+      {/* Day strip — aligned with the bars below. */}
+      <div className="grid grid-cols-10 px-3 py-2.5 bg-surface-sunken border-b border-surface-border select-none">
         {days.map((d) => {
           const isTodayCell = startOfLocalDay(d).getTime() === todayStart;
           return (
@@ -230,6 +232,8 @@ export default function CalendarPage() {
             </div>
           );
         })}
+      </div>
+
       </div>
 
       {/* Body */}

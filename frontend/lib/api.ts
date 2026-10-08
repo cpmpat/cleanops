@@ -860,7 +860,9 @@ export type StreamItemType =
   | 'INCIDENT'
   | 'REPAIR'
   | 'INSPECTION'
-  | 'MANUAL';
+  | 'MANUAL'
+  /** An accommodation's Pricing Group moved. */
+  | 'PRICING';
 
 export type StreamEventCategory = 'MANUAL' | 'NOTE' | 'REPAIR' | 'INSPECTION';
 
@@ -876,8 +878,10 @@ export interface StreamItem {
   photoUrls?: string[];
   status?: string;
   priority?: string;
-  source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual'; id: string };
+  source: { kind: 'booking' | 'cleaning' | 'incident' | 'manual' | 'pricing' | string; id: string };
   authorName?: string;
+  /** PRICING only: which way the Pricing Group moved. */
+  move?: 'UP' | 'DOWN' | 'SET' | 'CLEARED' | 'SAME' | 'UNRANKED';
   /** Present on TURNOVER items that have a chat — the exchange belongs to the
    *  cleaning, so it is reported on it rather than as its own entry. */
   chat?: {
@@ -1352,7 +1356,9 @@ export type NewsPart =
   | { t: 'text'; v: string }
   | { t: 'strong'; v: string }
   | { t: 'date'; v: string }
-  | { t: 'channel'; v: 'airbnb' | 'booking' };
+  | { t: 'channel'; v: 'airbnb' | 'booking' }
+  | { t: 'ref' }
+  | { t: 'move'; v: 'up' | 'down' };
 export interface NewsItem {
   id: string;
   rule: string;

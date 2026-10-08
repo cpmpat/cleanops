@@ -23,7 +23,34 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `chore/sweep-skip-reasons`
+## Unreleased — branch `feat/pricing-group-moves`
+
+**Pricing Group moves: ranked list, Newsfeed, Stream.**
+- The 12 Pricing Groups are a ranked pick list in the database
+  (`dataset_picklist_values`, list `accommodation.pricingGroup`, sortOrder
+  1 = LUX A … 12 = CKC). Data now offers them as a dropdown.
+- Every recorded change of `pricingGroup` (app save or sheet reload) is
+  written to the new table `pricing_group_moves` by a database trigger, with
+  from/to, their ranks, the direction (UP / DOWN / SET / UNRANKED …), who and
+  when, and the Avantio property it belongs to. Existing history is backfilled
+  by the migration. The direction is frozen at the time of the move.
+- Newsfeed: "Pricing Group of <unit> has moved [UP|DOWN logo] from **X** to
+  **Y**." — or "has moved to **X**." when it was empty before.
+- Stream: a "Cenová skupina" entry on the unit's timeline with the logo, for
+  roles that may see the column.
+- Newsfeed rules now apply to MANAGER without matrix rows (full access).
+
+**Cleaner calendar: the date bar stays on screen.** The ‹ › window navigation,
+"back to today" and the day strip are now pinned together at the top while the
+unit rows scroll (only the day strip was pinned before).
+
+*Migrations:* `20261008150000_pricing_group_moves`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-08 · PR #63
 
 **The sweep says why it skipped bookings.** The first dry run found 258
 bookings at Avantio with no row here and skipped all of them without saying
@@ -32,10 +59,6 @@ cancelled in Avantio and absent locally …`), and the audit row carries the
 same counts in `metadata.bookings.skipReasons`.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #62
 

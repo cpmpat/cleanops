@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Newspaper, Check, CheckCheck, Loader2, RefreshCw, Sheet, PencilLine } from 'lucide-react';
+import { Newspaper, Check, CheckCheck, Loader2, RefreshCw, Sheet, PencilLine, ArrowUpDown } from 'lucide-react';
 import { newsfeed as api, announceNewsfeed, type NewsItem, type NewsPart } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +29,7 @@ const RULE_ICON: Record<string, React.ReactNode> = {
   'accommodation.offboard': <GlobeMark off />,
   'accommodation.airbnbOnline': <GlobeMark />,
   'accommodation.bookingOnline': <GlobeMark />,
+  'accommodation.move.pricingGroup': <ArrowUpDown size={20} strokeWidth={1.5} className="text-[#8E8E93]" />,
 };
 
 const CHANNEL: Record<'airbnb' | 'booking', { src: string; name: string }> = {
@@ -36,13 +37,31 @@ const CHANNEL: Record<'airbnb' | 'booking', { src: string; name: string }> = {
   booking: { src: '/brands/booking.png', name: 'Booking.com' },
 };
 
-/** The sentence: "online"/"delisted" and dates bold, channels as their logo
- *  a little larger than the text (name on hover). */
-function Sentence({ parts }: { parts: NewsPart[] }) {
+const MOVE: Record<'up' | 'down', { src: string; name: string }> = {
+  up: { src: '/brands/up.svg', name: 'up' },
+  down: { src: '/brands/down.png', name: 'down' },
+};
+
+/** The sentence: "online"/"delisted" and dates bold, channels and moves as
+ *  their logo a little larger than the text (name on hover). The record's name
+ *  goes where the sentence puts it (`ref`), or in front. */
+function Sentence({ parts, title }: { parts: NewsPart[]; title: React.ReactNode }) {
+  const placed = parts.some((p) => p.t === 'ref');
   return (
     <>
+      {!placed && <>{title}{' '}</>}
       {parts.map((p, i) =>
-        p.t === 'date' || p.t === 'strong' ? <strong key={i} className="font-semibold">{p.v}</strong>
+        p.t === 'ref' ? <span key={i}>{title}</span>
+        : p.t === 'move' ? (
+          <img
+            key={i}
+            src={MOVE[p.v].src}
+            alt={MOVE[p.v].name}
+            title={MOVE[p.v].name}
+            className="inline-block h-[1.4em] w-auto align-[-0.32em] mx-[0.15em]"
+          />
+        )
+        : p.t === 'date' || p.t === 'strong' ? <strong key={i} className="font-semibold">{p.v}</strong>
         : p.t === 'channel' ? (
           <img
             key={i}
@@ -172,14 +191,18 @@ export default function NewsfeedPage() {
                 <span className="mt-0.5 flex-shrink-0">{icon}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink leading-snug">
-                    <Link
-                      href={`/datasets?d=${encodeURIComponent(n.ref.dataset)}&row=${encodeURIComponent(n.ref.rowId)}`}
-                      className="font-semibold text-accent hover:underline"
-                      title={`Open in Data → ${n.ref.list}${n.ref.key ? ` (${n.ref.key})` : ''}`}
-                    >
-                      {n.title}
-                    </Link>{' '}
-                    <Sentence parts={n.parts ?? [{ t: 'text', v: n.text }]} />
+                    <Sentence
+                      parts={n.parts ?? [{ t: 'text', v: n.text }]}
+                      title={
+                        <Link
+                          href={`/datasets?d=${encodeURIComponent(n.ref.dataset)}&row=${encodeURIComponent(n.ref.rowId)}`}
+                          className="font-semibold text-accent hover:underline"
+                          title={`Open in Data → ${n.ref.list}${n.ref.key ? ` (${n.ref.key})` : ''}`}
+                        >
+                          {n.title}
+                        </Link>
+                      }
+                    />
                   </p>
                   <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-faint">
                     {n.source === 'import' ? <Sheet size={11} /> : <PencilLine size={11} />}
