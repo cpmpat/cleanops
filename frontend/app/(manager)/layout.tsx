@@ -159,12 +159,23 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     if (!hasNewsfeed) return;
     let alive = true;
     const tick = () => newsfeedApi.unread().then((r) => { if (alive) setNewsUnread(r.count); }).catch(() => {});
+    // The Newsfeed page sends its count along; anything else just says "ask".
+    const onChanged = (e: Event) => {
+      const n = (e as CustomEvent<{ unread?: number }>).detail?.unread;
+      if (typeof n === 'number') setNewsUnread(n); else tick();
+    };
     tick();
-    const t = setInterval(tick, 60_000);
-    window.addEventListener(NEWSFEED_CHANGED, tick);
+    const t = setInterval(tick, 30_000);
+    window.addEventListener(NEWSFEED_CHANGED, onChanged);
     window.addEventListener('focus', tick);
-    return () => { alive = false; clearInterval(t); window.removeEventListener(NEWSFEED_CHANGED, tick); window.removeEventListener('focus', tick); };
+    return () => { alive = false; clearInterval(t); window.removeEventListener(NEWSFEED_CHANGED, onChanged); window.removeEventListener('focus', tick); };
   }, [hasNewsfeed]);
+
+  // Moving between screens is a cheap moment to recheck.
+  useEffect(() => {
+    if (hasNewsfeed) newsfeedApi.unread().then((r) => setNewsUnread(r.count)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const navItems = [
     { href: '/newsfeed',   icon: Newspaper,       label: NEWSFEED_LABEL[locale] ?? 'Newsfeed' },

@@ -5,7 +5,7 @@ import {
   Folder, FileText, ExternalLink, Download,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
-import { datasets as api, type DatasetSummary, type DatasetPage } from '@/lib/api';
+import { datasets as api, announceNewsfeed, type DatasetSummary, type DatasetPage } from '@/lib/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
@@ -356,6 +356,8 @@ function DatasetsPageInner() {
     setRowErrors(prev => omit(prev, r));
     try {
       const res = await api.update(data.key, data.rowIds[r], data.versions[r], d);
+      // A saved change may be news (an offboarding date, a channel going live).
+      announceNewsfeed();
       setData(prev => {
         if (!prev) return prev;
         const rowsNext = [...prev.rows];
