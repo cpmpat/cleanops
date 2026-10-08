@@ -51,6 +51,8 @@ export interface SweepResult {
     listedByPms: number;
     missingLocally: number;
     outcomes: Record<BookingSyncOutcome['result'], number>;
+    /** Why the skipped ones were skipped, counted over all of them. */
+    skipReasons: Record<string, number>;
     items: BookingSyncOutcome[];
   };
   /** Bookings behind IMPOSSIBLE_WINDOW items, re-fetched from Avantio. */
@@ -113,6 +115,7 @@ export class SafetySweepService {
         listedByPms: 0,
         missingLocally: 0,
         outcomes: { created: 0, updated: 0, cancelled: 0, skipped: 0, error: 0 },
+        skipReasons: {},
         items: [],
       },
       turnovers: { skipped: 'not run' },
@@ -131,7 +134,14 @@ export class SafetySweepService {
         const outcomes = opts.apply
           ? await this.bookingSync.syncBookingsByPmsIds(tenant.id, missing, { concurrency: 3 })
           : await this.bookingSync.previewBookingsByPmsIds(tenant.id, missing, { concurrency: 3 });
-        for (const o of outcomes) result.bookings.outcomes[o.result]++;
+        for (const o of outcomes) {
+          result.bookings.outcomes[o.result]++;
+          if (o.result === 'skipped') {
+            // Ids and refs make every reason unique; count the shape.
+            const reason = (o.detail ?? 'no reason given').replace(/\b[A-Z0-9-]*\d[A-Z0-9-]*\b/g, '#');
+            result.bookings.skipReasons[reason] = (result.bookings.skipReasons[reason] ?? 0) + 1;
+          }
+        }
         result.bookings.items = outcomes.slice(0, MAX_ITEMS);
       }
 
@@ -249,6 +259,9 @@ export class SafetySweepService {
       `${b.missingLocally} missing here → created ${b.outcomes.created}, ` +
       `skipped ${b.outcomes.skipped}, errors ${b.outcomes.error}`,
     );
+    for (const [reason, n] of Object.entries(b.skipReasons).sort((x, y) => y[1] - x[1])) {
+      this.logger.log(`${tag}   skipped ${n}× ${reason}`);
+    }
     for (const o of b.items) {
       if (o.result !== 'skipped') this.logger.log(`${tag}   booking ${o.pmsBookingId}: ${o.result}${o.detail ? ` — ${o.detail}` : ''}`);
     }
