@@ -23,7 +23,25 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/data-bulk-save`
+## Unreleased — branch `feat/oxpoint-summary`
+
+**OX Point: Weekly Summary Opening Hours.** The sheet's new column U
+(`accessibilitySummary`, text) has a column in `cdm_ox_point`, so
+`import:cdm --list oxpoint` can load the list again (it refused: every row
+would have failed on the unknown column).
+
+**OX Point access matrix** (`docs/access-matrix/oxpoint.csv`): FRONT_DESK_MANAGER,
+FRONT_DESK, EVIDENCE, ADMIN, TERENAK, DIRECTOR, MARKETING_MANAGER,
+REVENUE_MANAGER and FINANCE view every column, nobody edits (MANAGER keeps full
+access). Loaded with `import:access-matrix --dataset oxpoint` after the reload.
+
+*Migrations:* `20261009120000_ox_point_accessibility_summary`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-09 · PR #65
 
 **Data: one Save bar for many records.** Edits across several rows no longer
 stack one bar per row. A single bar says "3 records · 5 unsaved changes" with
@@ -43,10 +61,6 @@ on the baseline and the arrow hangs into the line gap, so the line is no taller
 than the others (Newsfeed and Stream).
 
 *Migrations:* `20261008170000_group_rd_picklist`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-08 · PR #64
 
