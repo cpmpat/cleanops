@@ -35,10 +35,11 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
       // Office roles work in the office app; each goes to where it starts.
       const OFFICE_HOME: Record<string, string> = {
         MANAGER: '/dashboard', ADMIN: '/planning',
-        FRONT_DESK_MANAGER: '/planning', FRONT_DESK: '/planning',
+        FRONT_DESK_MANAGER: '/planning', OPERATIONS_ASSISTANT: '/planning', FRONT_DESK: '/planning',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
         EVIDENCE: '/datasets', TERENAK: '/datasets',
         DIRECTOR: '/newsfeed', FINANCE: '/newsfeed', REVENUE_MANAGER: '/newsfeed', MARKETING_MANAGER: '/newsfeed',
+        MARKETING_SPECIALIST: '/newsfeed',
       };
       if (OFFICE_HOME[user.role] && !inThread) {
         router.replace(OFFICE_HOME[user.role]);

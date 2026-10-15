@@ -33,6 +33,8 @@ const ROLE_PATHS: Record<string, string[]> = {
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
   ADMIN:              ['/planning', '/newsfeed', '/dashboard', '/datasets', '/notify'],
   FRONT_DESK_MANAGER: ['/planning', '/newsfeed', '/datasets', '/notify'],
+  /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
+  OPERATIONS_ASSISTANT: ['/planning', '/newsfeed', '/datasets', '/notify'],
   FRONT_DESK:         ['/planning', '/newsfeed', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets'],
   ASSIST:             ['/airchat', '/datasets'],
@@ -46,6 +48,8 @@ const ROLE_PATHS: Record<string, string[]> = {
   FINANCE:            ['/newsfeed', '/datasets'],
   REVENUE_MANAGER:    ['/newsfeed', '/datasets'],
   MARKETING_MANAGER:  ['/newsfeed', '/datasets'],
+  /** MARKETING_MANAGER's modules (15 Oct 2026). */
+  MARKETING_SPECIALIST: ['/newsfeed', '/datasets'],
 };
 
 /** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */

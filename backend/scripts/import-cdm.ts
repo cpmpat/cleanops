@@ -90,6 +90,8 @@ const PICKLIST_BINDINGS: Record<string, Record<string, string>> = {
     pricingGroup: 'accommodation.pricingGroup',
     // Same ranked list as pricingGroup ("Group RD Pricing").
     groupRd: 'accommodation.pricingGroup',
+    // Picks from the OX Point list's "ID" column, read live (src/datasets/oxpoint-lookup.ts).
+    oxPointId: 'ref:oxpoint.oxId',
   },
 };
 
@@ -236,6 +238,7 @@ const LISTS: Record<string, {
       /^email(Gmail|Airbnb|Booking|Expedia)$/,
       /^ubyport/i,
       /lockbox/i,
+      /^oxpointAccesscode$/,
       /^accountIdAirbnb$/,
       /^ownerAvantioPortalUser$/,
       /WifiName$/,

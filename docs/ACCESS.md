@@ -81,6 +81,22 @@ role that may view the field it is about (access matrix). DIRECTOR, FINANCE,
 REVENUE_MANAGER and MARKETING_MANAGER: menu = Newsfeed + Data, start on the
 Newsfeed.
 
+## OPERATIONS_ASSISTANT, MARKETING_SPECIALIST (15 Oct 2026)
+
+OPERATIONS_ASSISTANT has FRONT_DESK_MANAGER's modules: Planning, Newsfeed,
+Data, Notifications → Data (same notify rows), office role for Airchat's API;
+starts on Planning. MARKETING_SPECIALIST has MARKETING_MANAGER's: Newsfeed +
+Data, starts on the Newsfeed. Their Data columns are the matrices' — granted
+on Accommodation and OX Point; none yet on Owner and User.
+
+## Lookup and key columns
+
+Accommodation's OX Point columns (oxpointCity … oxpointAccessibilitysummary)
+are view-only for every role, MANAGER included: they are copied from the OX
+Point chosen in `oxPointId` (a pick list of OX Point "ID"s) and follow it.
+A list's record key (idAvantio, OX Point `id`, …) is view-only for every role,
+whatever the matrix says.
+
 ## DIRECTOR, TERENAK
 
 Data only (menu and start page), since 7 Oct 2026. Columns are the access

@@ -4,6 +4,7 @@ import {
 import { PrismaService } from '../common/prisma.service';
 import { GoogleSheetsClient } from './google-sheets.client';
 import { toCsv, toXlsx } from './dataset-export';
+import { OX_LOOKUP_FIELDS, OX_LOOKUP_KEY, OX_SOURCE_FIELDS, oxLookupValues, syncOxLookups } from './oxpoint-lookup';
 import { UserRole } from '@prisma/client';
 
 /**
@@ -216,13 +217,23 @@ export class DatasetsService {
       // into two.
       const all = await this.prisma.datasetField.findMany({ where: { tenantId, dataset }, select: { field: true } });
       const key = DB_MODELS[dataset]?.key;
-      return new Map(all.map((f: { field: string }) => [f.field, f.field === key ? 'view' : 'edit'] as const));
+      return new Map(all.map((f: { field: string }) =>
+        [f.field, f.field === key || this.isLookup(dataset, f.field) ? 'view' : 'edit'] as const));
     }
     const grants = await this.prisma.datasetFieldAccess.findMany({
       where: { tenantId, dataset, role, canView: true },
       select: { field: true, canEdit: true },
     });
-    return new Map(grants.map((g: { field: string; canEdit: boolean }) => [g.field, g.canEdit ? 'edit' : 'view'] as const));
+    // The record's key is read-only for every role, as for MANAGER: a sheet
+    // reload finds the record by it.
+    const key = DB_MODELS[dataset]?.key;
+    return new Map(grants.map((g: { field: string; canEdit: boolean }) =>
+      [g.field, g.canEdit && g.field !== key && !this.isLookup(dataset, g.field) ? 'edit' : 'view'] as const));
+  }
+
+  /** Columns filled from another list (Accommodation's OX Point columns): never edited by hand. */
+  private isLookup(dataset: string, field: string): boolean {
+    return dataset === 'accommodation' && OX_LOOKUP_FIELDS.includes(field);
   }
 
   /**
@@ -243,6 +254,22 @@ export class DatasetsService {
   /** Active pick-list values for the given lists, in their sort order. */
   private async picklists(tenantId: string, lists: string[]): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
+    if (lists.length === 0) return out;
+    // `ref:<list>.<column>`: the values of another list's column, read now —
+    // e.g. accommodation.oxPointId picks from the OX Point list's IDs.
+    for (const ref of lists.filter((l) => l.startsWith('ref:'))) {
+      const [dataset, column] = ref.slice(4).split('.');
+      const spec = DB_MODELS[dataset];
+      if (!spec || !column) continue;
+      const found: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
+        where: { tenantId, [column]: { not: null } },
+        select: { [column]: true },
+        distinct: [column],
+        orderBy: { [column]: 'asc' },
+      });
+      out.set(ref, found.map((r) => String(r[column]).trim()).filter((v) => v !== ''));
+    }
+    lists = lists.filter((l) => !l.startsWith('ref:'));
     if (lists.length === 0) return out;
     const rows = await this.prisma.datasetPicklistValue.findMany({
       where: { tenantId, list: { in: lists }, active: true },
@@ -737,8 +764,12 @@ export class DatasetsService {
     if (keys.length === 0) throw new BadRequestException('Nothing to save.');
     if (!body?.version) throw new BadRequestException('version is required.');
 
+    // A new oxPointId brings the OX Point's columns with it.
+    const derived = key === 'accommodation' && keys.includes('oxPointId') ? OX_LOOKUP_FIELDS : [];
+    const allKeys = [...keys, ...derived.filter((f) => !keys.includes(f))];
+
     const [fields, access] = await Promise.all([
-      this.prisma.datasetField.findMany({ where: { tenantId, dataset: key, field: { in: keys } } }),
+      this.prisma.datasetField.findMany({ where: { tenantId, dataset: key, field: { in: allKeys } } }),
       this.accessFor(tenantId, key, role),
     ]);
     const byField = new Map(fields.map((f) => [f.field, f]));
@@ -753,6 +784,10 @@ export class DatasetsService {
     );
     const data: Record<string, unknown> = {};
     for (const k of keys) data[k] = this.parse(byField.get(k)!, values[k], allowed);
+    if (derived.length) {
+      const { values: looked } = await oxLookupValues(this.prisma, tenantId, data.oxPointId as string | null);
+      Object.assign(data, looked);
+    }
 
     // Denormalised onto every audit row: a person can leave and their account
     // can go; the record of what they changed must not go with it.
@@ -762,7 +797,7 @@ export class DatasetsService {
     const actorEmail = actor?.email ?? null;
 
     const select: Record<string, true> = { updatedAt: true };
-    for (const k of keys) select[k] = true;
+    for (const k of allKeys) select[k] = true;
     // A row outside the role's row filter is "not found", exactly as if it
     // did not exist — saving cannot reach what reading cannot.
     const rows = await this.rowFilter(tenantId, key, role);
@@ -775,7 +810,7 @@ export class DatasetsService {
         throw new ConflictException(STALE_MESSAGE);
       }
 
-      const changed = keys.filter((k) => this.render(current[k]) !== this.render(data[k]));
+      const changed = allKeys.filter((k) => this.render(current[k]) !== this.render(data[k]));
       if (changed.length === 0) {
         return { changed: [] as string[], version: body.version, values: {} as Record<string, string> };
       }
@@ -806,7 +841,7 @@ export class DatasetsService {
       });
       await tx.datasetFieldChange.createMany({
         data: changed.map((k) => {
-          const masked = byField.get(k)!.sensitive;
+          const masked = byField.get(k)?.sensitive ?? false;
           return {
             tenantId,
             eventId: event.id,
@@ -824,6 +859,24 @@ export class DatasetsService {
       });
 
       this.logger.log(`Updated ${key} row ${rowId} (${changed.join(', ')}) by ${actorEmail ?? 'unknown'} as ${role}`);
+
+      // An OX Point changed: the accommodations using it copy the new values
+      // in the same transaction, recorded as this person's change.
+      if (key === 'oxpoint' && changed.some((k) => OX_SOURCE_FIELDS.has(k))) {
+        const point = await (tx as any).cdmOxPoint.findFirst({ where: { tenantId, rowId }, select: { [OX_LOOKUP_KEY]: true } });
+        const id = point?.[OX_LOOKUP_KEY] ? String(point[OX_LOOKUP_KEY]).trim() : '';
+        if (id) {
+          const r = await syncOxLookups(tx, tenantId, {
+            apply: true,
+            where: { oxPointId: { equals: id, mode: 'insensitive' } },
+            actorId: actorId ?? null,
+            actorEmail,
+            actorRole: role,
+            action: 'dataset.accommodation.oxpoint_lookup',
+          });
+          if (r.changedRows) this.logger.log(`OX Point ${id}: updated ${r.changedRows} accommodation(s)`);
+        }
+      }
       return {
         changed,
         version: (after.updatedAt as Date).toISOString(),
