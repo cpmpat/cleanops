@@ -23,7 +23,28 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/oxpoint-lookup-key`
+## Unreleased — branch `chore/notifications-off-desk-evidence`
+
+**Notifications off, Newsfeed on.** FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT
+and EVIDENCE no longer have Notifications → Data (menu and API). All three
+have the Newsfeed — EVIDENCE newly; the other two already had it. EVIDENCE
+Notifications stays for MANAGER and ADMIN. Their notify-matrix rows are
+kept, unused.
+
+**Everyone with the Newsfeed starts on it** after signing in (password or
+emailed link): MANAGER, ADMIN, FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT,
+FRONT_DESK, EVIDENCE, DIRECTOR, FINANCE, REVENUE_MANAGER, MARKETING_MANAGER,
+MARKETING_SPECIALIST. A screen a role may not open now falls back to the
+Newsfeed too. TERENAK still starts on Data, Airchat roles on Airchat,
+cleaners and repairmen unchanged.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-15 · PR #71
 
 **OX Point lookup matches on the point's code.** accommodation.oxPointId holds
 the OX Point's four-character code (`id`, e.g. ITS4), not its "ID" column
@@ -32,10 +53,6 @@ The lookup and the oxPointId pick list now use `id` — the list's key, which
 nobody can edit, so the link cannot be broken from the OX Point side.
 
 *Migrations:* `20261015170000_oxpoint_lookup_key`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-15 · PR #70
 

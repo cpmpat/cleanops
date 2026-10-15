@@ -37,7 +37,7 @@ Three layers decide access:
 | Data → User | View all, edit none | Hidden | Hidden |
 | Data → OX Point | Hidden until granted | Hidden until granted | Hidden until granted |
 | Data → Owner | View all columns | View 16 (matrix) | View 16 (matrix) |
-| Notifications → Data | Yes (notify matrix: all columns at start) | Yes (notify matrix; nothing until loaded) | No |
+| Notifications → Data | Yes (notify matrix: all columns at start) | No (since 15 Oct 2026; has the Newsfeed) | No |
 | Data export (CSV/XLSX) | Yes | No | No |
 | Change history in the record drawer | All fields, incl. sensitive (who/when only) | Fields they can view, sensitive excluded | Same |
 | Create records in Data | No (off for everyone) | No | No |
@@ -75,17 +75,19 @@ View and edit on every column of every CDM list, outside the matrix
 
 ## Newsfeed
 
-MANAGER, ADMIN, FRONT_DESK_MANAGER, FRONT_DESK, DIRECTOR, FINANCE,
-REVENUE_MANAGER, MARKETING_MANAGER (`NEWSFEED_ROLES`). An item shows only to a
-role that may view the field it is about (access matrix). DIRECTOR, FINANCE,
+MANAGER, ADMIN, FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT, FRONT_DESK, EVIDENCE,
+DIRECTOR, FINANCE, REVENUE_MANAGER, MARKETING_MANAGER, MARKETING_SPECIALIST
+(`NEWSFEED_ROLES`). Since 15 Oct 2026 every one of them (and ADMIN) starts
+on the Newsfeed after signing in (`frontend/lib/home.ts`). An item shows only
+to a role that may view the field it is about (access matrix). DIRECTOR, FINANCE,
 REVENUE_MANAGER and MARKETING_MANAGER: menu = Newsfeed + Data, start on the
 Newsfeed.
 
 ## OPERATIONS_ASSISTANT, MARKETING_SPECIALIST (15 Oct 2026)
 
 OPERATIONS_ASSISTANT has FRONT_DESK_MANAGER's modules: Planning, Newsfeed,
-Data, Notifications → Data (same notify rows), office role for Airchat's API;
-starts on Planning. MARKETING_SPECIALIST has MARKETING_MANAGER's: Newsfeed +
+Data, office role for Airchat's API; starts on Planning. (Notifications →
+Data was removed from both on 15 Oct 2026.) MARKETING_SPECIALIST has MARKETING_MANAGER's: Newsfeed +
 Data, starts on the Newsfeed. Their Data columns are the matrices' — granted
 on Accommodation and OX Point; none yet on Owner and User.
 
@@ -107,16 +109,19 @@ Notifications yet.
 
 ## Notifications → Data
 
-Changes to the CDM lists (app saves and sheet reloads). Open to ADMIN,
-MANAGER, FRONT_DESK_MANAGER and EVIDENCE (menu: Notifications → Data). A role
+Changes to the CDM lists (app saves and sheet reloads). Open to ADMIN and
+MANAGER only (menu: Notifications → Data) since 15 Oct 2026, when
+FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE moved to the Newsfeed.
+Their notify-matrix rows are kept, unused, so turning it back on is a code
+change only. A role
 sees a change only when the notify matrix (`dataset_field_notify`,
 `docs/notify-matrix/`) says so AND the access matrix lets it view the field.
 Changes to sensitive fields carry no values and are listed for ADMIN only.
 
 ## EVIDENCE
 
-Data only — the menu shows nothing else and every other screen redirects to
-Data. Which lists and columns it sees, and whether it may edit any, is the
+Data and Newsfeed (since 15 Oct 2026; Notifications removed) — starts on
+the Newsfeed; every other screen redirects there. Which lists and columns it sees, and whether it may edit any, is the
 access matrix alone (`docs/access-matrix/`). Accommodation: view 42 columns
 (identity, channels, contract, city tax, Ubyport, evidence folders), edit the
 five Ubyport columns. Owner: view 8 (id, treatment, displayName, language,
