@@ -18,6 +18,7 @@ export const OX_LOOKUP_KEY = 'oxId';
 /** Accommodation column → the cdm_ox_point column it copies. */
 export const OX_LOOKUP: Readonly<Record<string, string>> = {
   oxpointCity: 'city',
+  oxpointDistrict: 'district',
   oxpointStreet: 'street',
   oxpointStreetnumber: 'streetNumber',
   oxpointPostcode: 'postCode',

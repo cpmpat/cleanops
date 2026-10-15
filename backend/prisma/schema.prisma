@@ -1623,6 +1623,8 @@ model CdmAccommodation {
   /// written when oxPointId changes, or when the OX Point itself changes
   /// (src/datasets/oxpoint-lookup.ts).
   oxpointCity                                    String?
+  /// Added 15 Oct 2026: the sheet has FX "Oxpoint District" too.
+  oxpointDistrict                                String?
   oxpointStreet                                  String?
   oxpointStreetnumber                            String?
   oxpointPostcode                                String?
