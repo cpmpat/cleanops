@@ -93,7 +93,7 @@ on Accommodation and OX Point; none yet on Owner and User.
 
 Accommodation's OX Point columns (oxpointCity … oxpointAccessibilitysummary)
 are view-only for every role, MANAGER included: they are copied from the OX
-Point chosen in `oxPointId` (a pick list of OX Point "ID"s) and follow it.
+Point chosen in `oxPointId` (a pick list of OX Point codes, `id`) and follow it.
 A list's record key (idAvantio, OX Point `id`, …) is view-only for every role,
 whatever the matrix says.
 

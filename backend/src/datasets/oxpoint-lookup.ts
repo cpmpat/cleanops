@@ -1,8 +1,8 @@
 // backend/src/datasets/oxpoint-lookup.ts
 //
 // Accommodation's OX Point columns (sheet FW–GF) are a lookup, not data:
-// accommodation.oxPointId names a row of cdm_ox_point by its "ID" column
-// (`oxId`), and these ten columns copy that row. They change in two ways only:
+// accommodation.oxPointId names a row of cdm_ox_point by its four-character
+// code (`id`, the list's own key — e.g. ITS4), and these columns copy that row. They change in two ways only:
 //
 //  * someone picks another oxPointId on an accommodation → that row is
 //    re-read (DatasetsService.update);
@@ -12,8 +12,12 @@
 // plus `refresh:oxpoint-lookups` for a sheet reload of either list. Nobody
 // edits them by hand: access is view-only for every role, MANAGER included.
 
-/** The cdm_ox_point column accommodation.oxPointId holds ("ID" in the sheet). */
-export const OX_LOOKUP_KEY = 'oxId';
+/**
+ * The cdm_ox_point column accommodation.oxPointId holds: `id`, the point's
+ * four-character code and the list's key. (Not `oxId`, the sheet's "ID"
+ * column — the first refresh matched 0 of 42 that way, 15 Oct 2026.)
+ */
+export const OX_LOOKUP_KEY = 'id';
 
 /** Accommodation column → the cdm_ox_point column it copies. */
 export const OX_LOOKUP: Readonly<Record<string, string>> = {
