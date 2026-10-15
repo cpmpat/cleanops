@@ -47,7 +47,9 @@ export function isOfficeRole(role?: string | null): boolean {
  * changes each of them sees is the notify matrix (dataset_field_notify), on
  * top of the access matrix. ADMIN passes every check.
  */
-export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'EVIDENCE'] as const;
+// FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE lost Notifications on
+// 15 Oct 2026 (they have the Newsfeed). ADMIN passes every role check anyway.
+export const NOTIFY_ROLES = ['MANAGER'] as const;
 
 /**
  * Who has the Newsfeed (7 Oct 2026). What each sees is further narrowed by the
@@ -55,6 +57,6 @@ export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSIST
  * that field. ADMIN passes every check.
  */
 export const NEWSFEED_ROLES = [
-  'MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR',
+  'MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'EVIDENCE', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR',
   'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
 ] as const;

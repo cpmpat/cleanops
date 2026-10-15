@@ -31,15 +31,16 @@ import { homeFor } from '@/lib/home';
 const ROLE_PATHS: Record<string, string[]> = {
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
-  ADMIN:              ['/planning', '/newsfeed', '/dashboard', '/datasets', '/notify'],
-  FRONT_DESK_MANAGER: ['/planning', '/newsfeed', '/datasets', '/notify'],
+  ADMIN:              ['/newsfeed', '/planning', '/dashboard', '/datasets', '/notify'],
+  /** Notifications off for FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE (15 Oct 2026). */
+  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
-  OPERATIONS_ASSISTANT: ['/planning', '/newsfeed', '/datasets', '/notify'],
-  FRONT_DESK:         ['/planning', '/newsfeed', '/datasets'],
+  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/datasets'],
+  FRONT_DESK:         ['/newsfeed', '/planning', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets'],
   ASSIST:             ['/airchat', '/datasets'],
   /** Data only; which lists and columns is the access matrix's call. */
-  EVIDENCE:           ['/datasets', '/notify'],
+  EVIDENCE:           ['/newsfeed', '/datasets'],
   /** Data only (7 Oct 2026). Columns per the matrix; TERENAK also sees only
    *  some rows (dataset_row_filters: Avantio accommodations, Valid users). */
   TERENAK:            ['/datasets'],

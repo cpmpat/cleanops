@@ -34,10 +34,11 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
       const inThread = pathname?.startsWith('/conversations');
       // Office roles work in the office app; each goes to where it starts.
       const OFFICE_HOME: Record<string, string> = {
-        MANAGER: '/dashboard', ADMIN: '/planning',
-        FRONT_DESK_MANAGER: '/planning', OPERATIONS_ASSISTANT: '/planning', FRONT_DESK: '/planning',
+        // Newsfeed roles start on it (15 Oct 2026, lib/home.ts).
+        MANAGER: '/newsfeed', ADMIN: '/newsfeed',
+        FRONT_DESK_MANAGER: '/newsfeed', OPERATIONS_ASSISTANT: '/newsfeed', FRONT_DESK: '/newsfeed',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
-        EVIDENCE: '/datasets', TERENAK: '/datasets',
+        EVIDENCE: '/newsfeed', TERENAK: '/datasets',
         DIRECTOR: '/newsfeed', FINANCE: '/newsfeed', REVENUE_MANAGER: '/newsfeed', MARKETING_MANAGER: '/newsfeed',
         MARKETING_SPECIALIST: '/newsfeed',
       };
