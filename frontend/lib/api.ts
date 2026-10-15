@@ -21,7 +21,9 @@ export type Role =
   | 'RESOLUTIONS'
   | 'MARKETING_MANAGER'
   | 'FINANCE'
-  | 'REVENUE_MANAGER';
+  | 'REVENUE_MANAGER'
+  | 'MARKETING_SPECIALIST'
+  | 'OPERATIONS_ASSISTANT';
 export type CleaningStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'FLAGGED';
 /** @deprecated use CleaningStatus */
 export type EventStatus = CleaningStatus;

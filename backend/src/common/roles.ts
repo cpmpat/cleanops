@@ -20,6 +20,8 @@ export const OFFICE_ROLES = [
   'ADMIN',
   'OPERATION_MANAGER',
   'FRONT_DESK_MANAGER',
+  /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
+  'OPERATIONS_ASSISTANT',
   'FRONT_DESK',
   'ASSIST',
 ] as const;
@@ -34,7 +36,7 @@ export type OfficeRole = (typeof OFFICE_ROLES)[number];
  * times to the PMS, record setup requests, and assign / reassign cleaners
  * (ADMIN passes every check).
  */
-export const PLANNING_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK'] as const;
+export const PLANNING_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK'] as const;
 
 export function isOfficeRole(role?: string | null): boolean {
   return !!role && (OFFICE_ROLES as readonly string[]).includes(role);
@@ -45,7 +47,7 @@ export function isOfficeRole(role?: string | null): boolean {
  * changes each of them sees is the notify matrix (dataset_field_notify), on
  * top of the access matrix. ADMIN passes every check.
  */
-export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'EVIDENCE'] as const;
+export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'EVIDENCE'] as const;
 
 /**
  * Who has the Newsfeed (7 Oct 2026). What each sees is further narrowed by the
@@ -53,5 +55,6 @@ export const NOTIFY_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'EVIDENCE'] as con
  * that field. ADMIN passes every check.
  */
 export const NEWSFEED_ROLES = [
-  'MANAGER', 'FRONT_DESK_MANAGER', 'FRONT_DESK', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR', 'MARKETING_MANAGER',
+  'MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR',
+  'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
 ] as const;

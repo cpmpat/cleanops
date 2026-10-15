@@ -23,7 +23,35 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `chore/pricing-groups-v2`
+## Unreleased — branch `feat/roles-oxpoint-lookup`
+
+**Two roles.** OPERATIONS_ASSISTANT — FRONT_DESK_MANAGER's modules (Planning,
+Newsfeed, Data, Notifications → Data with the same notify rows; starts on
+Planning). MARKETING_SPECIALIST — MARKETING_MANAGER's (Newsfeed + Data; starts
+on the Newsfeed). Data columns per the matrices.
+
+**Accommodation ← OX Point lookup.** `oxPointId` is a pick list of the OX
+Point list's "ID"s (read live, `ref:oxpoint.oxId`). Ten new Accommodation
+columns (sheet FW–GF: oxpointCity, oxpointStreet, oxpointStreetnumber,
+oxpointPostcode, oxpointDescription, oxpointBoxnumber, oxpointAccesscode,
+oxpointLockboxnumber, oxpointLockboxcode, oxpointAccessibilitysummary) copy
+the chosen OX Point: choosing another ID re-fills them in the same save, and
+editing an OX Point updates every accommodation using it. All recorded in the
+history; the two codes without values. View-only for everyone.
+`refresh:oxpoint-lookups` (dry run by default) re-syncs after a sheet reload.
+
+**Matrices.** Accommodation and OX Point updated (new roles, new columns,
+FRONT_DESK_MANAGER edits OX Point). `urlFolderPp` in a matrix means
+urlFolderPpOld. A list's record key is now view-only for every role.
+
+*Migrations:* `20261015120000_roles_marketing_specialist_operations_assistant`,
+`20261015120100_accommodation_oxpoint_lookup`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-14 · PR #68
 
 **Pricing Group list corrected and extended** (Group RD Pricing and Group RD).
 Highest → lowest: LUX A–C, **Grand A–C, Premium A–C** (Grand now above
@@ -33,10 +61,6 @@ corrected order, so a Premium → Grand move now reads UP in Stream as well as i
 the Newsfeed.
 
 *Migrations:* `20261014120000_pricing_groups_v2`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-09 · PR #66, #67
 

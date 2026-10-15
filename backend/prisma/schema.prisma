@@ -103,6 +103,11 @@ enum UserRole {
   /// Added 7 Oct 2026: Newsfeed + Data, columns per the access matrices.
   FINANCE
   REVENUE_MANAGER
+  /// Added 15 Oct 2026. Same modules as MARKETING_MANAGER (Newsfeed + Data).
+  MARKETING_SPECIALIST
+  /// Added 15 Oct 2026. Same modules as FRONT_DESK_MANAGER (Planning,
+  /// Newsfeed, Data, Notifications → Data; Airchat API as an office role).
+  OPERATIONS_ASSISTANT
 }
 
 enum Language {
@@ -1613,6 +1618,20 @@ model CdmAccommodation {
   compHomeboook                                  String?
   /// The sheet's second `urlFolderPp` column (FP).
   urlFolderPpNew                                 String?
+  /// Added 15 Oct 2026 (sheet FW–GF): the OX Point this unit uses, looked up
+  /// from cdm_ox_point by oxPointId = cdm_ox_point.oxId. Never edited by hand:
+  /// written when oxPointId changes, or when the OX Point itself changes
+  /// (src/datasets/oxpoint-lookup.ts).
+  oxpointCity                                    String?
+  oxpointStreet                                  String?
+  oxpointStreetnumber                            String?
+  oxpointPostcode                                String?
+  oxpointDescription                             String?
+  oxpointBoxnumber                               String?
+  oxpointAccesscode                              String?
+  oxpointLockboxnumber                           String?
+  oxpointLockboxcode                             String?
+  oxpointAccessibilitysummary                    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

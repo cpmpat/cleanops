@@ -78,6 +78,8 @@ const ALIASES: Record<string, Record<string, string>> = {
   // names. Only the diacritic remains: a column name cannot carry it.
   accommodation: {
     'vítejEspId': 'vitejEspId',
+    // The sheet's first urlFolderPp column was renamed urlFolderPpOld (6 Oct).
+    'urlFolderPp': 'urlFolderPpOld',
   },
 };
 
