@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { PropertiesService } from './properties.service';
+import { isOfficeRole, OFFICE_ROLES } from '../common/roles';
 
 @ApiTags('Properties')
 @ApiBearerAuth()
@@ -11,13 +12,17 @@ import { PropertiesService } from './properties.service';
 export class PropertiesController {
   constructor(private service: PropertiesService) {}
 
-  // Reads — available to any authenticated user (managers and cleaners).
-  // Cleaners need this to populate the property filter on the pool page.
+  // The list is open to every signed-in user — cleaners need it for the
+  // property filter on the pool page — but only the office gets the whole
+  // record (unit notes, default cleaner). Everyone else gets id, name, address.
 
   @Get()
-  findAll(@Req() req: TenantRequest) { return this.service.findAll(req.tenantId!); }
+  findAll(@Req() req: TenantRequest) {
+    return this.service.findAll(req.tenantId!, !isOfficeRole(req.userRole as string));
+  }
 
   @Get(':id')
+  @Roles(...OFFICE_ROLES)
   findById(@Req() req: TenantRequest, @Param('id') id: string) { return this.service.findById(req.tenantId!, id); }
 
   // Writes — managers only.

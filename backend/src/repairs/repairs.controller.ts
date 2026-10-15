@@ -230,7 +230,10 @@ export class RepairsController {
 
   @Get(':id/comments')
   listComments(@Req() req: TenantRequest, @Param('id') id: string) {
-    return this.service.listComments(req.tenantId!, id);
+    return this.service.listComments(req.tenantId!, id, {
+      userId: req.userId!,
+      userRole: req.userRole! as any,
+    });
   }
 
   @Post(':id/comments')

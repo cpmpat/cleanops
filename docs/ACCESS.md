@@ -116,7 +116,7 @@ Their notify-matrix rows are kept, unused, so turning it back on is a code
 change only. A role
 sees a change only when the notify matrix (`dataset_field_notify`,
 `docs/notify-matrix/`) says so AND the access matrix lets it view the field.
-Changes to sensitive fields carry no values and are listed for ADMIN only.
+Changes to sensitive fields carry no values and are listed for MANAGER and ADMIN only (MANAGER added 16 Oct 2026).
 
 ## EVIDENCE
 
@@ -132,12 +132,41 @@ after login they see a "no screens yet" page (`/no-access`); the cleaner app
 admits only CLEANER and AGENT. Define them before any
 account gets one of those roles.
 
+## What the API enforces (audit of 15 Oct 2026, `fix/access-audit`)
+
+Every controller was read endpoint by endpoint. The rule now: a screen being
+hidden is not the protection — the API refuses on its own.
+
+| Endpoint | Who |
+|---|---|
+| `GET /users`, `/users/:id`, workload | MANAGER (ADMIN passes every check). No user response ever carries `passwordHash`, `magicLinkToken` or `pushSubscription`. |
+| `PATCH /users/:id` | MANAGER; only name, role, language, isActive, mobileNumber |
+| `POST /admin/staff-sync/:tenantId/run` | MANAGER (the company's administrator), own tenant only (was open to the internet) |
+| `GET /turnovers`, `/turnovers/:id` | office roles (OFFICE_ROLES) |
+| `GET /turnovers/pool`, `/pool/today-arrivals/count` | CLEANER (own filter) + office roles |
+| `GET /turnovers/mine`, `/me/stats` | self |
+| `GET /cleanings`, `/cleanings/:id`, `/calendar/:y/:m` (legacy) | MANAGER; `/pool` CLEANER + MANAGER; `/mine` self |
+| `GET /bookings/:id`, `GET /streams` | MANAGER |
+| `GET /incidents`, `/incidents/:id` | MANAGER/ADMIN all; anyone else only incidents they reported |
+| `GET /repairs/:id`, comments | MANAGER/ADMIN; anyone else only if assigned |
+| `GET /properties` | everyone; non-office roles get id, name, address, pmsPropertyId, type only |
+| `GET /properties/:id` | office roles |
+| `POST /uploads/read-url` | key must be `{pmsPropertyId}/{file}` of a unit in the caller's tenant; ≤ 60 min |
+| `POST /uploads/event/:id/photo` (legacy) | MANAGER, cleaning in caller's tenant |
+| conversations | members; office roles any thread (unchanged) |
+| Data: lists, read, history, save | access matrix + row filters (unchanged); export MANAGER |
+| `GET /datasets/search` | one column per list (Accommodation titleAvantio, Owner displayName, OX Point street), only if the role may view it, within its row filter |
+| Live updates (socket) | office roles get full payloads; every other socket only `{id, status, source, at…}` and reloads through the endpoints above |
+
 ## Known gaps
 
-- Several read endpoints carry no role check and answer any signed-in
-  account (e.g. `GET /turnovers`, `GET /bookings/:id`, `GET /incidents`,
-  `GET /properties`, `GET /users/:id`). The screens do not expose them to the
-  wrong roles, but the API does. Not yet audited endpoint by endpoint.
+- Photo keys are scoped to the tenant, not to the person: a signed-in
+  cleaner who knew another unit's photo key could still have it signed.
+  Keys are timestamp + random and never listed to her, so this needs a
+  leaked key, not a guess.
+- The Newsfeed sentence names the record by its title column (titleAvantio
+  etc.) even for a role whose matrix lacks that column; every Newsfeed role
+  has it today.
 - New dataset columns and lists (OX Point) are invisible to every role,
   MANAGER and ADMIN included, until granted. Grants are loaded from the
   matrix CSV with `import:access-matrix` (dry run by default); there is no

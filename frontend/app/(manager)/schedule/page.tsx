@@ -88,7 +88,7 @@ export default function SchedulePage() {
   })();
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-[calc(100vh-108px)]">
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b border-surface-border bg-white flex items-center justify-between">
         <div>

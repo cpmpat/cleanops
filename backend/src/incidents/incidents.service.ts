@@ -67,6 +67,9 @@ interface ActorContext {
 
 // ─── Includes ────────────────────────────────────────────────
 
+/** Who sees every incident. Anyone else: only the ones they reported. */
+const INCIDENT_MANAGERS: string[] = ['MANAGER', 'ADMIN'];
+
 const DETAIL_INCLUDE = {
   property: { select: { id: true, name: true, address: true } },
   reportedBy: { select: { id: true, name: true, email: true } },
@@ -247,7 +250,10 @@ export class IncidentsService {
   ) {
     const where: Prisma.IncidentWhereInput = { tenantId };
 
-    if (actor.userRole === UserRole.CLEANER) {
+    // The manager (and ADMIN) sees every incident; anyone else only the ones
+    // they reported. Until 15 Oct 2026 only CLEANER was narrowed, so every
+    // other role read them all.
+    if (!INCIDENT_MANAGERS.includes(actor.userRole as string)) {
       where.reportedById = actor.userId;
     }
 
@@ -294,7 +300,7 @@ export class IncidentsService {
     });
     if (!incident) throw new NotFoundException('Incident not found');
     if (
-      actor.userRole === UserRole.CLEANER &&
+      !INCIDENT_MANAGERS.includes(actor.userRole as string) &&
       incident.reportedById !== actor.userId
     ) {
       throw new ForbiddenException('Not your incident');

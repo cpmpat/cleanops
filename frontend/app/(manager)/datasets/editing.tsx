@@ -140,7 +140,7 @@ export function SaveBar({
   const single = dirty.length === 1 ? dirty[0] : null;
 
   return (
-    <div className="fixed bottom-0 left-56 right-0 z-50 pointer-events-none">
+    <div className="fixed bottom-0 left-60 right-0 z-50 pointer-events-none">
       <div className="max-w-5xl mx-auto px-6 pb-5">
         <div className="pointer-events-auto bg-ink text-white rounded-2xl shadow-modal animate-scale-in overflow-hidden">
           {open && single === null && (

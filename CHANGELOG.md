@@ -23,7 +23,63 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `chore/notifications-off-desk-evidence`
+## Unreleased — branch `feat/office-redesign`
+
+**Office app redesign** for every role that uses the office app, TERENAK
+included; the cleaner app (CLEANER, AGENT) and REPAIRMAN screens are
+unchanged. Light sidebar with section labels, the open item as a white pill,
+sub-items hung on connector lines (Planning → tabs, Notifications → Data,
+Data → CDM → lists), the unread count as a red rounded rectangle, and a top
+bar with breadcrumb and search.
+
+**Search** (Shift+S anywhere outside a text field): Accommodation by title,
+Owner by display name, OX Point by street; a hit opens the record on Data.
+Needs `fix/access-audit` deployed (the search endpoint).
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Unreleased — branch `fix/access-audit`
+
+**Access audit: the API now refuses what the screens never showed.** Every
+read endpoint was checked against who may see the data behind it.
+
+- `GET /users/:id` returned the whole user row — password hash and the
+  emailed sign-in token included — to any signed-in account. Now MANAGER only,
+  and no user endpoint returns the hash, the token or the push subscription.
+  `PATCH /users/:id` takes only name, role, language, active and mobile (it
+  used to accept any field, email and password hash included).
+- `POST /admin/staff-sync/:tenantId/run` had no guard at all. MANAGER (and ADMIN), own tenant.
+- `POST /uploads/read-url` signed any key in the bucket. Now only photos in a
+  unit folder of the caller's tenant, link valid an hour at most. The legacy
+  photo upload is MANAGER only and checks the cleaning's tenant.
+- Turnovers (`GET /turnovers`, `/turnovers/:id`): office roles only; the pool
+  and its badge count: cleaners and the office. A cleaner could read the whole
+  tenant's turnovers through `?from=&to=`.
+- Legacy cleanings list, month summary and detail; `GET /bookings/:id`;
+  `GET /streams`: MANAGER only (their screens already were).
+- Incidents: MANAGER/ADMIN see all, everyone else only what they reported
+  (was: only CLEANER narrowed). Repairs detail and comments: MANAGER/ADMIN or
+  an assigned person (was: only REPAIRMAN narrowed).
+- `GET /properties`: the office gets the full unit; everyone else id, name,
+  address. `GET /properties/:id`: office only.
+- Live updates: the office gets every broadcast in full; every other socket a
+  bare "something changed" (id, status) and reloads through the endpoints above.
+- Data: `ref:` pick lists honour the referenced list's row filter.
+- History of sensitive (masked) fields — that they changed, never the values —
+  is now shown to MANAGER as well as ADMIN (record drawer and Notifications → Data).
+- New `GET /datasets/search?q=` for the top-bar search (Accommodation
+  titleAvantio, Owner displayName, OX Point street): only lists and columns
+  the role may view, within its rows.
+
+*Migrations:* None. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-15 · PR #72
 
 **Notifications off, Newsfeed on.** FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT
 and EVIDENCE no longer have Notifications → Data (menu and API). All three
@@ -39,10 +95,6 @@ Newsfeed too. TERENAK still starts on Data, Airchat roles on Airchat,
 cleaners and repairmen unchanged.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-15 · PR #71
 

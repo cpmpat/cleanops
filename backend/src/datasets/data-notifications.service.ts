@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
-import { DB_MODELS, TABS } from './datasets.service';
+import { DB_MODELS, TABS, SEES_MASKED } from './datasets.service';
 
 /**
  * Notifications → Data: who changed what in the CDM lists, when, from what to
@@ -12,7 +12,7 @@ import { DB_MODELS, TABS } from './datasets.service';
  * about, the access matrix (dataset_field_access) whether it may see the field
  * at all. Notify can only narrow; a role is never shown a change to a field it
  * could not open in Data. Sensitive fields are recorded without values, and —
- * as in the record drawer's history — only ADMIN sees that they changed.
+ * as in the record drawer's history — only MANAGER and ADMIN see that they changed.
  */
 
 /** Columns that name a record, tried in order. */
@@ -102,7 +102,9 @@ export class DataNotificationsService {
     const where: Prisma.DatasetFieldChangeWhereInput = {
       tenantId,
       OR: pairs.map(([dataset, fs]) => ({ dataset, field: { in: [...fs] } })),
-      ...(role === 'ADMIN' ? {} : { masked: false }),
+      // Changes to sensitive fields (no values, just that they changed):
+      // MANAGER and ADMIN since 16 Oct 2026 (was ADMIN only).
+      ...(SEES_MASKED.includes(role as string) ? {} : { masked: false }),
       ...(q.actor ? { actorEmail: { contains: q.actor.trim(), mode: 'insensitive' as const } } : {}),
       ...(q.source === 'import' ? { actorRole: IMPORT_ROLE } : {}),
       ...(q.source === 'app' ? { NOT: { actorRole: IMPORT_ROLE } } : {}),

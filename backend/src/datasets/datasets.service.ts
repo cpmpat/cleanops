@@ -33,6 +33,16 @@ export const TABS: ReadonlyArray<{ key: string; tab: string; label: string; sour
  * that indirection is resolved, so a typo fails loudly at the first request
  * rather than silently returning nothing.
  */
+/** Who sees changes to masked (sensitive) fields in history — no values, only that they changed. */
+export const SEES_MASKED: string[] = ['MANAGER', 'ADMIN'];
+
+/** The one column the top-bar search looks in, per list. */
+export const SEARCH_FIELDS: Record<string, string> = {
+  accommodation: 'titleAvantio',
+  owner: 'displayName',
+  oxpoint: 'street',
+};
+
 export const DB_MODELS: Record<string, { model: string; key: string; pk: string }> = {
   user:          { model: 'cdmUser',          key: 'internalId', pk: 'id'    },
   // The primary key is `rowId` here: the Accomodation sheet has its own column
@@ -231,6 +241,39 @@ export class DatasetsService {
       [g.field, g.canEdit && g.field !== key && !this.isLookup(dataset, g.field) ? 'edit' : 'view'] as const));
   }
 
+  /**
+   * The top-bar search. One column per list, decided with Patrik on 15 Oct
+   * 2026; a list is searched only when the role may view that column, and the
+   * role's row filter applies — the search can never find a record the list
+   * itself would not show.
+   */
+  async search(tenantId: string, role: UserRole, raw: string) {
+    const q = raw.trim().slice(0, 80);
+    if (q.length < 2) return { query: q, results: [] };
+    const results: { dataset: string; label: string; rowId: string; title: string; field: string }[] = [];
+    for (const [dataset, field] of Object.entries(SEARCH_FIELDS)) {
+      const spec = DB_MODELS[dataset];
+      const tab = TABS.find((t) => t.key === dataset);
+      if (!spec || !tab || tab.source !== 'db') continue;
+      const access = await this.accessFor(tenantId, dataset, role);
+      if (!access.has(field)) continue;
+      const rows: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
+        where: {
+          tenantId,
+          ...(await this.rowFilter(tenantId, dataset, role)),
+          [field]: { contains: q, mode: 'insensitive' },
+        },
+        select: { [spec.pk]: true, [field]: true },
+        orderBy: { [field]: 'asc' },
+        take: 8,
+      });
+      for (const r of rows) {
+        results.push({ dataset, label: tab.label, rowId: String(r[spec.pk]), title: String(r[field] ?? ''), field });
+      }
+    }
+    return { query: q, results };
+  }
+
   /** Columns filled from another list (Accommodation's OX Point columns): never edited by hand. */
   private isLookup(dataset: string, field: string): boolean {
     return dataset === 'accommodation' && OX_LOOKUP_FIELDS.includes(field);
@@ -252,7 +295,7 @@ export class DatasetsService {
   }
 
   /** Active pick-list values for the given lists, in their sort order. */
-  private async picklists(tenantId: string, lists: string[]): Promise<Map<string, string[]>> {
+  private async picklists(tenantId: string, lists: string[], role?: UserRole): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
     if (lists.length === 0) return out;
     // `ref:<list>.<column>`: the values of another list's column, read now —
@@ -261,8 +304,11 @@ export class DatasetsService {
       const [dataset, column] = ref.slice(4).split('.');
       const spec = DB_MODELS[dataset];
       if (!spec || !column) continue;
+      // The referenced list's row filter applies too: a role limited to some
+      // rows of that list is offered only their values.
+      const rows = role ? await this.rowFilter(tenantId, dataset, role) : {};
       const found: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
-        where: { tenantId, [column]: { not: null } },
+        where: { tenantId, [column]: { not: null }, ...rows },
         select: { [column]: true },
         distinct: [column],
         orderBy: { [column]: 'asc' },
@@ -676,6 +722,7 @@ export class DatasetsService {
     const options = await this.picklists(
       tenantId,
       [...new Set(fields.map((f) => f.picklist).filter((l): l is string => !!l))],
+      role,
     );
     const delegate = (this.prisma as any)[spec.model];
 
@@ -781,6 +828,7 @@ export class DatasetsService {
     const allowed = await this.picklists(
       tenantId,
       [...new Set(fields.map((f) => f.picklist).filter((l): l is string => !!l))],
+      role,
     );
     const data: Record<string, unknown> = {};
     for (const k of keys) data[k] = this.parse(byField.get(k)!, values[k], allowed);
@@ -903,7 +951,8 @@ export class DatasetsService {
     return this.prisma.datasetFieldChange.findMany({
       where: {
         tenantId, dataset: key, rowId, field: { in: [...access.keys()] },
-        ...(role === 'ADMIN' ? {} : { masked: false }),
+        // MANAGER and ADMIN see that a sensitive field changed (never its values).
+        ...(SEES_MASKED.includes(role as string) ? {} : { masked: false }),
       },
       orderBy: { createdAt: 'desc' },
       take: 500,

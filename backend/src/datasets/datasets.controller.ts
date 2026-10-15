@@ -22,6 +22,19 @@ export class DatasetsController {
     return this.datasets.list(req.tenantId!, req.userRole as any);
   }
 
+  // Before ':key', or Nest would read "search" as a list key.
+  @Get('search')
+  @ApiOperation({
+    summary: 'Global search (the top bar, Shift+S)',
+    description:
+      'Accommodation by titleAvantio, Owner by displayName, OX Point by street — ' +
+      'each only when the caller role may view that column, and only within ' +
+      'the role\'s rows. Returns at most 8 hits per list.',
+  })
+  search(@Req() req: TenantRequest, @Query('q') q?: string) {
+    return this.datasets.search(req.tenantId!, req.userRole as any, q ?? '');
+  }
+
   @Get(':key')
   @ApiOperation({
     summary: 'Read one dataset from the tenant spreadsheet',

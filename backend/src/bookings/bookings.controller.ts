@@ -55,9 +55,11 @@ export class BookingsController {
     return this.service.getCalendarForUser(req.tenantId!, req.userId!, from, to);
   }
 
-  // ─── Detail (any role, used by incident detail pages) ──────
+  // ─── Detail (manager; a booking carries the guest's details) ──────
 
   @Get(':id')
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get a single booking with its cleaning' })
   getById(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.getById(req.tenantId!, id);

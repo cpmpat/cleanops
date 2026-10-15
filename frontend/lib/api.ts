@@ -1424,6 +1424,14 @@ export const dataNotifications = {
   },
 };
 
+export interface DatasetSearchHit {
+  dataset: string;
+  label: string;
+  rowId: string;
+  title: string;
+  field: string;
+}
+
 export const datasets = {
   list: () => get<DatasetSummary[]>('/datasets'),
   read: (key: string, refresh = false) =>
@@ -1435,6 +1443,9 @@ export const datasets = {
     ),
   history: (key: string, rowId: string) =>
     get<DatasetFieldChange[]>(`/datasets/${key}/rows/${rowId}/history`),
+  /** The top-bar search: only lists and columns this role may view, within its rows. */
+  search: (q: string) =>
+    get<{ query: string; results: DatasetSearchHit[] }>(`/datasets/search?q=${encodeURIComponent(q)}`),
 
   /**
    * Download an export of the current view.

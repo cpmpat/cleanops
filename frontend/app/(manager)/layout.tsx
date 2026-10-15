@@ -6,9 +6,9 @@ import { useAuth } from '@/lib/auth';
 import { translations, type Locale } from '@/i18n/translations';
 import {
   LayoutDashboard, Users, Building2, CalendarCheck,
-  CalendarRange, Settings, LogOut, ChevronRight, Globe,
+  CalendarRange, Settings, LogOut, Search,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
-  LogIn, Clock, Bell, History, Newspaper,
+  LogIn, Clock, Bell, History, Newspaper, Layers,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,7 @@ import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
 import { datasets as datasetsApi, newsfeed as newsfeedApi, NEWSFEED_CHANGED, type DatasetSummary } from '@/lib/api';
 import { homeFor } from '@/lib/home';
+import { CommandSearch, ShortcutCue, SEARCH_STRINGS, isTyping } from '@/components/office/CommandSearch';
 
 /**
  * Office roles that are not managers. They may open Airchat and nothing else —
@@ -58,23 +59,29 @@ const NEWSFEED_LABEL: Record<string, string> = {
   en: 'Newsfeed', cs: 'Novinky', ru: 'Новости', uk: 'Новини',
 };
 
-/**
- * A menu icon in the style of the macOS Finder sidebar (8 Oct 2026): a plain,
- * thin-stroked outline symbol, no tile, in grey — Finder's look without its
- * blue. The glyphs are our own (lucide); only the look is macOS's.
- */
-function NavTile({ icon: Icon, active }: { icon: React.ElementType; active: boolean }) {
-  return (
-    <Icon
-      size={19}
-      strokeWidth={1.5}
-      className={cn('flex-shrink-0 transition-colors', active ? 'text-[#D1D1D6]' : 'text-[#98989D]')}
-    />
-  );
-}
-
 const NOTIFY_LABEL: Record<string, string> = {
   en: 'Notifications', cs: 'Notifikace', ru: 'Уведомления', uk: 'Сповіщення',
+};
+
+/**
+ * Menu sections (15 Oct 2026 redesign). A section with nothing this role may
+ * open is not drawn at all.
+ */
+type SectionKey = 'overview' | 'operations' | 'communication' | 'records' | 'admin';
+const SECTION_OF: Record<string, SectionKey> = {
+  '/newsfeed': 'overview', '/dashboard': 'overview',
+  '/planning': 'operations', '/schedule': 'operations', '/streams': 'operations',
+  '/incidents': 'operations', '/repairs': 'operations',
+  '/airchat': 'communication', '/messages': 'communication', '/notify': 'communication',
+  '/datasets': 'records',
+  '/staff': 'admin', '/properties': 'admin', '/settings': 'admin',
+};
+const SECTION_ORDER: SectionKey[] = ['overview', 'operations', 'communication', 'records', 'admin'];
+const SECTION_LABEL: Record<string, Record<SectionKey, string>> = {
+  en: { overview: 'Overview', operations: 'Operations', communication: 'Communication', records: 'Records', admin: 'Administration' },
+  cs: { overview: 'Přehled', operations: 'Provoz', communication: 'Komunikace', records: 'Záznamy', admin: 'Správa' },
+  ru: { overview: 'Обзор', operations: 'Операции', communication: 'Коммуникации', records: 'Записи', admin: 'Администрирование' },
+  uk: { overview: 'Огляд', operations: 'Операції', communication: 'Комунікації', records: 'Записи', admin: 'Адміністрування' },
 };
 
 const LOCALES: { code: Locale; label: string }[] = [
@@ -83,6 +90,59 @@ const LOCALES: { code: Locale; label: string }[] = [
   { code: 'ru', label: 'RU' },
   { code: 'uk', label: 'UK' },
 ];
+
+/** Grey of the tree connector lines. */
+const LINE = 'border-[#CDCDD3]';
+
+/**
+ * The unread count: a red rounded rectangle, not a circle (15 Oct 2026).
+ */
+function CountBadge({ n, label }: { n: number; label?: string }) {
+  return (
+    <span
+      aria-label={label ?? `${n}`}
+      className="min-w-[20px] h-[18px] px-1.5 rounded-[5px] bg-[#EF4444] text-white text-[11px] font-semibold leading-[18px] text-center tabular-nums"
+    >
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
+/**
+ * Sub-items hang off their parent on a connector: one vertical line from the
+ * parent's icon, and a rounded elbow into each child. The line runs on past a
+ * child only while there is a sibling below it.
+ */
+function TreeBranch({ children }: { children: React.ReactNode }) {
+  return <ul className="relative ml-[19px] mt-0.5 mb-1">{children}</ul>;
+}
+
+function TreeLeaf({ last, children }: { last: boolean; children: React.ReactNode }) {
+  return (
+    <li className="relative pl-[14px]">
+      {!last && <span aria-hidden className={cn('absolute left-0 top-0 bottom-0 border-l', LINE)} />}
+      <span aria-hidden className={cn('absolute left-0 top-0 h-[15px] w-[11px] border-l border-b rounded-bl-[9px]', LINE)} />
+      {children}
+    </li>
+  );
+}
+
+function SubLink({ href, icon: Icon, label, on }: { href: string; icon: React.ElementType; label: string; on: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex items-center gap-2 h-[30px] px-2 rounded-lg text-[13px] transition-colors',
+        on
+          ? 'bg-white text-[#18181B] font-medium shadow-[0_1px_2px_rgba(16,24,40,0.06)] ring-1 ring-black/[0.04]'
+          : 'text-[#71717A] hover:text-[#18181B] hover:bg-black/[0.04]',
+      )}
+    >
+      <Icon size={14} strokeWidth={1.75} className={cn('flex-shrink-0', on ? 'text-[#18181B]' : 'text-[#A1A1AA]')} />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
 
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -157,7 +217,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   ];
 
   // Newsfeed badge: how many news items this person has not closed. Polled
-  // every minute, and refreshed at once when the Newsfeed page closes one.
+  // every 30 s, and refreshed at once when the Newsfeed page closes one.
   const hasNewsfeed = !!user && (user.role === 'MANAGER' || (ROLE_PATHS[user.role] ?? []).includes('/newsfeed'));
   const [newsUnread, setNewsUnread] = useState(0);
   useEffect(() => {
@@ -182,6 +242,23 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  // Top-bar search. Only for a role that has at least one Data list — the
+  // search reads nothing else. Shift+S opens it unless the person is typing.
+  const canSearch = dataLists.length > 0;
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    if (!canSearch) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code !== 'KeyS' && e.key !== 'S' && e.key !== 's') return;
+      if (isTyping(e.target)) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canSearch]);
+
   const navItems = [
     { href: '/newsfeed',   icon: Newspaper,       label: NEWSFEED_LABEL[locale] ?? 'Newsfeed' },
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
@@ -192,15 +269,15 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/repairs',    icon: Wrench,          label: (t.nav as any).repairs  ?? 'Repairs' },
     { href: '/airchat',    icon: MessagesSquare,  label: 'Airchat' },
     { href: '/messages',   icon: Mail,            label: messageStrings[locale].manager.navLabel },
+    { href: '/notify',     icon: Bell,            label: NOTIFY_LABEL[locale] ?? 'Notifications' },
+    { href: '/datasets',   icon: Database,        label: (t.nav as any).data ?? 'Data' },
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
-    { href: '/datasets',   icon: Database,        label: (t.nav as any).data ?? 'Data' },
-    { href: '/notify',     icon: Bell,            label: NOTIFY_LABEL[locale] ?? 'Notifications' },
     { href: '/settings',   icon: Settings,        label: t.nav.settings },
   ];
 
-  // Desk roles see one item. Showing them a menu they cannot open would just
-  // be a list of locked doors.
+  // Desk roles see their items only. Showing them a menu they cannot open
+  // would just be a list of locked doors.
   const visibleNav = ROLE_PATHS[user?.role ?? '']
     ? navItems.filter((i) =>
         ROLE_PATHS[user!.role].includes(i.href) &&
@@ -209,121 +286,132 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         (i.href !== '/datasets' || dataLists.length > 0 || ROLE_PATHS[user!.role]?.[0] === '/datasets'))
     : navItems;
 
+  const sections = SECTION_ORDER
+    .map((key) => ({ key, items: visibleNav.filter((i) => SECTION_OF[i.href] === key) }))
+    .filter((s) => s.items.length > 0);
+
+  // Where am I: section › item › tab, for the top bar.
+  const current = navItems.find((i) => pathname === i.href || pathname?.startsWith(i.href + '/'));
+  const currentTab = [...planningTabs, ...notifyTabs].find((x) => pathname === x.href || pathname?.startsWith(x.href + '/'));
+  const sectionLabels = SECTION_LABEL[locale] ?? SECTION_LABEL.en;
+  const searchStrings = SEARCH_STRINGS[locale] ?? SEARCH_STRINGS.en;
+
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
+      <div className="min-h-screen bg-[#F4F4F5] flex items-center justify-center">
         <div className="w-10 h-10 rounded-2xl bg-ink animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-surface flex">
+    <div className="min-h-screen bg-[#F4F4F5] flex">
       <NewVersionPrompt locale={locale} />
-      <aside className="w-56 bg-ink flex-shrink-0 flex flex-col fixed h-full z-30">
+      <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} locale={locale} />
 
-        <div className="px-5 py-5 border-b border-white/10">
+      <aside className="w-60 flex-shrink-0 flex flex-col fixed h-full z-30 bg-[#F4F4F5]">
+
+        <div className="px-5 pt-5 pb-3">
           <div className="flex items-center gap-3">
             <img src="/airstay-logo.svg" alt="Airstay" className="w-8 h-8 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="font-bold text-white text-sm leading-tight tracking-tight">Airstay</p>
-              <p className="text-white/50 text-[10px] leading-tight">Portal App</p>
+              <p className="font-bold text-[#18181B] text-[15px] leading-tight tracking-tight">Airstay</p>
+              <p className="text-[#A1A1AA] text-[11px] leading-tight">Portal App</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto scrollbar-hide">
-          {visibleNav.map(({ href, icon: Icon, label }) => {
-            const active = pathname === href || pathname?.startsWith(href + '/');
-            const isData = href === '/datasets';
-            const isPlanning = href === '/planning';
-            const isNotify = href === '/notify';
-            const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : null;
-            const open = isData ? dataOpen : isNotify ? notifyOpen : planningOpen;
-            const toggle = isData ? () => setDataOpen(o => !o)
-              : isNotify ? () => setNotifyOpen(o => !o)
-              : () => setPlanningOpen(o => !o);
-            return (
-              <div key={href}>
-                <div
-                  className={cn(
-                    // Finder's sidebar: a soft rounded selection, bold label when selected.
-                    'flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13.5px] transition-colors',
-                    active ? 'bg-white/[0.13] text-white font-semibold' : 'text-white/85 font-normal hover:bg-white/[0.06]',
-                  )}
-                >
-                  <Link href={href} className="flex items-center gap-2.5 flex-1 min-w-0">
-                    <NavTile icon={Icon} active={!!active} />
-                    {label}
-                  </Link>
-                  {href === '/newsfeed' && newsUnread > 0 && (
-                    <span
-                      aria-label={`${newsUnread} unread`}
-                      className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-bold leading-[18px] text-center tabular-nums"
-                    >
-                      {newsUnread > 99 ? '99+' : newsUnread}
-                    </span>
-                  )}
-                  {isData || sub ? (
-                    <button
-                      type="button"
-                      onClick={toggle}
-                      aria-expanded={open}
-                      className="ml-auto -mr-1 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition"
-                    >
-                      <ChevronDown size={14} className={cn('transition-transform', open ? 'rotate-180' : '')} />
-                    </button>
-                  ) : (
-                    active && !(href === '/newsfeed' && newsUnread > 0) && <ChevronRight size={14} className="ml-auto opacity-40" />
-                  )}
-                </div>
-
-                {/* Planning → Check-In / Check-Out / Agents; Notifications → Data */}
-                {sub && open && (
-                  <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
-                    {sub.map(tab => {
-                      const on = pathname === tab.href || pathname?.startsWith(tab.href + '/');
-                      return (
-                        <Link
-                          key={tab.href}
-                          href={tab.href}
-                          className={cn(
-                            'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
-                            on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
-                          )}
-                        >
-                          <tab.icon size={13} className="flex-shrink-0 opacity-70" />
-                          {tab.label}
+        <nav className="flex-1 px-3 pb-4 overflow-y-auto scrollbar-hide">
+          {sections.map((section) => (
+            <div key={section.key} className="mt-2.5 first:mt-0">
+              <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[#A1A1AA]">
+                {sectionLabels[section.key]}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map(({ href, icon: Icon, label }) => {
+                  const active = pathname === href || pathname?.startsWith(href + '/');
+                  const isData = href === '/datasets';
+                  const isPlanning = href === '/planning';
+                  const isNotify = href === '/notify';
+                  const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : null;
+                  const expandable = !!sub || (isData && dataLists.length > 0);
+                  const open = isData ? dataOpen : isNotify ? notifyOpen : planningOpen;
+                  const toggle = isData ? () => setDataOpen(o => !o)
+                    : isNotify ? () => setNotifyOpen(o => !o)
+                    : () => setPlanningOpen(o => !o);
+                  const badge = href === '/newsfeed' && newsUnread > 0 ? newsUnread : 0;
+                  return (
+                    <div key={href}>
+                      <div
+                        className={cn(
+                          'group flex items-center gap-2.5 h-[34px] px-2.5 rounded-xl text-[13.5px] transition-colors',
+                          active
+                            ? 'bg-white text-[#18181B] font-semibold shadow-[0_1px_2px_rgba(16,24,40,0.06)] ring-1 ring-black/[0.04]'
+                            : 'text-[#52525B] hover:bg-black/[0.04] hover:text-[#18181B]',
+                        )}
+                      >
+                        <Link href={href} className="flex items-center gap-2.5 flex-1 min-w-0 h-full">
+                          <Icon
+                            size={18}
+                            strokeWidth={1.75}
+                            className={cn('flex-shrink-0', active ? 'text-[#18181B]' : 'text-[#A1A1AA] group-hover:text-[#52525B]')}
+                          />
+                          <span className="truncate">{label}</span>
                         </Link>
-                      );
-                    })}
-                  </div>
-                )}
+                        {badge > 0 && <CountBadge n={badge} label={`${badge} unread`} />}
+                        {expandable && (
+                          <button
+                            type="button"
+                            onClick={toggle}
+                            aria-expanded={open}
+                            className="-mr-1 p-1 rounded-md text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05] transition"
+                          >
+                            <ChevronDown size={14} className={cn('transition-transform', open ? 'rotate-180' : '')} />
+                          </button>
+                        )}
+                      </div>
 
-                {/* Data → CDM → the lists in it */}
-                {isData && dataOpen && dataLists.length > 0 && (
-                  <Suspense fallback={null}>
-                    <DataSubnav lists={dataLists} onData={onData} />
-                  </Suspense>
-                )}
+                      {/* Planning → Check-In / Check-Out / Agents; Notifications → Data */}
+                      {sub && open && (
+                        <TreeBranch>
+                          {sub.map((tab, i) => (
+                            <TreeLeaf key={tab.href} last={i === sub.length - 1}>
+                              <SubLink
+                                href={tab.href}
+                                icon={tab.icon}
+                                label={tab.label}
+                                on={pathname === tab.href || !!pathname?.startsWith(tab.href + '/')}
+                              />
+                            </TreeLeaf>
+                          ))}
+                        </TreeBranch>
+                      )}
+
+                      {/* Data → CDM → the lists in it */}
+                      {isData && dataOpen && dataLists.length > 0 && (
+                        <Suspense fallback={null}>
+                          <DataSubnav lists={dataLists} onData={onData} />
+                        </Suspense>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </nav>
 
-        <div className="px-3 py-3 border-t border-white/10">
-          <div className="flex items-center gap-1.5 px-2 mb-2">
-            <Globe size={12} className="text-white/40" />
-            <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Language</span>
-          </div>
-          <div className="flex gap-1 px-1">
+        <div className="px-3 pb-3">
+          <div className="flex p-0.5 rounded-xl bg-black/[0.05]" role="group" aria-label="Language">
             {LOCALES.map(({ code, label }) => (
               <button
                 key={code}
                 onClick={() => setLocale(code)}
                 className={cn(
-                  'flex-1 py-1.5 rounded-lg text-xs font-semibold transition',
-                  locale === code ? 'bg-white text-ink' : 'text-white/40 hover:text-white hover:bg-white/10',
+                  'flex-1 h-7 rounded-[10px] text-[11.5px] font-semibold transition',
+                  locale === code
+                    ? 'bg-white text-[#18181B] shadow-[0_1px_2px_rgba(16,24,40,0.08)]'
+                    : 'text-[#71717A] hover:text-[#18181B]',
                 )}
               >
                 {label}
@@ -332,61 +420,118 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="px-3 py-4 border-t border-white/10">
-          <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">{user.name[0]}</span>
+        <div className="px-3 pb-4">
+          <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white ring-1 ring-black/[0.05] shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+            <div className="w-8 h-8 rounded-full bg-[#18181B] flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-semibold">{user.name?.[0] ?? '?'}</span>
             </div>
-            <div className="min-w-0">
-              <p className="text-white text-xs font-medium truncate">{user.name}</p>
-              <p className="text-white/40 text-[10px] truncate">{user.email}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[#18181B] text-[12.5px] font-semibold truncate leading-tight">{user.name}</p>
+              <p className="text-[#A1A1AA] text-[11px] truncate leading-tight">{user.email}</p>
             </div>
+            <button
+              onClick={logout}
+              title={t.general.logout}
+              aria-label={t.general.logout}
+              className="p-1.5 rounded-lg text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05] transition"
+            >
+              <LogOut size={15} />
+            </button>
           </div>
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 text-xs transition"
-          >
-            <LogOut size={14} />
-            {t.general.logout}
-          </button>
         </div>
       </aside>
 
-      <main className="flex-1 ml-56 min-h-screen overflow-y-auto">
-        {children}
+      <main className="flex-1 ml-60 min-h-screen p-2 pl-0 min-w-0">
+        <div className="min-h-[calc(100vh-16px)] bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-[0_1px_3px_rgba(16,24,40,0.04)] flex flex-col min-w-0">
+          {/* Search on its own row at the top; the breadcrumb sits under it in
+              small type, as in the reference (16 Oct 2026). */}
+          <header className="sticky top-0 z-20 h-14 flex items-center px-6 border-b border-black/[0.05] bg-white/90 backdrop-blur rounded-t-2xl">
+            {canSearch && (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="w-full max-w-md h-9 flex items-center gap-2.5 pl-3 pr-1.5 rounded-full bg-white ring-1 ring-black/[0.08] shadow-[0_1px_2px_rgba(16,24,40,0.05)] text-left hover:ring-black/[0.14] transition"
+                title={`${searchStrings.hint} (Shift+S)`}
+              >
+                <Search size={15} className="text-[#A1A1AA] flex-shrink-0" />
+                <span className="flex-1 min-w-0 truncate text-[13px] text-[#A1A1AA]">{searchStrings.placeholder}</span>
+                <ShortcutCue />
+              </button>
+            )}
+          </header>
+          <div className="h-9 flex items-end px-6">
+            <Suspense fallback={null}>
+              <Breadcrumb
+                section={current ? sectionLabels[SECTION_OF[current.href]] : ''}
+                item={current?.label ?? ''}
+                itemHref={current?.href ?? ''}
+                tab={currentTab?.label ?? ''}
+                lists={dataLists}
+                onData={onData}
+              />
+            </Suspense>
+          </div>
+          <div className="flex-1 min-w-0">
+            {children}
+          </div>
+        </div>
       </main>
     </div>
   );
 }
 
+/** Section › Item › Tab (or list), above the page. Under Suspense for useSearchParams. */
+function Breadcrumb({ section, item, itemHref, tab, lists, onData }: {
+  section: string; item: string; itemHref: string; tab: string; lists: DatasetSummary[]; onData: boolean;
+}) {
+  const searchParams = useSearchParams();
+  const list = onData ? lists.find((l) => l.key === (searchParams?.get('d') ?? lists[0]?.key))?.label ?? '' : '';
+  const last = tab || list;
+  return (
+    <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 text-[12px] leading-none">
+      {section && <span className="text-[#A1A1AA] truncate">{section}</span>}
+      {section && item && <span className="text-[#D4D4D8]">/</span>}
+      {item && (
+        last
+          ? <Link href={itemHref} className="text-[#A1A1AA] hover:text-[#52525B] truncate">{item}</Link>
+          : <span className="text-[#52525B] font-medium truncate">{item}</span>
+      )}
+      {last && <span className="text-[#D4D4D8]">/</span>}
+      {last && <span className="text-[#52525B] font-medium truncate">{last}</span>}
+    </nav>
+  );
+}
+
 /**
- * The CDM lists under the Data item. Lives in its own component because
- * useSearchParams() must sit under a Suspense boundary — reading it in the
- * layout itself would force every manager page to bail out of prerendering,
- * which is what failed the Vercel build.
+ * The CDM lists under the Data item: Data → CDM → lists, two levels of the
+ * same connector tree. Lives in its own component because useSearchParams()
+ * must sit under a Suspense boundary — reading it in the layout itself would
+ * force every manager page to bail out of prerendering, which is what failed
+ * the Vercel build.
  */
 function DataSubnav({ lists, onData }: { lists: DatasetSummary[]; onData: boolean }) {
   const searchParams = useSearchParams();
   const activeList = searchParams?.get('d') ?? lists[0]?.key ?? '';
   return (
-    <div className="ml-4 mt-0.5 mb-1 pl-3 border-l border-white/10">
-      <p className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">CDM</p>
-      {lists.map(d => {
-        const on = onData && activeList === d.key;
-        return (
-          <Link
-            key={d.key}
-            href={`/datasets?d=${encodeURIComponent(d.key)}`}
-            className={cn(
-              'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
-              on ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5',
-            )}
-          >
-            <Table2 size={13} className="flex-shrink-0 opacity-70" />
-            {d.label}
-          </Link>
-        );
-      })}
-    </div>
+    <TreeBranch>
+      <TreeLeaf last>
+        <div className="flex items-center gap-2 h-[30px] px-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-[#A1A1AA]">
+          <Layers size={14} strokeWidth={1.75} className="flex-shrink-0" />
+          CDM
+        </div>
+        <ul className="relative ml-[15px] mb-0.5">
+          {lists.map((d, i) => (
+            <TreeLeaf key={d.key} last={i === lists.length - 1}>
+              <SubLink
+                href={`/datasets?d=${encodeURIComponent(d.key)}`}
+                icon={Table2}
+                label={d.label}
+                on={onData && activeList === d.key}
+              />
+            </TreeLeaf>
+          ))}
+        </ul>
+      </TreeLeaf>
+    </TreeBranch>
   );
 }

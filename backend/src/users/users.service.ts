@@ -19,6 +19,21 @@ interface UpdateUserDto {
   mobileNumber?: string | null;
 }
 
+/**
+ * What leaves the server about a user. Never the password hash, the magic-link
+ * token or the push subscription: a findById that returned the whole row let
+ * any signed-in account read another's login token until 15 Oct 2026.
+ */
+export const USER_PUBLIC_SELECT = {
+  id: true, tenantId: true, email: true, name: true, role: true, language: true,
+  isActive: true, position: true, mobileNumber: true, cdmUserId: true,
+  isSyncManaged: true, lastSyncedAt: true, disabledAt: true,
+  emailVerifiedAt: true, lastLoginAt: true, createdAt: true, updatedAt: true,
+} as const;
+
+/** The only fields a manager may change on a user — never email, tenant or login secrets. */
+const UPDATABLE_FIELDS = ['name', 'role', 'language', 'isActive', 'mobileNumber'] as const;
+
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
@@ -38,6 +53,7 @@ export class UsersService {
         language: dto.language || Language.en,
         mobileNumber: normalisePhone(dto.mobileNumber),
       },
+      select: USER_PUBLIC_SELECT,
     });
   }
 
@@ -56,7 +72,8 @@ export class UsersService {
   async findById(tenantId: string, userId: string) {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, tenantId },
-      include: {
+      select: {
+        ...USER_PUBLIC_SELECT,
         assignedCleanings: {
           where: { status: { in: ['ASSIGNED', 'STARTED'] } },
           include: { cleaning: true },
@@ -68,8 +85,14 @@ export class UsersService {
     return user;
   }
 
-  async update(tenantId: string, userId: string, dto: UpdateUserDto) {
+  async update(tenantId: string, userId: string, input: UpdateUserDto, _actorRole?: string) {
     await this.findById(tenantId, userId);
+    // Whitelist: the body used to be spread straight into the update, so a
+    // request could set email, tenantId or passwordHash.
+    const dto: UpdateUserDto = {};
+    for (const k of UPDATABLE_FIELDS) {
+      if ((input as any)?.[k] !== undefined) (dto as any)[k] = (input as any)[k];
+    }
     return this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -78,6 +101,7 @@ export class UsersService {
           mobileNumber: normalisePhone(dto.mobileNumber),
         }),
       },
+      select: USER_PUBLIC_SELECT,
     });
   }
 

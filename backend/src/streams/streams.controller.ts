@@ -22,9 +22,11 @@ import { StreamsService } from './streams.service';
 export class StreamsController {
   constructor(private service: StreamsService) {}
 
-  // ─── Feed (any role) ───────────────────────────────────────
+  // ─── Feed (manager: the Streams module is the manager's) ───────────
 
   @Get()
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({
     summary: 'Get the streams feed (global or per-property)',
     description:

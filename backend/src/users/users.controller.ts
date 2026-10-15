@@ -58,7 +58,8 @@ export class UsersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get user by ID' })
+  @Roles('MANAGER')
+  @ApiOperation({ summary: 'Get user by ID (manager only)' })
   findOne(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.usersService.findById(req.tenantId!, id);
   }
@@ -67,7 +68,7 @@ export class UsersController {
   @Roles('MANAGER')
   @ApiOperation({ summary: 'Update user (manager only)' })
   update(@Req() req: TenantRequest, @Param('id') id: string, @Body() dto: any) {
-    return this.usersService.update(req.tenantId!, id, dto);
+    return this.usersService.update(req.tenantId!, id, dto, req.userRole as string);
   }
 
   @Delete(':id')

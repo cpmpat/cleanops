@@ -10,6 +10,20 @@ import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaService } from '../common/prisma.service';
 import { accountStatus } from '../common/guards/auth.guard';
+import { isOfficeRole } from '../common/roles';
+
+/** What a non-office socket learns from a tenant broadcast: that something changed, not what. */
+function nudge(data: any) {
+  if (Array.isArray(data)) return { count: data.length };
+  if (!data || typeof data !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const k of ['id', 'status', 'source', 'at', 'bookingId', 'created', 'updated', 'cancelled']) {
+    const v = data[k];
+    if (v === undefined) continue;
+    if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) out[k] = v;
+  }
+  return out;
+}
 
 // ─── Gateway ───
 @WebSocketGateway({
@@ -44,7 +58,13 @@ export class CleanOpsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       // Store mapping
       client.data = { userId, tenantId, role: status.role ?? payload.role };
-      client.join(`tenant:${tenantId}`);
+      // Two tenant rooms: the office gets every broadcast in full; everyone
+      // else (cleaners, agents, read-only office roles) only a nudge — id,
+      // status, source, time — enough to know to reload, through endpoints
+      // that apply their own access rules. Until 15 Oct 2026 every signed-in
+      // socket received whole bookings, incidents and turnovers.
+      const role = status.role ?? payload.role;
+      client.join(isOfficeRole(role) ? `office:${tenantId}` : `staff:${tenantId}`);
       client.join(`user:${userId}`);
 
       if (!this.userSockets.has(userId)) this.userSockets.set(userId, new Set());
@@ -66,9 +86,10 @@ export class CleanOpsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   // ─── Emit helpers (called from services) ───
 
-  /** Notify all users in a tenant */
+  /** Notify all users in a tenant: the office in full, everyone else a nudge. */
   emitToTenant(tenantId: string, event: string, data: any) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server.to(`office:${tenantId}`).emit(event, data);
+    this.server.to(`staff:${tenantId}`).emit(event, nudge(data));
   }
 
   /** Notify a specific user */
