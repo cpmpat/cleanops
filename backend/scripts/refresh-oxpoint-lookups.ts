@@ -4,7 +4,7 @@
  *
  * Re-copies Accommodation's OX Point columns (oxpointCity … oxpointAccessibilitysummary,
  * sheet FW–GF) from cdm_ox_point, matching accommodation.oxPointId to the OX
- * Point's "ID" (oxId). The app keeps them in step on every edit; run this after
+ * Point's code (`id`). The app keeps them in step on every edit; run this after
  * a sheet reload of either list, or to check the two agree.
  *
  * DRY RUN IS THE DEFAULT: prints how many rows and cells differ, per column,
@@ -55,7 +55,7 @@ async function main() {
     console.log(`Rows that ${values.apply ? 'changed' : 'would change'}: ${r.changedRows} (${r.changedCells} cells)`);
     for (const f of OX_LOOKUP_FIELDS) if (r.byField[f]) console.log(`  ${f.padEnd(30)} ${r.byField[f]}`);
     if (r.unmatched.length) {
-      console.log(`\n${r.unmatched.length} accommodation(s) with an oxPointId that matches no OX Point "ID" — left as they are:`);
+      console.log(`\n${r.unmatched.length} accommodation(s) with an oxPointId that matches no OX Point code — left as they are:`);
       for (const u of r.unmatched.slice(0, 40)) console.log(`  ${String(u.idAvantio ?? '?').padEnd(10)} oxPointId ${u.oxPointId}`);
       if (r.unmatched.length > 40) console.log(`  … and ${r.unmatched.length - 40} more`);
     }

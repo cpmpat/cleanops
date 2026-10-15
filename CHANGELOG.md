@@ -23,7 +23,21 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `fix/oxpoint-district-keep-app-edits`
+## Unreleased — branch `fix/oxpoint-lookup-key`
+
+**OX Point lookup matches on the point's code.** accommodation.oxPointId holds
+the OX Point's four-character code (`id`, e.g. ITS4), not its "ID" column
+(`oxId`): the first `refresh:oxpoint-lookups` dry run matched none of the 42.
+The lookup and the oxPointId pick list now use `id` — the list's key, which
+nobody can edit, so the link cannot be broken from the OX Point side.
+
+*Migrations:* `20261015170000_oxpoint_lookup_key`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-15 · PR #70
 
 **oxpointDistrict.** The sheet's OX Point block on Accommodation has an 11th
 column, FX "Oxpoint District" — now a column too, looked up from the OX Point's
@@ -35,10 +49,6 @@ row applies. Before, the only ways past such cells were fixing the sheet or
 `--overwrite-app-edits` (the sheet wins).
 
 *Migrations:* `20261015150000_accommodation_oxpoint_district`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-15 · PR #69
 

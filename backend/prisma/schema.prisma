@@ -1619,7 +1619,7 @@ model CdmAccommodation {
   /// The sheet's second `urlFolderPp` column (FP).
   urlFolderPpNew                                 String?
   /// Added 15 Oct 2026 (sheet FW–GF): the OX Point this unit uses, looked up
-  /// from cdm_ox_point by oxPointId = cdm_ox_point.oxId. Never edited by hand:
+  /// from cdm_ox_point by oxPointId = cdm_ox_point.id. Never edited by hand:
   /// written when oxPointId changes, or when the OX Point itself changes
   /// (src/datasets/oxpoint-lookup.ts).
   oxpointCity                                    String?
