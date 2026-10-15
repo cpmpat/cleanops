@@ -242,7 +242,9 @@ the Data dropdown and "up/down" can never disagree. A move is written to
 rather than in the two writers (app save, sheet import): one place, it cannot
 be forgotten by a third writer, and history already recorded was backfilled
 the same way. The direction is frozen when written; re-ordering the list
-later does not rewrite past moves. A failure inside the trigger is a WARNING,
+later does not rewrite past moves. (Exception, 14 Oct: the first list had Premium above Grand by
+mistake; `20261014120000_pricing_groups_v2` re-ranked the moves recorded until
+then, once.) A failure inside the trigger is a WARNING,
 never a failed save. Names match ignoring case and spaces ("CK A" = "CKA").
 
 ---

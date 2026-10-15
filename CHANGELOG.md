@@ -23,7 +23,22 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/oxpoint-summary`
+## Unreleased — branch `chore/pricing-groups-v2`
+
+**Pricing Group list corrected and extended** (Group RD Pricing and Group RD).
+Highest → lowest: LUX A–C, **Grand A–C, Premium A–C** (Grand now above
+Premium), CKA–CKC, then new **FINNPMB, FINNPMC, FINNCKA, FINNCKB**. Moves
+already recorded in `pricing_group_moves` are re-ranked once against the
+corrected order, so a Premium → Grand move now reads UP in Stream as well as in
+the Newsfeed.
+
+*Migrations:* `20261014120000_pricing_groups_v2`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-09 · PR #66, #67
 
 **OX Point: Weekly Summary Opening Hours.** The sheet's new column U
 (`accessibilitySummary`, text) has a column in `cdm_ox_point`, so
@@ -36,10 +51,6 @@ REVENUE_MANAGER and FINANCE view every column, nobody edits (MANAGER keeps full
 access). Loaded with `import:access-matrix --dataset oxpoint` after the reload.
 
 *Migrations:* `20261009120000_ox_point_accessibility_summary`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-09 · PR #65
 
