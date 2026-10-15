@@ -23,7 +23,24 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/roles-oxpoint-lookup`
+## Unreleased — branch `fix/oxpoint-district-keep-app-edits`
+
+**oxpointDistrict.** The sheet's OX Point block on Accommodation has an 11th
+column, FX "Oxpoint District" — now a column too, looked up from the OX Point's
+district like the other ten.
+
+**`import:cdm --keep-app-edits`.** Applies a sheet reload but leaves every
+cell last edited in the app as the app has it (the app wins); the rest of the
+row applies. Before, the only ways past such cells were fixing the sheet or
+`--overwrite-app-edits` (the sheet wins).
+
+*Migrations:* `20261015150000_accommodation_oxpoint_district`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-15 · PR #69
 
 **Two roles.** OPERATIONS_ASSISTANT — FRONT_DESK_MANAGER's modules (Planning,
 Newsfeed, Data, Notifications → Data with the same notify rows; starts on
@@ -46,10 +63,6 @@ urlFolderPpOld. A list's record key is now view-only for every role.
 
 *Migrations:* `20261015120000_roles_marketing_specialist_operations_assistant`,
 `20261015120100_accommodation_oxpoint_lookup`. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-14 · PR #68
 

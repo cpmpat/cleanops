@@ -31,6 +31,9 @@
 //   --overwrite-app-edits  allow --apply when the sheet differs from a value
 //                       last edited in the app; the sheet's value wins. Without
 //                       it the apply stops and lists those cells.
+//   --keep-app-edits    apply, but leave every cell last edited in the app as
+//                       the app has it (the app wins; the sheet's value for
+//                       that cell is skipped). The rest of the row is applied.
 //   --no-history        apply without recording the changes in the history
 //                       (for a backfill that is not news, e.g. filling columns
 //                       a first load missed)
@@ -71,6 +74,7 @@ const { values } = parseArgs({
     apply: { type: 'boolean', default: false },
     'show-keys': { type: 'boolean', default: false },
     'overwrite-app-edits': { type: 'boolean', default: false },
+    'keep-app-edits': { type: 'boolean', default: false },
     'metadata-only': { type: 'boolean', default: false },
     'no-history': { type: 'boolean', default: false },
   },
@@ -869,7 +873,7 @@ async function main() {
     const existing = new Map(existingRows.map((e) => [String(e[spec.key]), e]));
 
     type Cell = { rowId: string; key: string; field: string; old: unknown; new: unknown };
-    const cells: Cell[] = [];
+    let cells: Cell[] = [];
     const addedKeys: string[] = [];
     for (const p of planned) {
       const e = existing.get(p.key);
@@ -880,7 +884,7 @@ async function main() {
         }
       }
     }
-    const changedKeys = new Set(cells.map((c) => c.key));
+    let changedKeys = new Set(cells.map((c) => c.key));
     const inSheet = new Set(planned.map((p) => p.key));
     const goneFromSheet = [...existing.keys()].filter((k) => !inSheet.has(k));
 
@@ -896,6 +900,22 @@ async function main() {
       const a = lastActor.get(`${c.rowId}:${c.field}`);
       return a !== undefined && a !== IMPORT_ROLE;
     });
+    if (values['keep-app-edits'] && values['overwrite-app-edits']) {
+      console.error('Pass --keep-app-edits or --overwrite-app-edits, not both.');
+      process.exit(2);
+    }
+    // --keep-app-edits: the app wins those cells. They leave the plan entirely
+    // (an upsert writes the whole planned row, so dropping them from `cells`
+    // alone would not be enough); the rest of each row still applies.
+    const keptAppEdits = values['keep-app-edits'] ? conflicts.length : 0;
+    if (keptAppEdits) {
+      const keep = new Set(conflicts.map((c) => `${c.key}:${c.field}`));
+      for (const p of planned) {
+        for (const f of Object.keys(p.data)) if (keep.has(`${p.key}:${f}`)) delete p.data[f];
+      }
+      cells = cells.filter((c) => !keep.has(`${c.key}:${c.field}`));
+      changedKeys = new Set(cells.map((c) => c.key));
+    }
 
     console.log(
       `\nRows   : ${planned.length} in the sheet (+${skipped} with no ${spec.key}, skipped) — ` +
@@ -921,7 +941,9 @@ async function main() {
       console.log(`\n${conflicts.length} cell(s) were last edited in the app and the sheet says something else:`);
       for (const c of conflicts.slice(0, 40)) console.log(`  ${c.key.padEnd(14)} ${c.field}`);
       if (conflicts.length > 40) console.log(`  … +${conflicts.length - 40} more`);
-      console.log('  The apply stops on these unless you pass --overwrite-app-edits (the sheet wins).');
+      console.log(keptAppEdits
+        ? '  --keep-app-edits: these keep the app\'s value; the counts above already leave them out.'
+        : '  The apply stops on these unless you pass --keep-app-edits (the app wins) or --overwrite-app-edits (the sheet wins).');
     }
 
     if (offFormat.length) {
@@ -953,9 +975,9 @@ async function main() {
       return;
     }
 
-    if (conflicts.length && !values['overwrite-app-edits']) {
+    if (conflicts.length && !values['overwrite-app-edits'] && !keptAppEdits) {
       console.error('\nRefusing to apply: the sheet would overwrite values edited in the app (listed above).');
-      console.error('Fix them in the sheet, or re-run with --overwrite-app-edits to let the sheet win.');
+      console.error('Fix them in the sheet, or re-run with --keep-app-edits (the app wins) or --overwrite-app-edits (the sheet wins).');
       process.exit(2);
     }
 
@@ -1046,7 +1068,8 @@ async function main() {
             added: added.length,
             changedRows: changedKeys.size,
             cells: recorded.length,
-            overwroteAppEdits: conflicts.length,
+            overwroteAppEdits: keptAppEdits ? 0 : conflicts.length,
+            keptAppEdits,
             by: process.env.USER ?? null,
           },
         },
