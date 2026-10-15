@@ -60,6 +60,9 @@ export interface ReportProblemDto {
 
 // ─── Includes (shared) ──────────────────────────────────────────────
 
+/** Who sees and comments on every repair. Anyone else: only repairs they are assigned to. */
+const REPAIR_MANAGERS: string[] = ['MANAGER', 'ADMIN'];
+
 const REPAIR_INCLUDE = {
   property: { select: { id: true, name: true, address: true } },
   assignments: {
@@ -279,8 +282,10 @@ export class RepairsService {
     });
     if (!repair) throw new NotFoundException('Repair not found');
 
-    // Repairmen can only see repairs they're assigned to
-    if (actor && actor.userRole === 'REPAIRMAN') {
+    // Only the manager (and ADMIN) sees every repair; anyone else only the
+    // ones they are assigned to. This used to check REPAIRMAN alone, so any
+    // other role could open any repair.
+    if (actor && !REPAIR_MANAGERS.includes(actor.userRole as string)) {
       const isAssigned = repair.assignments.some((a) => a.user.id === actor.userId);
       if (!isAssigned) {
         throw new ForbiddenException('You are not assigned to this repair');
@@ -900,8 +905,8 @@ export class RepairsService {
     });
     if (!repair) throw new NotFoundException('Repair not found');
 
-    // Repairmen can only comment if assigned
-    if (actor.userRole === 'REPAIRMAN') {
+    // Only the manager comments on any repair; anyone else only if assigned
+    if (!REPAIR_MANAGERS.includes(actor.userRole as string)) {
       const isAssigned = repair.assignments.some((a) => a.userId === actor.userId);
       if (!isAssigned) throw new ForbiddenException('You are not assigned to this repair');
     }
@@ -947,9 +952,17 @@ export class RepairsService {
     return comment;
   }
 
-  async listComments(tenantId: string, repairId: string) {
-    const repair = await this.prisma.repair.findFirst({ where: { id: repairId, tenantId } });
+  async listComments(tenantId: string, repairId: string, actor?: { userId: string; userRole: UserRole }) {
+    const repair = await this.prisma.repair.findFirst({
+      where: { id: repairId, tenantId },
+      include: { assignments: { select: { userId: true } } },
+    });
     if (!repair) throw new NotFoundException('Repair not found');
+    if (!actor || !REPAIR_MANAGERS.includes(actor.userRole as string)) {
+      if (!actor || !repair.assignments.some((a) => a.userId === actor.userId)) {
+        throw new ForbiddenException('You are not assigned to this repair');
+      }
+    }
 
     return this.prisma.repairComment.findMany({
       where: { repairId },

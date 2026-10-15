@@ -142,7 +142,7 @@ export default function NewsfeedPage() {
           <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
             <Newspaper size={22} className="text-ink-muted" /> Newsfeed
             {unread > 0 && (
-              <span className="ml-1 min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#FF3B30] text-white text-xs font-bold leading-[22px] text-center">
+              <span className="ml-1 min-w-[24px] h-[22px] px-1.5 rounded-[6px] bg-[#EF4444] text-white text-xs font-semibold leading-[22px] text-center tabular-nums">
                 {unread}
               </span>
             )}

@@ -5,7 +5,14 @@ import { PrismaService } from '../common/prisma.service';
 export class PropertiesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(tenantId: string) {
+  async findAll(tenantId: string, slim = false) {
+    if (slim) {
+      return this.prisma.property.findMany({
+        where: { tenantId, isActive: true },
+        select: { id: true, name: true, address: true, pmsPropertyId: true, accommodationType: true, isActive: true },
+        orderBy: { name: 'asc' },
+      });
+    }
     return this.prisma.property.findMany({
       where: { tenantId, isActive: true },
       include: {
@@ -38,7 +45,9 @@ export class PropertiesService {
 
   async update(tenantId: string, id: string, data: any) {
     await this.findById(tenantId, id);
-    return this.prisma.property.update({ where: { id }, data });
+    // A unit never moves tenant and never changes its id through the API.
+    const { tenantId: _t, id: _i, ...safe } = data ?? {};
+    return this.prisma.property.update({ where: { id }, data: safe });
   }
 
   async delete(tenantId: string, id: string) {

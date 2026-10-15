@@ -18,7 +18,11 @@ export class CleaningsController {
 
   // ─── Queries ──────────────────────────────────────────
 
+  // Tenant-wide reads are the manager's (dashboard, schedule). A cleaner has
+  // /mine and /pool.
   @Get()
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get cleanings for a date (or date range)' })
   findByDate(
     @Req() req: TenantRequest,
@@ -38,6 +42,8 @@ export class CleaningsController {
   }
 
   @Get('pool')
+  @Roles('CLEANER', 'MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get cleanings available to claim (pool)' })
   getPool(@Req() req: TenantRequest) {
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
@@ -78,6 +84,8 @@ export class CleaningsController {
   }
 
   @Get('calendar/:year/:month')
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get month summary for calendar view' })
   getMonthSummary(
     @Req() req: TenantRequest,
@@ -88,6 +96,8 @@ export class CleaningsController {
   }
 
   @Get(':id')
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get cleaning by ID' })
   findById(@Req() req: TenantRequest, @Param('id') id: string) {
     return this.service.findById(req.tenantId!, id);

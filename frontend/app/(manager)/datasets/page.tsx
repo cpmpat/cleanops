@@ -190,14 +190,18 @@ function DatasetsPageInner() {
 
   // `&row=<rowId>` opens that record's drawer once the list has loaded — how
   // the Newsfeed links to the unit a news item is about.
+  // `&t=` is a nonce the top-bar search adds, so picking the same record twice
+  // (after closing its drawer) opens it again.
   const wantedRow = searchParams?.get('row') ?? '';
+  const wantedNonce = searchParams?.get('t') ?? '';
   const openedRow = useRef('');
   useEffect(() => {
-    if (!wantedRow || !data?.rowIds || openedRow.current === `${active}:${wantedRow}`) return;
+    const k = `${active}:${wantedRow}:${wantedNonce}`;
+    if (!wantedRow || !data?.rowIds || openedRow.current === k) return;
     const i = data.rowIds.indexOf(wantedRow);
-    if (i >= 0) { setDrawer(i); openedRow.current = `${active}:${wantedRow}`; }
+    if (i >= 0) { setDrawer(i); openedRow.current = k; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, wantedRow, active]);
+  }, [data, wantedRow, wantedNonce, active]);
 
   function selectList(key: string) {
     setActive(key); setSearch(''); setPanel(null);

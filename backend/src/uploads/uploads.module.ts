@@ -6,7 +6,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { AuthGuard } from '../common/guards/auth.guard';
+import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
+import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthModule } from '../auth/auth.module';
@@ -71,6 +72,20 @@ export class UploadsService {
    * Legacy local-disk fallback. Kept so any old callers don't break, but the
    * preferred path is signed-URL → direct-to-GCS.
    */
+  /** The folder (a unit's pmsPropertyId) must belong to this tenant. */
+  async assertTenantFolder(tenantId: string, folder: string): Promise<void> {
+    const p = await this.prisma.property.findFirst({
+      where: { tenantId, pmsPropertyId: folder },
+      select: { id: true },
+    });
+    if (!p) throw new ForbiddenException('Not your file');
+  }
+
+  async assertTenantCleaning(tenantId: string, cleaningId: string): Promise<void> {
+    const c = await this.prisma.cleaning.findFirst({ where: { id: cleaningId, tenantId }, select: { id: true } });
+    if (!c) throw new NotFoundException('Cleaning not found');
+  }
+
   async legacyUploadPhoto(
     cleaningId: string,
     assignmentId: string | null,
@@ -130,8 +145,17 @@ export class UploadsController {
    */
   @Post('read-url')
   @ApiOperation({ summary: 'Get a signed READ URL for a private bucket object' })
-  async readUrl(@Body() dto: { key: string; ttlMinutes?: number }) {
-    const url = await this.gcs.signReadUrl(dto.key, dto.ttlMinutes);
+  async readUrl(@Req() req: TenantRequest, @Body() dto: { key: string; ttlMinutes?: number }) {
+    // Objects live under {pmsPropertyId}/…. Until 15 Oct 2026 any signed-in
+    // user could sign any key in the bucket; now the key must be a photo in
+    // a unit folder of the caller's own tenant, and the link lives an hour at most.
+    const key = String(dto?.key ?? '').trim();
+    if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(key) || key.includes('..')) {
+      throw new BadRequestException('Invalid key');
+    }
+    await this.service.assertTenantFolder(req.tenantId!, key.split('/')[0]);
+    const ttl = Math.min(Math.max(Number(dto?.ttlMinutes) || 60, 1), 60);
+    const url = await this.gcs.signReadUrl(key, ttl);
     return { url };
   }
 
@@ -140,12 +164,16 @@ export class UploadsController {
    * should use POST /uploads/signed-url instead.
    */
   @Post('event/:eventId/photo')
+  @Roles('MANAGER')
+  @UseGuards(RolesGuard)
   @UseInterceptors(FileInterceptor('file'))
-  legacyUploadPhoto(
+  async legacyUploadPhoto(
     @Param('eventId') eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
   ) {
+    // The cleaning must be this tenant's — the route used to take any id.
+    await this.service.assertTenantCleaning(req.tenantId, eventId);
     return this.service.legacyUploadPhoto(
       eventId,
       req.body?.assignmentId || null,

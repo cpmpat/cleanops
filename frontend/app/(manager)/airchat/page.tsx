@@ -213,7 +213,7 @@ export default function AirchatPage() {
   const selectedRow = items.find((i) => i.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-[calc(100vh-0px)] bg-surface">
+    <div className="flex h-[calc(100vh-108px)] bg-surface">
       {/* Queues */}
       <aside className="w-[194px] flex-shrink-0 bg-surface border-r border-surface-border flex flex-col">
         <div className="px-3.5 pt-4 pb-2.5">
