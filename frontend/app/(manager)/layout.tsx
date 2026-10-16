@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -8,14 +8,16 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck,
   CalendarRange, Settings, LogOut, Search,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
-  LogIn, Clock, Bell, History, Newspaper, Layers,
+  LogIn, Clock, Bell, History, Newspaper, Layers, KanbanSquare,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
-import { datasets as datasetsApi, newsfeed as newsfeedApi, NEWSFEED_CHANGED, type DatasetSummary } from '@/lib/api';
+import { datasets as datasetsApi, newsfeed as newsfeedApi, tasks as tasksApi, NEWSFEED_CHANGED, TASKS_CHANGED, type DatasetSummary } from '@/lib/api';
+import { taskStrings } from '@/i18n/tasks';
+import { useSocket } from '@/lib/socket';
 import { homeFor } from '@/lib/home';
 import { CommandSearch, ShortcutCue, SEARCH_STRINGS, isTyping } from '@/components/office/CommandSearch';
 
@@ -32,26 +34,26 @@ import { CommandSearch, ShortcutCue, SEARCH_STRINGS, isTyping } from '@/componen
 const ROLE_PATHS: Record<string, string[]> = {
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
-  ADMIN:              ['/newsfeed', '/planning', '/dashboard', '/datasets', '/notify'],
+  ADMIN:              ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets', '/notify'],
   /** Notifications off for FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE (15 Oct 2026). */
-  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/datasets'],
+  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
-  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/datasets'],
-  FRONT_DESK:         ['/newsfeed', '/planning', '/datasets'],
-  OPERATION_MANAGER:  ['/airchat', '/datasets'],
-  ASSIST:             ['/airchat', '/datasets'],
+  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/datasets'],
+  FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/datasets'],
+  OPERATION_MANAGER:  ['/airchat', '/datasets', '/tasks'],
+  ASSIST:             ['/airchat', '/datasets', '/tasks'],
   /** Data only; which lists and columns is the access matrix's call. */
-  EVIDENCE:           ['/newsfeed', '/datasets'],
+  EVIDENCE:           ['/newsfeed', '/datasets', '/tasks'],
   /** Data only (7 Oct 2026). Columns per the matrix; TERENAK also sees only
    *  some rows (dataset_row_filters: Avantio accommodations, Valid users). */
-  TERENAK:            ['/datasets'],
+  TERENAK:            ['/datasets', '/tasks'],
   /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. */
-  DIRECTOR:           ['/newsfeed', '/datasets'],
-  FINANCE:            ['/newsfeed', '/datasets'],
-  REVENUE_MANAGER:    ['/newsfeed', '/datasets'],
-  MARKETING_MANAGER:  ['/newsfeed', '/datasets'],
+  DIRECTOR:           ['/newsfeed', '/datasets', '/tasks'],
+  FINANCE:            ['/newsfeed', '/datasets', '/tasks'],
+  REVENUE_MANAGER:    ['/newsfeed', '/datasets', '/tasks'],
+  MARKETING_MANAGER:  ['/newsfeed', '/datasets', '/tasks'],
   /** MARKETING_MANAGER's modules (15 Oct 2026). */
-  MARKETING_SPECIALIST: ['/newsfeed', '/datasets'],
+  MARKETING_SPECIALIST: ['/newsfeed', '/datasets', '/tasks'],
 };
 
 /** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */
@@ -70,7 +72,7 @@ const NOTIFY_LABEL: Record<string, string> = {
 type SectionKey = 'overview' | 'operations' | 'communication' | 'records' | 'admin';
 const SECTION_OF: Record<string, SectionKey> = {
   '/newsfeed': 'overview', '/dashboard': 'overview',
-  '/planning': 'operations', '/schedule': 'operations', '/streams': 'operations',
+  '/planning': 'operations', '/tasks': 'operations', '/schedule': 'operations', '/streams': 'operations',
   '/incidents': 'operations', '/repairs': 'operations',
   '/airchat': 'communication', '/messages': 'communication', '/notify': 'communication',
   '/datasets': 'records',
@@ -242,6 +244,23 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  // Tasks badge: how many tasks are hanging on me (16 Oct 2026). Polled, and
+  // refreshed when the Tasks page or a colleague changes something.
+  const hasTasks = !!user && (user.role === 'MANAGER' || (ROLE_PATHS[user.role] ?? []).includes('/tasks'));
+  const [tasksOnMe, setTasksOnMe] = useState(0);
+  const tickTasks = useCallback(() => {
+    if (hasTasks) tasksApi.badge().then((r) => setTasksOnMe(r.onMe)).catch(() => {});
+  }, [hasTasks]);
+  useEffect(() => {
+    if (!hasTasks) return;
+    tickTasks();
+    const iv = setInterval(tickTasks, 60_000);
+    window.addEventListener(TASKS_CHANGED, tickTasks);
+    window.addEventListener('focus', tickTasks);
+    return () => { clearInterval(iv); window.removeEventListener(TASKS_CHANGED, tickTasks); window.removeEventListener('focus', tickTasks); };
+  }, [hasTasks, tickTasks]);
+  useSocket({ 'tasks:changed': tickTasks, 'tasks:notification': tickTasks });
+
   // Top-bar search. Only for a role that has at least one Data list — the
   // search reads nothing else. Shift+S opens it unless the person is typing.
   const canSearch = dataLists.length > 0;
@@ -263,6 +282,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/newsfeed',   icon: Newspaper,       label: NEWSFEED_LABEL[locale] ?? 'Newsfeed' },
     { href: '/dashboard',  icon: LayoutDashboard, label: t.nav.dashboard },
     { href: '/planning',   icon: CalendarCheck,   label: t.nav.planning },
+    { href: '/tasks',      icon: KanbanSquare,    label: taskStrings[locale]?.navLabel ?? 'Tasks' },
     { href: '/schedule',   icon: CalendarRange,   label: (t.nav as any).schedule ?? 'Schedule' },
     { href: '/streams',    icon: Activity,        label: (t.nav as any).stream   ?? 'Stream' },
     { href: '/incidents',  icon: AlertTriangle,   label: t.nav.incidents },
@@ -339,7 +359,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                   const toggle = isData ? () => setDataOpen(o => !o)
                     : isNotify ? () => setNotifyOpen(o => !o)
                     : () => setPlanningOpen(o => !o);
-                  const badge = href === '/newsfeed' && newsUnread > 0 ? newsUnread : 0;
+                  const badge = href === '/newsfeed' ? newsUnread : href === '/tasks' ? tasksOnMe : 0;
                   return (
                     <div key={href}>
                       <div

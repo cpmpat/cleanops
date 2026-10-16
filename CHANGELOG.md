@@ -23,7 +23,56 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/office-redesign`
+## Unreleased — branch `feat/tasks`
+
+**Tasks** — a new module right below Planning: a Jira-like Kanban for the
+office with six stages (New → To do → In progress → On hold → Review → Done).
+
+- MANAGER, FRONT_DESK_MANAGER, DIRECTOR and REVENUE_MANAGER (and ADMIN)
+  create, edit and assign. **Only the task's creator closes it** (Done /
+  Won't do) and reopens it; if the creator's account is deactivated, any of
+  those roles may. Assignees move their task between the open stages and
+  *suggest* closing by moving it to Review — the creator is notified and
+  decides.
+- **Related records**: a task can point at Data records — table, then
+  record, then optionally one attribute (e.g. Accommodation · Old Town Loft
+  3B · Pricing Group) — at creation or later (assignees and managers). The
+  picker offers only lists, rows and attributes the person may see; each
+  viewer sees a link named by their own access, or "Restricted record". A
+  link opens the record on Data.
+- Every office-app role sees the board, comments, tags (@) and watches.
+  Several people can be assigned to one task.
+- **Waiting on**: a tag (@) in a reply only notifies. The writer decides
+  whether to also put the task on that person — a checkbox per tagged person
+  under the reply, unticked by default — or sets it from the task's side
+  panel. Their reply in the thread (or whoever asked clearing it) ends the
+  wait. The card and the detail show on whom the task hangs now; NEW and
+  REVIEW hang on the creator, otherwise on the assignees. The Tasks menu item
+  counts the tasks on you.
+- **Always someone responsible**: a wait never removes or replaces assignees —
+  it only says whose turn it is, and when it ends the turn goes back to the
+  assignees. A task cannot enter To do / In progress / On hold / Review
+  without an assignee, and the last assignee cannot be removed while it is
+  there. A deactivated assignee does not count; with none left the task falls
+  back to its creator to reassign.
+- Notifications of the module's own (bell on the Tasks page, not the
+  Newsfeed): assigned, tagged, replies, stage changes, closing — for watchers,
+  assignees and the tagged. Live over the socket.
+- `useSocket` now registers stable wrappers, so a screen's socket handler
+  always sees its latest state and is removed on unmount (it leaked before).
+
+**Search indexes.** Trigram (pg_trgm) GIN indexes on Accommodation
+`titleAvantio`, Owner `displayName` and OX Point `street` for the top-bar
+search's `ILIKE '%…%'`.
+
+*Migrations:* `20261016090000_search_trgm_indexes`, `20261016100000_tasks` (eight tables incl. `task_links`).
+*Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-16 · PR #73
 
 **Office app redesign** for every role that uses the office app, TERENAK
 included; the cleaner app (CLEANER, AGENT) and REPAIRMAN screens are
@@ -36,11 +85,6 @@ bar with breadcrumb and search.
 Owner by display name, OX Point by street; a hit opens the record on Data.
 Needs `fix/access-audit` deployed (the search endpoint).
 
-*Migrations:* None. *Env:* None.
-
----
-
-## Unreleased — branch `fix/access-audit`
 
 **Access audit: the API now refuses what the screens never showed.** Every
 read endpoint was checked against who may see the data behind it.
@@ -74,10 +118,6 @@ read endpoint was checked against who may see the data behind it.
   the role may view, within its rows.
 
 *Migrations:* None. *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-15 · PR #72
 

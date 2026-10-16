@@ -36,6 +36,30 @@ export const TABS: ReadonlyArray<{ key: string; tab: string; label: string; sour
 /** Who sees changes to masked (sensitive) fields in history — no values, only that they changed. */
 export const SEES_MASKED: string[] = ['MANAGER', 'ADMIN'];
 
+/**
+ * How a record is named outside Data (task links, 16 Oct 2026): these columns,
+ * joined, as far as the viewer may see them; otherwise the list's key.
+ */
+export const RECORD_TITLE: Record<string, string[]> = {
+  accommodation: ['titleAvantio'],
+  owner: ['displayName'],
+  oxpoint: ['id', 'street'],
+  user: ['firstName', 'lastName'],
+};
+
+export interface RecordRef { dataset: string; rowId: string; field?: string | null }
+export interface ResolvedRecord {
+  dataset: string;
+  rowId: string;
+  field: string | null;
+  /** False when the viewer may not see this list, or this row (row filter). */
+  visible: boolean;
+  datasetLabel: string;
+  title: string | null;
+  /** The attribute's display name; null when none, or when the viewer may not see it. */
+  fieldLabel: string | null;
+}
+
 /** The one column the top-bar search looks in, per list. */
 export const SEARCH_FIELDS: Record<string, string> = {
   accommodation: 'titleAvantio',
@@ -272,6 +296,105 @@ export class DatasetsService {
       }
     }
     return { query: q, results };
+  }
+
+  // ─── Records referenced from elsewhere (task links) ───────────────────────
+
+  /** The columns of a list this role may view, in column order. */
+  async viewableFields(tenantId: string, dataset: string, role: UserRole) {
+    const access = await this.accessFor(tenantId, dataset, role);
+    const all = await this.prisma.datasetField.findMany({
+      where: { tenantId, dataset },
+      orderBy: { columnOrder: 'asc' },
+      select: { field: true, displayName: true },
+    });
+    return all.filter((f) => access.has(f.field)).map((f) => ({ key: f.field, label: f.displayName }));
+  }
+
+  private titleOf(row: Record<string, unknown>, cols: string[]): string | null {
+    const parts = cols.map((c) => row[c]).filter((v) => v !== null && v !== undefined && String(v).trim() !== '');
+    return parts.length ? parts.map((v) => String(v).trim()).join(' · ') : null;
+  }
+
+  /** Columns used to name a record for this viewer: the title columns they may see, else the key. */
+  private titleCols(dataset: string, access: Map<string, unknown>): string[] {
+    const spec = DB_MODELS[dataset];
+    const cols = (RECORD_TITLE[dataset] ?? []).filter((c) => access.has(c));
+    if (cols.length) return cols;
+    return spec && access.has(spec.key) ? [spec.key] : [];
+  }
+
+  /**
+   * Find records in one list to link to — only a list the role may open,
+   * only rows inside its row filter, matched on the columns it may see.
+   */
+  async pickRecords(tenantId: string, role: UserRole, dataset: string, raw: string) {
+    const spec = DB_MODELS[dataset];
+    const tab = TABS.find((t) => t.key === dataset);
+    if (!spec || !tab || tab.source !== 'db') throw new NotFoundException('Unknown list');
+    const access = await this.accessFor(tenantId, dataset, role);
+    if (access.size === 0) throw new ForbiddenException(`No access to "${tab.label}"`);
+    const cols = this.titleCols(dataset, access);
+    const q = raw.trim().slice(0, 80);
+    const searchCols = [...new Set([...cols, ...(access.has(spec.key) ? [spec.key] : [])])];
+    const rows: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
+      where: {
+        tenantId,
+        ...(await this.rowFilter(tenantId, dataset, role)),
+        ...(q && searchCols.length ? { OR: searchCols.map((c) => ({ [c]: { contains: q, mode: 'insensitive' } })) } : {}),
+      },
+      select: Object.fromEntries([[spec.pk, true], ...cols.map((c) => [c, true])]),
+      orderBy: cols.length ? { [cols[0]]: 'asc' } : { [spec.pk]: 'asc' },
+      take: 20,
+    });
+    return {
+      dataset,
+      label: tab.label,
+      fields: await this.viewableFields(tenantId, dataset, role),
+      rows: rows.map((r) => ({ rowId: String(r[spec.pk]), title: this.titleOf(r, cols) ?? String(r[spec.pk]).slice(0, 8) })),
+    };
+  }
+
+  /**
+   * Name each referenced record for this viewer. A list or row the viewer may
+   * not see comes back with visible:false and no title — the link exists, but
+   * says nothing about the record.
+   */
+  async resolveRecords(tenantId: string, role: UserRole, refs: RecordRef[]): Promise<ResolvedRecord[]> {
+    const out: ResolvedRecord[] = refs.map((r) => ({
+      dataset: r.dataset, rowId: r.rowId, field: r.field ?? null, visible: false,
+      datasetLabel: TABS.find((t) => t.key === r.dataset)?.label ?? r.dataset, title: null, fieldLabel: null,
+    }));
+    for (const dataset of [...new Set(refs.map((r) => r.dataset))]) {
+      const spec = DB_MODELS[dataset];
+      if (!spec) continue;
+      const access = await this.accessFor(tenantId, dataset, role);
+      if (access.size === 0) continue;
+      const cols = this.titleCols(dataset, access);
+      const ids = [...new Set(refs.filter((r) => r.dataset === dataset).map((r) => r.rowId))];
+      const rows: Array<Record<string, unknown>> = await (this.prisma as any)[spec.model].findMany({
+        where: { tenantId, [spec.pk]: { in: ids }, ...(await this.rowFilter(tenantId, dataset, role)) },
+        select: Object.fromEntries([[spec.pk, true], ...cols.map((c) => [c, true])]),
+      });
+      const byId = new Map(rows.map((r) => [String(r[spec.pk]), r]));
+      const labels = new Map((await this.viewableFields(tenantId, dataset, role)).map((f) => [f.key, f.label]));
+      for (const o of out.filter((x) => x.dataset === dataset)) {
+        const row = byId.get(o.rowId);
+        if (!row) continue;
+        o.visible = true;
+        o.title = this.titleOf(row, cols) ?? o.rowId.slice(0, 8);
+        o.fieldLabel = o.field ? labels.get(o.field) ?? null : null;
+      }
+    }
+    return out;
+  }
+
+  /** A link may only point at what its author can see: the list, the row, and the attribute if one is named. */
+  async assertLinkable(tenantId: string, role: UserRole, ref: RecordRef) {
+    if (!DB_MODELS[ref.dataset]) throw new BadRequestException('Unknown list');
+    const [r] = await this.resolveRecords(tenantId, role, [ref]);
+    if (!r.visible) throw new ForbiddenException('You cannot link a record you cannot see');
+    if (ref.field && !r.fieldLabel) throw new ForbiddenException('You cannot link an attribute you cannot see');
   }
 
   /** Columns filled from another list (Accommodation's OX Point columns): never edited by hand. */

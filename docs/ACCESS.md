@@ -158,6 +158,22 @@ hidden is not the protection — the API refuses on its own.
 | `GET /datasets/search` | one column per list (Accommodation titleAvantio, Owner displayName, OX Point street), only if the role may view it, within its row filter |
 | Live updates (socket) | office roles get full payloads; every other socket only `{id, status, source, at…}` and reloads through the endpoints above |
 
+## Tasks (16 Oct 2026)
+
+| Who | May |
+|---|---|
+| Every office-app role (MANAGER, ADMIN, OPERATION_MANAGER, FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT, FRONT_DESK, ASSIST, EVIDENCE, TERENAK, DIRECTOR, FINANCE, REVENUE_MANAGER, MARKETING_MANAGER, MARKETING_SPECIALIST) | see the board, open any task, comment, tag (@), watch, set "waiting on" |
+| MANAGER, FRONT_DESK_MANAGER, DIRECTOR, REVENUE_MANAGER (+ ADMIN) | create, edit, assign, clear anyone's "waiting on", remove any record link |
+| The task's creator | close (Done / Won't do) and reopen — nobody else, unless the creator's account is deactivated (then any role above) |
+| Assignees of a task | move it between the open stages, suggest closing (move to Review), link records |
+| Linking records | only lists, rows (row filter) and attributes the linker may view; each viewer sees a link named by their own access, else "Restricted record" |
+| Whoever set a "waiting on" | clear it (the waited-on person clears it by replying) |
+
+Only office-app users can be assigned or tagged. CLEANER, AGENT and
+REPAIRMAN have no access yet; when they do, they get only tasks they are
+involved in (`TasksService.visibleWhere`). Roles: `TASK_ROLES` and
+`TASK_MANAGER_ROLES` in `backend/src/common/roles.ts`.
+
 ## Known gaps
 
 - Photo keys are scoped to the tenant, not to the person: a signed-in
