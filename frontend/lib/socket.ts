@@ -37,18 +37,19 @@ export function useSocket(
       });
     }
 
-    // Register all provided event handlers
-    const registered: string[] = [];
-    Object.entries(handlersRef.current).forEach(([event, handler]) => {
-      socket!.on(event, handler);
-      registered.push(event);
+    // Register a stable wrapper per event that always calls the latest
+    // handler. Until 16 Oct 2026 the first-render handler itself was
+    // registered (a stale closure), and cleanup tried to remove the *current*
+    // one — a different function — so handlers leaked on every unmount.
+    const registered: [string, (data: any) => void][] = Object.keys(handlersRef.current).map((event) => {
+      const wrapper = (data: any) => handlersRef.current[event]?.(data);
+      socket!.on(event, wrapper);
+      return [event, wrapper];
     });
 
     return () => {
       // Clean up only our registered handlers, not the socket itself
-      registered.forEach(event => {
-        socket?.off(event, handlersRef.current[event]);
-      });
+      registered.forEach(([event, wrapper]) => socket?.off(event, wrapper));
     };
   }, [token]);
 }

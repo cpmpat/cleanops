@@ -249,6 +249,36 @@ never a failed save. Names match ignoring case and spaces ("CK A" = "CKA").
 
 ---
 
+## 2026-10-16 — Tasks: "waiting on" is a person, not a column
+
+The board has six stages (New, To do, In progress, On hold, Review, Done).
+Whose move it is lives beside the stage, not in it: a task in progress can
+bounce between three people in a morning without moving a column. A tag (@)
+in a reply only notifies; putting the task on someone is the writer's
+decision (a checkbox per tagged person, unticked by default, or the side
+panel) — Patrik, 16 Oct 2026: tagging is not assigning. Their reply in the
+thread closes the wait; whoever asked (or a manager) can clear it; closing
+the task clears all.
+
+Responsibility and turn are separate. Assignees are responsible and a wait
+never changes them; when it ends the turn returns to them. Every active task
+(To do through Review) has at least one assignee: entering those stages
+needs one, removing the last is refused (Patrik, 16 Oct 2026).
+
+Closing belongs to the creator, not to every manager: whoever opened the
+task decides when it is finished. Assignees suggest closing by moving it to
+Review, which notifies the creator. A deactivated creator's tasks may be
+closed by any task manager, so nothing is stranded.
+
+Tasks link to Data records by (list, row, optional attribute), not by a
+copied title: the name is resolved per viewer at read time, so the link
+never shows more than that person's access matrix and row filter allow. With
+no open wait the task hangs on the creator while New (accept and assign) and
+in Review (check and close), otherwise on the assignees. Review exists
+because only the creating roles close: assignees say "finished", a manager
+confirms. Tasks notifications are the module's own table, not the Newsfeed,
+which stays about CDM data.
+
 ## Open items
 
 The running list of what is still to do, newest decisions above it. Tick an

@@ -58,6 +58,7 @@ model Tenant {
   datasetRowFilters   DatasetRowFilter[]
   newsfeedDismissals  NewsfeedDismissal[]
   pricingGroupMoves   PricingGroupMove[]
+  tasks               Task[]
   datasetPicklistValues DatasetPicklistValue[]
   datasetFieldChanges DatasetFieldChange[]
   cdmOxPoints         CdmOxPoint[]
@@ -177,6 +178,18 @@ model User {
   noteAcks                   NoteAck[]
   agentAvailability          AgentAvailability[]
   newsfeedDismissals         NewsfeedDismissal[]
+
+  // Tasks (16 Oct 2026)
+  createdTasks               Task[]             @relation("TaskCreator")
+  closedTasks                Task[]             @relation("TaskCloser")
+  taskAssignments            TaskAssignee[]     @relation("TaskAssigneeUser")
+  taskWatches                TaskWatcher[]      @relation("TaskWatcherUser")
+  taskComments               TaskComment[]      @relation("TaskCommentAuthor")
+  taskWaitsOnMe              TaskWait[]         @relation("TaskWaitUser")
+  taskWaitsRequested         TaskWait[]         @relation("TaskWaitRequester")
+  taskEvents                 TaskEvent[]        @relation("TaskEventActor")
+  taskNotifications          TaskNotification[] @relation("TaskNotificationUser")
+  taskNotificationsActed     TaskNotification[] @relation("TaskNotificationActor")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -1643,6 +1656,8 @@ model CdmAccommodation {
   @@unique([tenantId, idAvantio])
   @@index([tenantId, city])
   @@index([tenantId, status])
+  /// Top-bar search: trigram index for ILIKE '%…%' (migration 20261016090000).
+  @@index([titleAvantio(ops: raw("gin_trgm_ops"))], type: Gin, map: "cdm_accommodations_titleAvantio_trgm_idx")
   @@map("cdm_accommodations")
 }
 
@@ -1849,6 +1864,8 @@ model CdmOxPoint {
 
   @@unique([tenantId, id])
   @@index([tenantId, city])
+  /// Top-bar search: trigram index for ILIKE '%…%' (migration 20261016090000).
+  @@index([street(ops: raw("gin_trgm_ops"))], type: Gin, map: "cdm_ox_point_street_trgm_idx")
   @@map("cdm_ox_point")
 }
 
@@ -1899,6 +1916,8 @@ model CdmOwner {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, id])
+  /// Top-bar search: trigram index for ILIKE '%…%' (migration 20261016090000).
+  @@index([displayName(ops: raw("gin_trgm_ops"))], type: Gin, map: "cdm_owners_displayName_trgm_idx")
   @@map("cdm_owners")
 }
 
@@ -1940,4 +1959,198 @@ model PricingGroupMove {
   @@index([tenantId, propertyId, occurredAt])
   @@index([tenantId, idAvantio, occurredAt])
   @@map("pricing_group_moves")
+}
+
+// ─── Tasks (16 Oct 2026) ─────────────────────────────────────────────────────
+//
+// A Jira-like board for the office. Stages: NEW → TODO → IN_PROGRESS → ON_HOLD
+// → REVIEW → DONE. Only the task-manager roles (MANAGER, FRONT_DESK_MANAGER,
+// DIRECTOR, REVENUE_MANAGER; ADMIN passes every check) create, close and
+// reopen. "Waiting on" is not a stage: it is the set of open TaskWait rows —
+// whose reply or action the task is hanging on.
+
+enum TaskStatus {
+  NEW
+  TODO
+  IN_PROGRESS
+  ON_HOLD
+  REVIEW
+  DONE
+}
+
+enum TaskResolution {
+  DONE
+  WONT_DO
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id          String          @id @default(uuid())
+  tenantId    String
+  /// Human key per tenant: T-1, T-2, … shown on cards and in links.
+  number      Int
+  title       String
+  description String?
+  status      TaskStatus      @default(NEW)
+  resolution  TaskResolution?
+  priority    TaskPriority    @default(MEDIUM)
+  dueDate     DateTime?       @db.Date
+  /// Why it is on hold (owner, supplier, a date) — shown on the card.
+  holdReason  String?
+  /// Order inside a column; drag-and-drop writes a value between neighbours.
+  rank        Float           @default(0)
+  createdById String
+  closedById  String?
+  closedAt    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("TaskCreator", fields: [createdById], references: [id])
+  closedBy  User?              @relation("TaskCloser", fields: [closedById], references: [id])
+  assignees TaskAssignee[]
+  watchers  TaskWatcher[]
+  comments  TaskComment[]
+  waits     TaskWait[]
+  events    TaskEvent[]
+  notifications TaskNotification[]
+  links     TaskLink[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("tasks")
+}
+
+model TaskAssignee {
+  taskId    String
+  userId    String
+  addedById String?
+  addedAt   DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation("TaskAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("task_assignees")
+}
+
+model TaskWatcher {
+  taskId  String
+  userId  String
+  addedAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation("TaskWatcherUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("task_watchers")
+}
+
+model TaskComment {
+  id         String    @id @default(uuid())
+  taskId     String
+  authorId   String
+  body       String
+  /// Who was tagged (@name). Each tag opens a TaskWait on that person.
+  mentionIds String[]  @default([])
+  createdAt  DateTime  @default(now())
+  editedAt   DateTime?
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation("TaskCommentAuthor", fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+/// A record the task is about: a row of a Data list (accommodation, owner,
+/// OX point, user), optionally one attribute of it. Who may see the record is
+/// decided when it is shown, by the viewer's own access matrix and row filter.
+model TaskLink {
+  id        String   @id @default(uuid())
+  taskId    String
+  dataset   String
+  rowId     String
+  field     String?
+  addedById String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([dataset, rowId])
+  @@map("task_links")
+}
+
+/// "The task is hanging on this person": opened by a tag in a comment or set
+/// by hand, closed when that person replies in the thread, when someone
+/// clears it, or when the task is closed.
+model TaskWait {
+  id                String    @id @default(uuid())
+  taskId            String
+  userId            String
+  requestedById     String
+  commentId         String?
+  createdAt         DateTime  @default(now())
+  resolvedAt        DateTime?
+  resolvedById      String?
+  /// reply | cleared | closed
+  resolvedReason    String?
+
+  task        Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User @relation("TaskWaitUser", fields: [userId], references: [id], onDelete: Cascade)
+  requestedBy User @relation("TaskWaitRequester", fields: [requestedById], references: [id])
+
+  @@index([taskId, resolvedAt])
+  @@index([userId, resolvedAt])
+  @@map("task_waits")
+}
+
+/// Activity log shown in the thread between comments: created, moved,
+/// assigned, closed, reopened, edited, waiting set / cleared.
+model TaskEvent {
+  id        String   @id @default(uuid())
+  taskId    String
+  actorId   String
+  kind      String
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  task  Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User @relation("TaskEventActor", fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("task_events")
+}
+
+/// The Tasks module's own notifications (not the Newsfeed): one row per
+/// recipient per thing that happened on a task they watch, are assigned to,
+/// or were tagged in.
+model TaskNotification {
+  id        String    @id @default(uuid())
+  tenantId  String
+  userId    String
+  taskId    String
+  actorId   String?
+  /// assigned | comment | mention | status | closed | reopened | waiting | created
+  kind      String
+  text      String?
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user  User  @relation("TaskNotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("TaskNotificationActor", fields: [actorId], references: [id])
+
+  @@index([userId, readAt])
+  @@index([tenantId, createdAt])
+  @@map("task_notifications")
 }

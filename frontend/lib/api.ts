@@ -487,6 +487,8 @@ const post = <T>(path: string, body?: unknown) =>
 const patch = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+const put = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -1385,6 +1387,118 @@ export const newsfeed = {
  * it); without, the badge asks the server.
  */
 export const NEWSFEED_CHANGED = 'newsfeed:changed';
+
+// ─── Tasks (16 Oct 2026) ──────────────────────────────────────────────────────
+
+export type TaskStatus = 'NEW' | 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'DONE';
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type TaskResolution = 'DONE' | 'WONT_DO';
+export interface TaskPerson { id: string; name: string; email: string; role: string; isActive?: boolean }
+/** A Data record a task is about, named for the viewer (visible:false = the viewer may not see it). */
+export interface TaskLinkRef {
+  id: string;
+  dataset: string;
+  rowId: string;
+  field: string | null;
+  visible: boolean;
+  datasetLabel: string;
+  title: string | null;
+  fieldLabel: string | null;
+}
+export interface LinkPick {
+  dataset: string;
+  label: string;
+  fields: { key: string; label: string }[];
+  rows: { rowId: string; title: string }[];
+}
+
+export interface TaskCard {
+  id: string;
+  number: number;
+  key: string;
+  title: string;
+  status: TaskStatus;
+  resolution: TaskResolution | null;
+  priority: TaskPriority;
+  dueDate: string | null;
+  holdReason: string | null;
+  rank: number;
+  createdBy: TaskPerson;
+  assignees: TaskPerson[];
+  waitingOn: { waitId: string; since: string; user: TaskPerson }[];
+  onWhom: string[];
+  onWhomReason: 'waiting' | 'review' | 'triage' | 'assigned' | 'none';
+  onMe: boolean;
+  watching: boolean;
+  commentCount: number;
+  links: TaskLinkRef[];
+  /** This viewer may close / reopen (the creator; a manager if the creator is deactivated). */
+  canClose: boolean;
+  /** This viewer may move it between open stages (assignee or task manager). */
+  canMove: boolean;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskDetail extends TaskCard {
+  description: string | null;
+  closedBy: TaskPerson | null;
+  watchers: TaskPerson[];
+  comments: { id: string; body: string; mentionIds: string[]; createdAt: string; editedAt: string | null; author: TaskPerson }[];
+  events: { id: string; kind: string; data: any; createdAt: string; actor: TaskPerson }[];
+  waits: { id: string; user: TaskPerson; requestedBy: TaskPerson; createdAt: string; resolvedAt: string | null; resolvedReason: string | null }[];
+  linkAuthors: Record<string, string>;
+  can: { edit: boolean; assign: boolean; close: boolean; move: boolean; link: boolean };
+}
+
+export interface TaskNotificationItem {
+  id: string;
+  kind: string;
+  text: string | null;
+  createdAt: string;
+  readAt: string | null;
+  actor: { id: string; name: string } | null;
+  task: { id: string; number: number; key: string; title: string; status: TaskStatus };
+}
+
+export const tasks = {
+  board: (allDone = false) =>
+    get<{ statuses: TaskStatus[]; canCreate: boolean; doneDays: number; tasks: TaskCard[] }>(`/tasks${allDone ? '?done=all' : ''}`),
+  badge: () => get<{ onMe: number; unread: number }>('/tasks/badge'),
+  people: () => get<TaskPerson[]>('/tasks/people'),
+  get: (id: string) => get<TaskDetail>(`/tasks/${encodeURIComponent(id)}`),
+  create: (body: {
+    title: string; description?: string; priority?: TaskPriority; dueDate?: string | null; assigneeIds?: string[]; status?: TaskStatus;
+    links?: { dataset: string; rowId: string; field?: string | null }[];
+  }) =>
+    post<TaskDetail>('/tasks', body),
+  update: (id: string, body: { title?: string; description?: string | null; priority?: TaskPriority; dueDate?: string | null; holdReason?: string | null }) =>
+    patch<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, body),
+  setAssignees: (id: string, userIds: string[]) => put<TaskDetail>(`/tasks/${encodeURIComponent(id)}/assignees`, { userIds }),
+  move: (id: string, body: { status?: TaskStatus; rank?: number; resolution?: TaskResolution; holdReason?: string | null }) =>
+    post<TaskDetail>(`/tasks/${encodeURIComponent(id)}/move`, body),
+  watch: (id: string, watching: boolean) => post<{ watching: boolean }>(`/tasks/${encodeURIComponent(id)}/watch`, { watching }),
+  /** mentionIds notify; waitOnIds (ticked by the writer, a subset) also put the task on them until they reply. */
+  comment: (id: string, body: string, mentionIds: string[], waitOnIds: string[] = []) =>
+    post<TaskDetail>(`/tasks/${encodeURIComponent(id)}/comments`, { body, mentionIds, waitOnIds }),
+  addWait: (id: string, userId: string) => post<TaskDetail>(`/tasks/${encodeURIComponent(id)}/waits`, { userId }),
+  clearWait: (id: string, waitId: string) => del<TaskDetail>(`/tasks/${encodeURIComponent(id)}/waits/${encodeURIComponent(waitId)}`),
+  linkTargets: () => get<{ key: string; label: string }[]>('/tasks/link-targets'),
+  pick: (dataset: string, q: string) =>
+    get<LinkPick>(`/tasks/link-targets/${encodeURIComponent(dataset)}?q=${encodeURIComponent(q)}`),
+  addLink: (id: string, link: { dataset: string; rowId: string; field?: string | null }) =>
+    post<TaskDetail>(`/tasks/${encodeURIComponent(id)}/links`, link),
+  removeLink: (id: string, linkId: string) =>
+    del<TaskDetail>(`/tasks/${encodeURIComponent(id)}/links/${encodeURIComponent(linkId)}`),
+  notifications: () => get<TaskNotificationItem[]>('/tasks/notifications'),
+  markRead: (body: { ids?: string[]; taskId?: string; all?: boolean }) => post<{ updated: number }>('/tasks/notifications/read', body),
+};
+/** The Tasks page tells the menu badge to recount. */
+export const TASKS_CHANGED = 'tasks:changed-local';
+export function announceTasks() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(TASKS_CHANGED));
+}
 export function announceNewsfeed(unread?: number) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(NEWSFEED_CHANGED, { detail: unread === undefined ? {} : { unread } }));

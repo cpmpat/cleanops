@@ -1,0 +1,156 @@
+'use client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Search, X, Flag } from 'lucide-react';
+import type { TaskPerson, TaskPriority, TaskStatus } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+/** Small shared pieces of the Tasks module: avatars, priority flag, people picker, time ago. */
+
+const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#0891B2', '#CA8A04', '#4F46E5'];
+
+function hash(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+export function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
+}
+
+export function Avatar({ person, size = 24, ring = false }: { person: Pick<TaskPerson, 'id' | 'name'>; size?: number; ring?: boolean }) {
+  return (
+    <span
+      title={person.name}
+      className={cn('inline-flex items-center justify-center rounded-full text-white font-semibold flex-shrink-0', ring && 'ring-2 ring-white')}
+      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4), background: AVATAR_COLORS[hash(person.id) % AVATAR_COLORS.length] }}
+    >
+      {initials(person.name)}
+    </span>
+  );
+}
+
+export function AvatarStack({ people, size = 22, max = 3 }: { people: TaskPerson[]; size?: number; max?: number }) {
+  const shown = people.slice(0, max);
+  const more = people.length - shown.length;
+  return (
+    <span className="flex items-center -space-x-1.5">
+      {shown.map((p) => <Avatar key={p.id} person={p} size={size} ring />)}
+      {more > 0 && (
+        <span className="inline-flex items-center justify-center rounded-full bg-[#F4F4F5] text-[#52525B] text-[10px] font-semibold ring-2 ring-white" style={{ width: size, height: size }}>
+          +{more}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export const STAGE_DOT: Record<TaskStatus, string> = {
+  NEW: '#A1A1AA', TODO: '#64748B', IN_PROGRESS: '#3B82F6', ON_HOLD: '#F59E0B', REVIEW: '#8B5CF6', DONE: '#22C55E',
+};
+
+export const PRIORITY_COLOR: Record<TaskPriority, string> = {
+  LOW: '#A1A1AA',
+  MEDIUM: '#3B82F6',
+  HIGH: '#F59E0B',
+  URGENT: '#EF4444',
+};
+
+export function PriorityFlag({ p, label }: { p: TaskPriority; label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1" title={label}>
+      <Flag size={13} strokeWidth={2} style={{ color: PRIORITY_COLOR[p] }} fill={p === 'URGENT' || p === 'HIGH' ? PRIORITY_COLOR[p] : 'none'} />
+      {label && <span className="text-[12px] text-[#52525B]">{label}</span>}
+    </span>
+  );
+}
+
+export function ago(iso: string, locale: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(locale === 'uk' ? 'uk' : locale, { numeric: 'auto', style: 'short' });
+  if (s < 60) return rtf.format(0, 'second');
+  if (s < 3600) return rtf.format(-Math.floor(s / 60), 'minute');
+  if (s < 86400) return rtf.format(-Math.floor(s / 3600), 'hour');
+  if (s < 86400 * 30) return rtf.format(-Math.floor(s / 86400), 'day');
+  return new Date(iso).toLocaleDateString(locale);
+}
+
+/**
+ * Pick people from a list. multi: checkboxes and chips; single: pick one and close.
+ */
+export function PeoplePicker({
+  people, value, onChange, multi = true, placeholder, disabled, compact,
+}: {
+  people: TaskPerson[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  multi?: boolean;
+  placeholder: string;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const chosen = people.filter((p) => value.includes(p.id));
+  const list = useMemo(
+    () => people.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || p.email.toLowerCase().includes(q.toLowerCase())),
+    [people, q],
+  );
+  function toggle(id: string) {
+    if (!multi) { onChange([id]); setOpen(false); setQ(''); return; }
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  }
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'w-full flex items-center gap-1.5 flex-wrap text-left rounded-lg ring-1 ring-black/[0.08] bg-white transition',
+          compact ? 'min-h-[32px] px-2 py-1' : 'min-h-[38px] px-2.5 py-1.5',
+          disabled ? 'opacity-70 cursor-default' : 'hover:ring-black/[0.16]',
+        )}
+      >
+        {multi && chosen.length > 0 ? chosen.map((p) => (
+          <span key={p.id} className="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 rounded-full bg-[#F4F4F5] text-[12px] text-[#18181B]">
+            <Avatar person={p} size={18} />{p.name}
+            {!disabled && (
+              <X size={11} className="text-[#A1A1AA] hover:text-[#18181B]" onClick={(e) => { e.stopPropagation(); toggle(p.id); }} />
+            )}
+          </span>
+        )) : <span className="text-[13px] text-[#A1A1AA]">{placeholder}</span>}
+        {!disabled && <ChevronDown size={14} className="ml-auto text-[#A1A1AA]" />}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full min-w-[240px] bg-white rounded-xl shadow-[0_12px_32px_-8px_rgba(16,24,40,0.25)] ring-1 ring-black/[0.08] overflow-hidden">
+          <div className="flex items-center gap-2 px-3 h-9 border-b border-black/[0.06]">
+            <Search size={13} className="text-[#A1A1AA]" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} className="flex-1 outline-none text-[13px]" />
+          </div>
+          <div className="max-h-64 overflow-y-auto py-1">
+            {list.map((p) => (
+              <button key={p.id} type="button" onClick={() => toggle(p.id)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[#F4F4F5]">
+                <Avatar person={p} size={22} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] text-[#18181B] truncate">{p.name}</span>
+                  <span className="block text-[11px] text-[#A1A1AA] truncate">{p.role.replace(/_/g, ' ').toLowerCase()}</span>
+                </span>
+                {value.includes(p.id) && <Check size={14} className="text-[#18181B]" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

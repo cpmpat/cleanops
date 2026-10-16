@@ -60,3 +60,24 @@ export const NEWSFEED_ROLES = [
   'MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'EVIDENCE', 'FINANCE', 'REVENUE_MANAGER', 'DIRECTOR',
   'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
 ] as const;
+
+/**
+ * Tasks (16 Oct 2026).
+ *
+ * TASK_ROLES: who opens the board — every role of the office app. Cleaners,
+ * agents and repairmen will get some level of access later; when they do,
+ * TasksService.visibleWhere() is where "only tasks I am involved in" goes.
+ *
+ * TASK_MANAGER_ROLES: who creates, closes (Done / Won't do), reopens, edits
+ * and assigns. ADMIN passes every check.
+ */
+export const TASK_ROLES = [
+  'MANAGER', 'ADMIN', 'OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'ASSIST',
+  'EVIDENCE', 'TERENAK', 'DIRECTOR', 'FINANCE', 'REVENUE_MANAGER', 'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
+] as const;
+
+export const TASK_MANAGER_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'DIRECTOR', 'REVENUE_MANAGER'] as const;
+
+export function isTaskManager(role?: string | null): boolean {
+  return role === 'ADMIN' || (!!role && (TASK_MANAGER_ROLES as readonly string[]).includes(role));
+}
