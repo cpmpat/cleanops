@@ -34,15 +34,23 @@ const TABLES: Record<string, string> = {
 };
 
 /**
- * The pick lists agreed on 29 Sep 2026. Hard-coded here on purpose so this
- * runs against production before the migration that creates the table.
+ * The pick lists as agreed (29 Sep 2026; status and four more on 18 Oct
+ * 2026). Hard-coded here on purpose so this runs against production before
+ * the migration that sets them.
  */
 const PICKLISTS: Record<string, Record<string, string[]>> = {
   accommodation: {
     source: ['Avantio', 'CRM', 'Lead'],
-    status: ['Valid', 'Invalid', 'Offboarding', 'Offboarded', 'Onboarding'],
+    status: ['Valid', 'Invalid'],
+    cotractType: ['Servicing', 'Operating'],
+    salesRentalDivision: ['Short-term', 'Mid-term'],
+    checkInMethod: ['TTLock', 'vítej.box/Nuki/Lockbox', 'Nuki', 'OX Point', 'Lockbox', 'vítej.box/Nuki', 'BCBox/Nuki'],
+    accommodationStandard: ['Comfort', 'Lux', 'Basic', 'Airstay'],
   },
 };
+
+/** The migration's spelling match: case, spaces, hyphens, underscores and the accent on "í" ignored. */
+const key = (v: string) => v.replace(/[íÍ]/g, (c) => (c === 'í' ? 'i' : 'I')).replace(/[\s_-]/g, '').toLowerCase();
 
 if (!values.tenant || !TABLES[values.list!]) {
   console.error(
@@ -133,12 +141,19 @@ async function main() {
       if (!dbType.has(field)) continue;
       const { empty, filled } = await distinctOf(field);
       const outside = filled.filter((r) => !allowed.includes(r.v));
+      const respelled = outside.filter((r) => allowed.some((a) => key(a) === key(r.v)));
+      const foreign = outside.filter((r) => !allowed.some((a) => key(a) === key(r.v)));
       console.log(`\nPICK LIST ${field}: allowed ${allowed.join(', ')}`);
       console.log(`  in the data: ${fmt(filled, 20)}   (empty ${empty})`);
+      if (respelled.length) {
+        console.log(`  SPELLING ONLY (the migration rewrites these): ${respelled
+          .map((r) => `${JSON.stringify(r.v)}×${r.n} → ${JSON.stringify(allowed.find((a) => key(a) === key(r.v)))}`)
+          .join('  ')}`);
+      }
       console.log(
-        outside.length
-          ? `  NOT IN THE LIST: ${fmt(outside, 20)}  ← these rows cannot be saved until fixed`
-          : '  every value is in the list',
+        foreign.length
+          ? `  NOT IN THE LIST: ${fmt(foreign, 20)}  ← stay as they are; that field cannot be saved on those rows until changed`
+          : '  every value is in the list (after the spelling fixes)',
       );
     }
   } finally {

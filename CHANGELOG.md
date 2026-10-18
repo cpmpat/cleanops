@@ -23,7 +23,33 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
-## Unreleased — branch `feat/tasks`
+## Unreleased — branch `chore/accommodation-picklists`
+
+**Accommodation pick lists.** Five columns of the Accommodation list are now
+chosen from a list, in the grid and in the record drawer:
+
+- Status: Valid, Invalid (Offboarding, Offboarded, Onboarding retired)
+- Contract type (`cotractType`): Servicing, Operating
+- Sales rental division: Short-term, Mid-term
+- Check-in method: TTLock, vítej.box/Nuki/Lockbox, Nuki, OX Point, Lockbox,
+  vítej.box/Nuki, BCBox/Nuki (values loaded earlier from the data retired).
+  "Reception" and "WLNKA" (one unit each) are one-offs: they stay on their
+  rows and are not on the list.
+- Accommodation standard: Comfort, Lux, Basic, Airstay
+
+Retired values are deactivated, not deleted: rows that hold one still show
+it, but it can no longer be picked. Data that differs from a list value only
+in case, spaces, hyphens or the accent on "vítej" is rewritten to the list's
+spelling by the migration. Anything else stays and is listed by
+`diag:dataset-values` (updated with the new lists).
+
+*Migrations:* `20261018100000_accommodation_picklists`. *Env:* None.
+
+---
+
+## Deployed
+
+### 2026-10-16 · PR #74
 
 **Tasks** — a new module right below Planning: a Jira-like Kanban for the
 office with six stages (New → To do → In progress → On hold → Review → Done).
@@ -67,10 +93,6 @@ search's `ILIKE '%…%'`.
 
 *Migrations:* `20261016090000_search_trgm_indexes`, `20261016100000_tasks` (eight tables incl. `task_links`).
 *Env:* None.
-
----
-
-## Deployed
 
 ### 2026-10-16 · PR #73
 
