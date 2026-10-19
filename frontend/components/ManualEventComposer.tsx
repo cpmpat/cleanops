@@ -170,7 +170,7 @@ export function ManualEventComposer({ initial, defaultPropertyId, onClose, onSav
                   onClick={() => setCategory(c.value)}
                   className={`py-2 rounded-xl border-2 font-semibold text-sm transition ${
                     category === c.value
-                      ? 'bg-ink text-white border-ink'
+                      ? 'bg-accent-soft text-accent border-accent'
                       : 'bg-white text-ink border-surface-border hover:border-ink-faint'
                   }`}
                 >
@@ -287,7 +287,7 @@ export function ManualEventComposer({ initial, defaultPropertyId, onClose, onSav
           </div>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-xs text-coral-deep bg-coral-soft rounded-lg px-3 py-2">{error}</p>
           )}
 
           {/* Actions */}
@@ -297,7 +297,7 @@ export function ManualEventComposer({ initial, defaultPropertyId, onClose, onSav
                 type="button"
                 onClick={handleDelete}
                 disabled={submitting}
-                className="px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl text-sm font-semibold transition"
+                className="px-4 py-2.5 text-coral-deep hover:bg-coral-soft rounded-xl text-sm font-semibold transition"
               >
                 Delete
               </button>
@@ -315,7 +315,7 @@ export function ManualEventComposer({ initial, defaultPropertyId, onClose, onSav
               type="button"
               onClick={handleSubmit}
               disabled={submitting || !title.trim()}
-              className="px-4 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              className="px-4 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               {submitting && <Loader2 size={14} className="animate-spin" />}
               {isEdit ? 'Save' : 'Add'}

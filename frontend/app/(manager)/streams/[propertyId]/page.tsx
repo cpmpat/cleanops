@@ -77,7 +77,7 @@ export default function PropertyStreamPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 mb-2 text-xs text-ink-faint">
+      <div className="flex items-center gap-2 mb-2 text-xs text-ink-muted">
         <Link href="/streams" className="flex items-center hover:text-ink transition">
           <ChevronLeft size={14} />
           All streams
@@ -87,9 +87,8 @@ export default function PropertyStreamPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-ink flex items-center gap-2 truncate">
-            <Activity size={22} className="text-ink-muted flex-shrink-0" />
-            <span className="truncate">{property?.name ?? 'Property stream'}</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink truncate">
+            {property?.name ?? 'Property stream'}
           </h1>
           {property?.address && (
             <p className="text-sm text-ink-muted mt-0.5 truncate">{property.address}</p>
@@ -98,7 +97,8 @@ export default function PropertyStreamPage() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => load(true)}
-            className="p-2 text-ink-muted hover:text-ink rounded-xl hover:bg-surface-sunken transition"
+            aria-label="Refresh"
+            className="h-9 w-9 flex items-center justify-center bg-white border border-surface-border rounded-[10px] text-ink-muted hover:text-ink transition"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -107,7 +107,7 @@ export default function PropertyStreamPage() {
               setEditing(null);
               setComposerOpen(true);
             }}
-            className="px-3 py-2 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition flex items-center gap-1.5"
+            className="h-9 px-3.5 bg-accent text-white rounded-[10px] text-sm font-semibold hover:bg-accent-hover transition flex items-center gap-1.5"
           >
             <Plus size={16} />
             Add event
@@ -116,7 +116,7 @@ export default function PropertyStreamPage() {
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 text-red-700 rounded-2xl text-sm mb-4">
+        <div className="p-4 bg-coral-soft text-coral-deep rounded-xl text-sm mb-4">
           {error}
         </div>
       )}
@@ -140,7 +140,7 @@ export default function PropertyStreamPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {items.map((item) => (
             <StreamItemCard
               key={item.id}
@@ -153,7 +153,7 @@ export default function PropertyStreamPage() {
             <button
               onClick={() => load(false, nextCursor)}
               disabled={loadingMore}
-              className="w-full py-3 bg-white border border-surface-border rounded-2xl text-sm font-semibold text-ink-muted hover:text-ink hover:border-ink-faint transition disabled:opacity-50"
+              className="w-full h-10 bg-white border border-surface-border rounded-xl text-[13px] font-semibold text-ink-soft hover:text-ink transition disabled:opacity-50"
             >
               {loadingMore ? 'Loading...' : 'Load more'}
             </button>

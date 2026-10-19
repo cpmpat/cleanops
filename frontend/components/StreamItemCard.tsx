@@ -28,18 +28,24 @@ const ICONS: Record<StreamItemType, any> = {
   PRICING: ArrowUpDown,
 };
 
-const COLORS: Record<StreamItemType, { bg: string; text: string; border: string }> = {
-  RESERVATION: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  CLEANING:    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  INCIDENT:    { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
-  REPAIR:      { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
-  INSPECTION:  { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
-  MANUAL:      { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-200' },
-  // Turnovers wear the app's amber; chats wear the message blue they already
-  // have everywhere else.
-  TURNOVER:    { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300' },
-  DIRECT_CHAT: { bg: 'bg-[#eef2fa]', text: 'text-[#243b6b]', border: 'border-[#c8d4ea]' },
-  PRICING:     { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-200' },
+/**
+ * One tone per record type, shared by the Stream timeline and the per-unit
+ * feed (Oct 2026 palette): guests blue, cleanings green, incidents coral,
+ * repairs sand, inspections lilac, pricing teal, the rest neutral.
+ * `dot` is a background class (timeline dot, filter chip); `chip` is the
+ * soft label (background + text).
+ */
+export const STREAM_TONE: Record<StreamItemType, { dot: string; chip: string }> = {
+  RESERVATION: { dot: 'bg-[#2F5DA8]', chip: 'bg-[#E6ECF6] text-[#2F5DA8]' },
+  TURNOVER:    { dot: 'bg-accent',    chip: 'bg-accent-soft text-accent' },
+  DIRECT_CHAT: { dot: 'bg-ink-soft',  chip: 'bg-surface-sunken text-ink-soft' },
+  INCIDENT:    { dot: 'bg-coral',     chip: 'bg-coral-soft text-coral-deep' },
+  REPAIR:      { dot: 'bg-sand',      chip: 'bg-sand-soft text-sand-deep' },
+  INSPECTION:  { dot: 'bg-[#7A5BA6]', chip: 'bg-[#EFEAF3] text-[#5E4B75]' },
+  MANUAL:      { dot: 'bg-[#8A8E88]', chip: 'bg-[#EFEAE0] text-[#5B5446]' },
+  PRICING:     { dot: 'bg-[#2E6E73]', chip: 'bg-[#E3EEEE] text-[#2E6E73]' },
+  // Legacy rows the turnover replaces, kept until they are retired.
+  CLEANING:    { dot: 'bg-[#C9C4BA]', chip: 'bg-surface-sunken text-ink-muted' },
 };
 
 /** The UP / DOWN logo in front of a Pricing Group move. */
@@ -70,21 +76,21 @@ interface Props {
 
 export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) {
   const Icon = ICONS[item.type];
-  const colors = COLORS[item.type];
+  const tone = STREAM_TONE[item.type] ?? STREAM_TONE.MANUAL;
 
   const occurredDate = new Date(item.occurredAt);
-  const dateLabel = occurredDate.toLocaleDateString();
-  const timeLabel = occurredDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateLabel = occurredDate.toLocaleDateString('cs-CZ', { timeZone: 'Europe/Prague' });
+  const timeLabel = occurredDate.toLocaleTimeString('cs-CZ', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit' });
 
   const inner = (
     <>
       <div className="flex items-start gap-3">
-        <div className={`flex-shrink-0 w-10 h-10 rounded-full border ${colors.bg} ${colors.text} ${colors.border} flex items-center justify-center`}>
-          <Icon size={18} />
+        <div className={`flex-shrink-0 w-[34px] h-[34px] rounded-[10px] ${tone.chip} flex items-center justify-center`}>
+          <Icon size={16} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
+            <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${tone.chip}`}>
               {item.type}
             </span>
             {item.priority && (
@@ -115,7 +121,7 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
         </div>
         <div className="flex-shrink-0 text-right">
           <p className="text-xs text-ink-muted whitespace-nowrap">{dateLabel}</p>
-          <p className="text-[11px] text-ink-faint">{timeLabel}</p>
+          <p className="font-mono text-[11px] text-ink-muted">{timeLabel}</p>
         </div>
       </div>
 
@@ -132,7 +138,7 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
     return (
       <Link
         href={`/incidents/${item.source.id}`}
-        className="block bg-white border border-surface-border rounded-2xl p-4 hover:border-ink-faint transition"
+        className="block bg-white border border-surface-border rounded-xl p-3.5 hover:border-[#D6D0C4] transition"
       >
         {inner}
       </Link>
@@ -144,7 +150,7 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
       <button
         type="button"
         onClick={() => onEditManual(item)}
-        className="w-full text-left bg-white border border-surface-border rounded-2xl p-4 hover:border-ink-faint transition"
+        className="w-full text-left bg-white border border-surface-border rounded-xl p-3.5 hover:border-[#D6D0C4] transition"
       >
         {inner}
       </button>
@@ -152,7 +158,7 @@ export function StreamItemCard({ item, onEditManual, hidePropertyName }: Props) 
   }
 
   return (
-    <div className="bg-white border border-surface-border rounded-2xl p-4">
+    <div className="bg-white border border-surface-border rounded-xl p-3.5">
       {inner}
     </div>
   );
