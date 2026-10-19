@@ -24,6 +24,13 @@
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv
 //   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --csv ~/Downloads/matrix.csv --apply
 //
+// STRAIGHT FROM THE CDM SHEET (20 Oct 2026): leave out --csv and the matrix is
+// read from the tenant's CDM spreadsheet, tab matrixFieldsAccessRoles<List>
+// (e.g. matrixFieldsAccessRolesAccommodation), same shape as the CSV. --tab
+// names another tab.
+//   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation
+//   ./scripts/prod.sh import:access-matrix -- --tenant prague-stays --dataset accommodation --apply
+//
 // COLUMN ORDER: the order of the field rows is also each named role's column
 // order in Data (dataset_field_roles.columnOrder, 6 Oct 2026). Reorder the
 // rows to reorder the columns for those roles. --skip-order leaves it alone.
@@ -50,14 +57,15 @@ const { values } = parseArgs({
     tenant: { type: 'string' },
     dataset: { type: 'string' },
     csv: { type: 'string' },
+    tab: { type: 'string' },
     apply: { type: 'boolean', default: false },
     'skip-order': { type: 'boolean', default: false },
   },
 });
 
-if (!values.tenant || !values.dataset || !values.csv) {
+if (!values.tenant || !values.dataset) {
   console.error(
-    'Usage: pnpm import:access-matrix -- --tenant <id|slug> --dataset <accommodation|user|owner|oxpoint> --csv <file> [--apply]',
+    'Usage: pnpm import:access-matrix -- --tenant <id|slug> --dataset <accommodation|user|owner|oxpoint> [--csv <file> | --tab <sheet tab>] [--apply]',
   );
   process.exit(2);
 }
@@ -108,10 +116,47 @@ function parseCsv(text: string): string[][] {
 
 type Grant = { field: string; role: string; canView: boolean; canEdit: boolean };
 
+/** "accommodation" → "matrixFieldsAccessRolesAccommodation" — the tab's name in the CDM sheet. */
+const defaultTab = (dataset: string) => `matrixFieldsAccessRoles${dataset.charAt(0).toUpperCase()}${dataset.slice(1)}`;
+
+/**
+ * The matrix rows: from --csv when given, else from the CDM spreadsheet's
+ * matrix tab. Cells come back as the sheet shows them (TRUE / FALSE).
+ */
+async function loadRows(): Promise<{ rows: string[][]; from: string }> {
+  if (values.csv) {
+    const text = readFileSync(values.csv.replace(/^~(?=\/)/, process.env.HOME ?? '~'), 'utf8').replace(/^﻿/, '');
+    return { rows: parseCsv(text), from: values.csv };
+  }
+  const prisma = new PrismaClient();
+  try {
+    const t = await prisma.tenant.findFirst({
+      where: { OR: [{ id: values.tenant! }, { slug: values.tenant! }] },
+      select: { datasetsSheetId: true },
+    });
+    if (!t?.datasetsSheetId) { console.error('This tenant has no datasetsSheetId (CDM spreadsheet).'); process.exit(2); }
+    const sheets = new GoogleSheetsClient();
+    const wanted = values.tab ?? defaultTab(values.dataset!);
+    const tabs = await sheets.listTabs(t.datasetsSheetId);
+    const tab = tabs.find((x) => x === wanted) ?? tabs.find((x) => squash(x) === squash(wanted));
+    if (!tab) {
+      console.error(`No tab "${wanted}" in the CDM spreadsheet. Tabs: ${tabs.join(', ')}`);
+      process.exit(2);
+    }
+    const grid = (await sheets.readValues(t.datasetsSheetId, tab)) ?? [];
+    const rows = grid
+      .map((r) => (r ?? []).map((c: unknown) => (c === null || c === undefined ? '' : String(c))))
+      .filter((r) => r.some((c) => c.trim() !== ''));
+    return { rows, from: `sheet tab "${tab}"` };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 async function main() {
   const dataset = values.dataset!;
-  const text = readFileSync(values.csv!.replace(/^~(?=\/)/, process.env.HOME ?? '~'), 'utf8').replace(/^﻿/, '');
-  const rows = parseCsv(text);
+  const { rows, from: source } = await loadRows();
+  console.log(`Matrix : ${source}`);
   if (rows.length < 3) {
     console.error('The file needs a role row, a view/edit row and at least one field row.');
     process.exit(1);
@@ -159,7 +204,7 @@ async function main() {
   });
 
   if (errors.length) {
-    console.error(`${errors.length} problem(s) in ${values.csv} — nothing written:`);
+    console.error(`${errors.length} problem(s) in ${source} — nothing written:`);
     for (const e of errors.slice(0, 40)) console.error(`  ${e}`);
     process.exit(1);
   }
@@ -204,7 +249,7 @@ async function main() {
 
     console.log(`Tenant  : ${tenant.name} (${tenant.slug})`);
     console.log(`List    : ${dataset} (${columns.size} columns ${isSheet ? `in the "${TAB!.tab}" sheet tab — sheet-backed, view only` : 'in dataset_fields'})`);
-    console.log(`File    : ${values.csv} — ${seen.size} field(s) × ${roles.length} role(s)`);
+    console.log(`Source  : ${source} — ${seen.size} field(s) × ${roles.length} role(s)`);
     console.log(`Mode    : ${values.apply ? 'APPLY' : 'DRY RUN'}\n`);
     for (const { role } of roles) {
       const mine = grants.filter((g) => g.role === role);
@@ -280,7 +325,7 @@ async function main() {
           actorEmail: process.env.USER ? `script:${process.env.USER}` : 'script',
           targetType: `dataset:${dataset}`,
           metadata: {
-            file: values.csv!.split('/').pop(),
+            file: values.csv ? values.csv.split('/').pop() : source,
             roles: roles.map((r) => r.role),
             added: added.length, changed: changed.length, removed: removed.length,
             orderedColumns: ordered.length,
