@@ -69,6 +69,12 @@ const PUSH_CONCURRENCY = 3;
  * check-out · row actions · cleaner.
  */
 const GRID = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+/**
+ * With the Assigned view open the list loses ~26rem. Guests, setup and the
+ * locked check-out column step aside so the unit name has the room
+ * (Check-In tab only — the panel never opens on Check-Out).
+ */
+const GRID_COMPACT = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_8.75rem_4rem_11.5rem] items-center gap-x-3';
 
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
@@ -113,6 +119,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [planFilter, setPlanFilter] = useState<'ALL' | PlanState>('ALL');
   const [splitOpen, setSplitOpen] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
+  // Assigned view open: the list drops guests, setup and check-out to make room.
+  const compact = splitOpen && !byCheckOut;
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>(24);
   // Default: by unit name, so the desk reads the list the way the building is laid out.
@@ -325,14 +333,21 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   );
 
   /** Push one row. Sends only the fields that changed; HH:mm, Prague. */
-  async function pushRow(b: PlanningBooking): Promise<boolean> {
-    const d = drafts[b.id];
+  /**
+   * `confirm`: push this tab's time even though it did not change. An assumed
+   * time (FALLBACK, e.g. 15:00) that really is the arrival time could not be
+   * confirmed before — picking 15:00 over 15:00 is no edit, so nothing was
+   * dirty. Confirming sends it to Avantio and marks it as set by a person,
+   * which is what turns it bold on the cleaner's card.
+   */
+  async function pushRow(b: PlanningBooking, confirm = false): Promise<boolean> {
+    const d = drafts[b.id] ?? (confirm ? stored(b) : undefined);
     if (!d || !b.pmsBookingId) return false;
     const s = stored(b);
     const body: { checkInTime?: string; checkOutTime?: string } = {};
     // Each tab pushes only the time it owns; the other input is locked anyway.
-    if (!byCheckOut && d.checkIn && d.checkIn !== s.checkIn) body.checkInTime = d.checkIn;
-    if (byCheckOut && d.checkOut && d.checkOut !== s.checkOut) body.checkOutTime = d.checkOut;
+    if (!byCheckOut && d.checkIn && (confirm || d.checkIn !== s.checkIn)) body.checkInTime = d.checkIn;
+    if (byCheckOut && d.checkOut && (confirm || d.checkOut !== s.checkOut)) body.checkOutTime = d.checkOut;
     if (!body.checkInTime && !body.checkOutTime) { discardDraft(b); return true; }
 
     setRowState(prev => ({ ...prev, [b.id]: 'pushing' }));
@@ -629,7 +644,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             </div>
           </div>
           {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
-          <div className={cn(GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
+          <div className={cn(compact ? GRID_COMPACT : GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
             {/* Day: the calendar day this tab's time falls on — sorts with the time column. */}
             <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
               {tp.day}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
@@ -638,8 +653,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             <button type="button" onClick={() => toggleSort('unit')} className="text-left hover:text-ink transition">
               {tp.sortUnit} · {tp.guest}{sortKey === 'unit' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
             </button>
-            <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>
-            <span className="text-center">{tp.setup}</span>
+            {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
+            {!compact && <span className="text-center">{tp.setup}</span>}
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
@@ -651,7 +666,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                 </button>
               )}
             </span>
-            <span className="flex items-center gap-1.5">
+            {!compact && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
@@ -660,7 +675,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
               ) : (
                 <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkOutTime}</span>
               )}
-            </span>
+            </span>}
             <span />
             <span className="text-right">{tp.cleaner}</span>
           </div>
@@ -678,7 +693,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   id={`row-${b.id}`}
                   onClick={() => { if (splitOpen) setHighlight(b.id); }}
                   className={cn(
-                    GRID, 'px-4 py-2.5 transition group',
+                    compact ? GRID_COMPACT : GRID, 'px-4 py-2.5 transition group',
                     highlight === b.id && 'ring-2 ring-inset ring-accent',
                     dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-red-50',
@@ -755,6 +770,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     )}
                   </div>
 
+                  {!compact && (<>
                   {/* Guests — same "adults+children" reading the cleaner's card uses */}
                   <span
                     className="flex items-center justify-center gap-1 text-xs text-ink-soft tabular-nums"
@@ -801,6 +817,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     )}
                   </div>
 
+                  </>)}
+
                   {/* Check-in — editable on the Check-In tab, locked on Check-Out. The amber dot means we assumed the time. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -827,6 +845,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     </label>
                   </div>
 
+                  {!compact && (<>
                   {/* Check-out — editable on the Check-Out tab, locked on Check-In. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -853,8 +872,23 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     </label>
                   </div>
 
+                  </>)}
+
                   {/* Row action: push / undo / result */}
                   <div className="flex items-center justify-end gap-1">
+                      {/* An assumed time that is the real one: confirm it as is. */}
+                      {!dirty && editable && state !== 'pushing' && state !== 'ok' && ownSource(b) === 'FALLBACK' && (
+                        <button
+                          type="button"
+                          onClick={() => void pushRow(b, true)}
+                          title={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
+                          aria-label={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
+                          className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-semibold hover:bg-amber-100 transition"
+                        >
+                          <Check size={12} />
+                          {tp.confirmShort}
+                        </button>
+                      )}
                       {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
                       {state === 'ok' && <Check size={15} className="text-emerald-600" />}
                       {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
