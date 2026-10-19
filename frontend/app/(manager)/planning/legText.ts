@@ -21,8 +21,8 @@ export function legLabel(l: CheckInLeg): string {
 }
 
 export const legTone: Record<CheckInLeg['state'], string> = {
-  OK: 'text-emerald-700',
-  TIGHT: 'text-amber-700',
-  IMPOSSIBLE: 'text-red-600 font-semibold',
+  OK: 'text-accent',
+  TIGHT: 'text-sand-deep',
+  IMPOSSIBLE: 'text-coral-deep font-semibold',
   UNKNOWN: 'text-ink-faint',
 };

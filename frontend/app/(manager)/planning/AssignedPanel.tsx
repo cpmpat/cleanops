@@ -67,7 +67,7 @@ export function AssignedPanel({
       </div>
 
       {data && data.unassignedCount > 0 && (
-        <p className="mx-4 mt-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-1.5">
+        <p className="mx-4 mt-3 text-xs text-sand-deep bg-sand-soft border border-sand/40 rounded-xl px-3 py-2 flex items-center gap-1.5">
           <AlertTriangle size={13} /> {data.unassignedCount} check-in{data.unassignedCount === 1 ? '' : 's'} in this range still without an agent
         </p>
       )}
@@ -92,7 +92,7 @@ export function AssignedPanel({
         </div>
       )}
 
-      {error && <p className="m-4 text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+      {error && <p className="m-4 text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{error}</p>}
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
         {data && data.columns.length === 0 && (
@@ -128,18 +128,18 @@ export function AssignedPanel({
                           highlight === i.bookingId ? 'bg-accent-soft ring-1 ring-accent' : 'hover:bg-surface-sunken',
                         )}
                       >
-                        <span className={cn('text-sm font-bold tabular-nums w-11 flex-shrink-0', i.arrivalAssumed ? 'text-amber-700' : 'text-ink')}>
+                        <span className={cn('text-sm font-bold tabular-nums w-11 flex-shrink-0', i.arrivalAssumed ? 'text-sand-deep' : 'text-ink')}>
                           {i.time}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-[13px] font-medium text-ink truncate">{street(i.accommodationName)}</span>
                           <span className="block text-[11px] text-ink-muted truncate">
                             {i.accommodationName.split(',').slice(1).join(',').trim() || i.bookingRef} · {i.guests}
-                            {i.arrivalAssumed && <span className="text-amber-700"> · time unconfirmed</span>}
+                            {i.arrivalAssumed && <span className="text-sand-deep"> · time unconfirmed</span>}
                           </span>
                         </span>
-                        {i.consent === 'PENDING' && <span title="Waiting for the agent to accept" className="text-[10px] font-bold text-amber-800 bg-amber-100 rounded-full px-1.5">?</span>}
-                        {!i.seen && i.consent !== 'PENDING' && <span title="Not seen by the agent yet" className="mt-1.5 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />}
+                        {i.consent === 'PENDING' && <span title="Waiting for the agent to accept" className="text-[10px] font-bold text-sand-deep bg-sand-soft rounded-full px-1.5">?</span>}
+                        {!i.seen && i.consent !== 'PENDING' && <span title="Not seen by the agent yet" className="mt-1.5 w-2 h-2 rounded-full bg-sand flex-shrink-0" />}
                       </button>
                     </div>
                   ))}
@@ -148,8 +148,8 @@ export function AssignedPanel({
                   <span><strong className="text-ink-soft">{d.footer.count}</strong> check-in{d.footer.count === 1 ? '' : 's'}</span>
                   {d.footer.first && <span>{d.footer.first}–{d.footer.last}</span>}
                   {d.footer.travelMinutes > 0 && <span>{d.footer.travelMinutes} min travel</span>}
-                  {d.footer.red > 0 && <span className="text-red-600 font-semibold">{d.footer.red} won’t make it</span>}
-                  {d.footer.amber > 0 && <span className="text-amber-700 font-semibold">{d.footer.amber} tight</span>}
+                  {d.footer.red > 0 && <span className="text-coral-deep font-semibold">{d.footer.red} won’t make it</span>}
+                  {d.footer.amber > 0 && <span className="text-sand-deep font-semibold">{d.footer.amber} tight</span>}
                   {d.footer.unknownLegs > 0 && <span className="text-ink-faint">{d.footer.unknownLegs} leg{d.footer.unknownLegs === 1 ? '' : 's'} unknown</span>}
                 </p>
               </div>

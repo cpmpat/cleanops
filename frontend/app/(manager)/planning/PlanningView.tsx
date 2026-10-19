@@ -577,7 +577,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition',
               onlyUnconfirmed
-                ? 'bg-amber-100 border-amber-400 text-amber-900'
+                ? 'bg-sand-soft border-sand text-sand-deep'
                 : 'bg-surface border-surface-border text-ink-muted hover:text-ink'
             )}
           >
@@ -586,7 +586,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {unconfirmedCount > 0 && (
               <span className={cn(
                 'text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none',
-                onlyUnconfirmed ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-800'
+                onlyUnconfirmed ? 'bg-sand text-sand-deep' : 'bg-sand-soft text-sand-deep'
               )}>
                 {unconfirmedCount}
               </span>
@@ -644,9 +644,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                 <div className="flex items-center gap-1 text-[11.5px] font-semibold">
                   {([
                     ['ALL', 'All', bookings.length, 'text-ink-soft'],
-                    ['UNASSIGNED', 'Unassigned', planCounts.UNASSIGNED, 'text-red-600'],
-                    ['ASSIGNED', 'Assigned', planCounts.ASSIGNED, 'text-amber-700'],
-                    ['PLANNED', 'Planned', planCounts.PLANNED, 'text-emerald-700'],
+                    ['UNASSIGNED', 'Unassigned', planCounts.UNASSIGNED, 'text-coral-deep'],
+                    ['ASSIGNED', 'Assigned', planCounts.ASSIGNED, 'text-sand-deep'],
+                    ['PLANNED', 'Planned', planCounts.PLANNED, 'text-accent'],
                   ] as const).map(([key, label, n, tone]) => (
                     <button
                       key={key}
@@ -677,7 +677,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   <Columns2 size={13} />
                   Assigned view
                   {planCounts.UNASSIGNED > 0 && (
-                    <span className="rounded-full bg-red-100 text-red-700 px-1.5 leading-4">{planCounts.UNASSIGNED} unassigned</span>
+                    <span className="rounded-full bg-coral-soft text-coral-deep px-1.5 leading-4">{planCounts.UNASSIGNED} unassigned</span>
                   )}
                 </button>
               )}
@@ -739,10 +739,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   className={cn(
                     compact ? GRID_COMPACT : GRID, 'px-4 py-2.5 transition group',
                     highlight === b.id && 'ring-2 ring-inset ring-accent',
-                    dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
-                    state === 'error' && 'bg-red-50',
-                    lastMinute && !dirty && 'border-l-4 border-l-red-400',
-                    b.isOwnerStay && !lastMinute && !dirty && 'border-l-4 border-l-amber-400',
+                    dirty ? 'bg-sand-soft/70' : 'hover:bg-surface-sunken',
+                    state === 'error' && 'bg-coral-soft',
+                    lastMinute && !dirty && 'border-l-4 border-l-coral',
+                    b.isOwnerStay && !lastMinute && !dirty && 'border-l-4 border-l-sand',
                     done && 'opacity-70',
                   )}
                 >
@@ -772,13 +772,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <div className="flex items-center gap-2 mt-0.5 min-w-0 whitespace-nowrap">
                       {/* Same two flags the cleaner's card wears, at list size. */}
                       {b.isOwnerStay && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-900 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.ownerStay}>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-sand-soft border border-sand/70 text-sand-deep px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.ownerStay}>
                           <Crown size={10} />
                           {tp.ownerStay}
                         </span>
                       )}
                       {lastMinute && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 text-red-600 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.lastMinute}>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-coral-soft border border-coral/40 text-coral-deep px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.lastMinute}>
                           <Flame size={10} />
                           {tp.lastMinute}
                         </span>
@@ -857,7 +857,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       <BedSingle size={15} />
                     </button>
                     {flagBusy[b.id] === 'error' && (
-                      <span className="text-[11px] text-red-600 font-medium" title={tp.saveFailed}>!</span>
+                      <span className="text-[11px] text-coral-deep font-medium" title={tp.saveFailed}>!</span>
                     )}
                   </div>
 
@@ -868,7 +868,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   <div className="flex items-center gap-1.5">
                     <span
                       title={b.checkInSource === 'FALLBACK' ? tp.unconfirmedHint : undefined}
-                      className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', b.checkInSource === 'FALLBACK' && !dirty ? 'bg-amber-500' : 'bg-transparent')}
+                      className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', b.checkInSource === 'FALLBACK' && !dirty ? 'bg-sand' : 'bg-transparent')}
                     />
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? tp.lockedHint : undefined}>
                       <input
@@ -886,7 +886,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                           byCheckOut
                             ? 'border-transparent bg-surface-sunken/60 text-ink-faint cursor-not-allowed'
                             : 'font-semibold text-ink disabled:opacity-60',
-                          !byCheckOut && dirty && d.checkIn !== stored(b).checkIn ? 'border-amber-400 bg-white' : !byCheckOut && 'border-surface-border bg-transparent',
+                          !byCheckOut && dirty && d.checkIn !== stored(b).checkIn ? 'border-sand bg-white' : !byCheckOut && 'border-surface-border bg-transparent',
                         )}
                       />
                     </label>
@@ -899,7 +899,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   <div className="flex items-center gap-1.5">
                     <span
                       title={b.checkOutSource === 'FALLBACK' ? tp.unconfirmedOutHint : undefined}
-                      className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', byCheckOut && b.checkOutSource === 'FALLBACK' && !dirty ? 'bg-amber-500' : 'bg-transparent')}
+                      className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', byCheckOut && b.checkOutSource === 'FALLBACK' && !dirty ? 'bg-sand' : 'bg-transparent')}
                     />
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? undefined : tp.lockedHint}>
                       <input
@@ -917,7 +917,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                           byCheckOut
                             ? 'font-semibold text-ink disabled:opacity-60'
                             : 'border-transparent bg-surface-sunken/60 text-ink-faint cursor-not-allowed',
-                          byCheckOut && dirty && d.checkOut !== stored(b).checkOut ? 'border-amber-400 bg-white' : byCheckOut && 'border-surface-border bg-transparent',
+                          byCheckOut && dirty && d.checkOut !== stored(b).checkOut ? 'border-sand bg-white' : byCheckOut && 'border-surface-border bg-transparent',
                         )}
                       />
                     </label>
@@ -928,8 +928,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   {/* Row action: push / undo / result */}
                   <div className="flex items-center justify-end gap-1">
                       {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
-                      {state === 'ok' && <Check size={15} className="text-emerald-600" />}
-                      {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
+                      {state === 'ok' && <Check size={15} className="text-accent" />}
+                      {state === 'error' && <span className="text-[11px] text-coral-deep font-medium" title={tp.pushFailed}>!</span>}
                       {dirty && state !== 'pushing' && (
                         <>
                           <button
@@ -955,7 +955,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   <div className="flex items-center gap-2 justify-end min-w-0">
                     {b.assignments.length === 0 ? (
                       b.turnoverId && !done
-                        ? <span className="text-xs text-amber-600 font-medium">⚠ Unassigned</span>
+                        ? <span className="text-xs text-sand-deep font-medium">⚠ Unassigned</span>
                         : <span className="text-xs text-ink-faint" />
                     ) : (
                       <div className="flex items-center gap-1.5">
@@ -998,9 +998,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         title={a.title}
                         className={cn(
                           'relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition max-w-full',
-                          a.kind === 'awaiting' && 'border-amber-300 bg-amber-50 text-amber-900 font-medium',
+                          a.kind === 'awaiting' && 'border-sand/70 bg-sand-soft text-sand-deep font-medium',
                           a.kind === 'set' && 'border-surface-border bg-surface-sunken text-ink-soft font-medium',
-                          a.kind === 'declined' && 'border-dashed border-red-300 text-red-600 font-medium',
+                          a.kind === 'declined' && 'border-dashed border-coral/70 text-coral-deep font-medium',
                           a.kind === 'empty' && 'border-dashed border-surface-border text-ink-faint hover:text-accent hover:border-accent',
                         )}
                       >
@@ -1009,7 +1009,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         {a.dot && (
                           <span className={cn(
                             'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white',
-                            a.dot === 'red' ? 'bg-red-500 animate-pulse' : 'bg-amber-400',
+                            a.dot === 'red' ? 'bg-coral animate-pulse' : 'bg-sand',
                           )} />
                         )}
                       </button>
@@ -1025,7 +1025,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         title="Agent's report — open"
                         className={cn(
                           'text-[10.5px] leading-tight rounded-full px-1.5 py-px border',
-                          c !== undefined && c < 3 ? 'border-red-300 bg-red-50 text-red-700 font-semibold' : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                          c !== undefined && c < 3 ? 'border-coral/70 bg-coral-soft text-coral-deep font-semibold' : 'border-accent/25 bg-accent-soft text-accent',
                         )}
                       >
                         ✓ report{c !== undefined ? ` · clean ${c}/5` : ''}{b.checkInReport.hasComment ? ' · 💬' : ''}
@@ -1113,14 +1113,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   {assigning.assignments.map(a => (
                     <div key={a.id} className={cn(
                       'flex items-center gap-2 rounded-xl px-3 py-2',
-                      a.userId === reassigningUserId ? 'bg-amber-50 border border-amber-200' : 'bg-surface-sunken',
+                      a.userId === reassigningUserId ? 'bg-sand-soft border border-sand/40' : 'bg-surface-sunken',
                     )}>
                       <div className="w-6 h-6 rounded-full bg-ink text-white text-xs flex items-center justify-center font-bold">
                         {a.userName[0]}
                       </div>
                       <span className="text-sm font-medium text-ink flex-1">{a.userName}</span>
                       {a.isPrimary && <span className="text-[10px] text-ink-faint">primary</span>}
-                      {a.userId === reassigningUserId && <span className="text-[10px] text-amber-600 font-semibold">replacing</span>}
+                      {a.userId === reassigningUserId && <span className="text-[10px] text-sand-deep font-semibold">replacing</span>}
                     </div>
                   ))}
                 </div>
@@ -1151,7 +1151,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             </div>
 
             {assignError && (
-              <p className="mb-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{assignError}</p>
+              <p className="mb-3 text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{assignError}</p>
             )}
 
             <button
@@ -1187,13 +1187,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {agentReport && (
               <div className={cn(
                 'mb-3 rounded-xl border px-3 py-2.5 text-xs space-y-1',
-                agentReport.ratings.some(r => r.score < 3) ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50',
+                agentReport.ratings.some(r => r.score < 3) ? 'border-coral/40 bg-coral-soft' : 'border-accent/25 bg-accent-soft',
               )}>
                 <p className="font-semibold text-ink">
                   Report by {agentReport.agentName ?? 'agent'} · {formatTime(agentReport.updatedAt)}
                 </p>
                 {agentReport.ratings.map(r => (
-                  <p key={r.aspect} className={r.score < 3 ? 'text-red-800' : 'text-ink-soft'}>
+                  <p key={r.aspect} className={r.score < 3 ? 'text-coral-deep' : 'text-ink-soft'}>
                     {r.aspect === 'CLEANLINESS' ? 'Cleanliness' : r.aspect}: <strong>{r.score}/5</strong>
                     {r.comment && <> — {r.comment}</>}
                   </p>
@@ -1206,14 +1206,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             )}
 
             {agentFor.checkInAgentId && agentFor.checkInAgentConsent === 'PENDING' && (
-              <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
-                <p className="text-xs text-amber-900">
+              <div className="mb-3 rounded-xl border border-sand/70 bg-sand-soft px-3 py-2.5">
+                <p className="text-xs text-sand-deep">
                   Waiting for <strong>{agentFor.checkInAgentName}</strong> to accept in the app — they had not declared this arrival.
                 </p>
                 <button
                   onClick={() => void agreedByPhone()}
                   disabled={agentBusy}
-                  className="mt-2 w-full py-2 bg-white border border-amber-300 text-amber-900 rounded-lg text-xs font-semibold hover:bg-amber-100 transition disabled:opacity-50"
+                  className="mt-2 w-full py-2 bg-white border border-sand/70 text-sand-deep rounded-lg text-xs font-semibold hover:bg-sand-soft transition disabled:opacity-50"
                 >
                   Agreed by phone
                 </button>
@@ -1221,14 +1221,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             )}
 
             {!agentFor.checkInAgentId && agentFor.checkInDeclinedAgentName && (
-              <p className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              <p className="mb-3 text-xs text-coral-deep bg-coral-soft border border-coral/40 rounded-xl px-3 py-2">
                 {agentFor.checkInDeclinedAgentName} declined
                 {agentFor.checkInDeclinedAt && ` at ${formatTime(agentFor.checkInDeclinedAt)}`}. Pick someone else.
               </p>
             )}
 
             {agentData?.arrivalAssumed && (
-              <p className="mb-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <p className="mb-3 text-xs text-sand-deep bg-sand-soft border border-sand/40 rounded-xl px-3 py-2">
                 Arrival time not confirmed (assumed {agentData.arrival}). Agents who declared anything that day are listed as a fit.
               </p>
             )}
@@ -1257,7 +1257,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       className={cn(
                         'w-full text-left flex items-center gap-2 rounded-xl px-3 py-2 border transition disabled:opacity-60',
                         current ? 'border-accent bg-accent-soft' : o.eligible ? 'border-surface-border hover:bg-surface-sunken' : 'border-surface-border bg-surface-sunken/50 hover:bg-surface-sunken',
-                        agentOverride?.id === o.id && 'border-amber-400 bg-amber-50',
+                        agentOverride?.id === o.id && 'border-sand bg-sand-soft',
                       )}
                     >
                       <div className={cn('w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold', o.eligible ? 'bg-ink text-white' : 'bg-surface-border text-ink-muted')}>
@@ -1265,7 +1265,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={cn('text-sm font-medium truncate', o.eligible ? 'text-ink' : 'text-ink-muted')}>{o.name}</p>
-                        <p className={cn('text-[11px] truncate', o.fit === 'TIME_UNCONFIRMED' ? 'text-amber-700' : 'text-ink-faint')}>{note}</p>
+                        <p className={cn('text-[11px] truncate', o.fit === 'TIME_UNCONFIRMED' ? 'text-sand-deep' : 'text-ink-faint')}>{note}</p>
                       </div>
                       {current && <span className="text-[10px] text-accent font-semibold">current</span>}
                     </button>
@@ -1275,15 +1275,15 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             )}
 
             {agentOverride && (
-              <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
-                <p className="text-xs text-amber-900">
+              <div className="mt-3 rounded-xl border border-sand/70 bg-sand-soft px-3 py-2.5">
+                <p className="text-xs text-sand-deep">
                   <strong>{agentOverride.name}</strong> has not declared this arrival. Assign only if you have agreed it with them. This is recorded as an override.
                 </p>
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={() => void saveAgent(agentOverride.id, true)}
                     disabled={agentBusy}
-                    className="flex-1 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition disabled:opacity-50"
+                    className="flex-1 py-2 bg-sand text-white rounded-lg text-xs font-semibold hover:bg-sand transition disabled:opacity-50"
                   >
                     {agentBusy ? 'Saving…' : 'Assign anyway'}
                   </button>
@@ -1295,7 +1295,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             )}
 
             {agentError && (
-              <p className="mt-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{agentError}</p>
+              <p className="mt-3 text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{agentError}</p>
             )}
 
             {agentFor.checkInAgentId && (
