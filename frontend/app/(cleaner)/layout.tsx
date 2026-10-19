@@ -65,7 +65,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         return;
       }
       if (user.role === 'AGENT' && CLEANING_SCREENS.some(p => pathname === p || pathname?.startsWith(p + '/'))) {
-        router.replace('/availability');
+        router.replace('/checkins');
         return;
       }
       if (user.role !== 'AGENT' && pathname?.startsWith('/availability')) {

@@ -14,7 +14,8 @@ export const NEWSFEED_HOME_ROLES = [
 
 export function homeFor(role?: string | null): string {
   if (role && NEWSFEED_HOME_ROLES.includes(role)) return '/newsfeed';
-  if (role === 'AGENT') return '/availability';
+  // Agents start on their check-ins: pending changes from the desk come first.
+  if (role === 'AGENT') return '/checkins';
   if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
   if (role === 'REPAIRMAN') return '/my-repairs';
   if (role === 'CLEANER') return '/cleanings';

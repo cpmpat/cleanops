@@ -45,6 +45,13 @@ Every assignment, answer, phone agreement and time-off change writes an audit
 row in the same transaction. The Chekin link is never logged or sent over the
 socket.
 
+**Agents open each check-in** for the guest's name and phone (tap to call),
+arrival time, setup flags and the Chekin link, and from the arrival day (for
+14 days) write a report: how it went, and apartment readiness — cleanliness
+1–5, below 3 needs a comment. The report stores the arrival turnover's
+cleaners. The desk sees "✓ report · clean N/5" on the row (red below 3) and
+the full report in the agent window. Agents now land on Check-ins.
+
 **Coordinates:** when `cdm_accommodations` gains `latitude`/`longitude` (or
 `lat`/`lon`) columns, legs start showing travel times within ten minutes — no
 deploy.
@@ -53,7 +60,7 @@ deploy.
 `20261019030000_booking_checkin_agent`,
 `20261019040000_checkin_agent_consent_and_log`,
 `20261019050000_agent_time_off` (adds the `AVAILABILITY_LIFECYCLE` audit
-category).
+category), `20261019060000_checkin_reports`.
 **Env:** None.
 
 ---

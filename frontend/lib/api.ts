@@ -231,6 +231,8 @@ export interface PlanningBooking {
   checkInAgentSeenAt?: string | null;
   /** The leg from the same agent's previous check-in that day (Check-In tab only). */
   legIn?: CheckInLeg | null;
+  /** The agent's report after the check-in, summarised. */
+  checkInReport?: { submittedAt: string; hasComment: boolean; scores: Partial<Record<RatingAspect, number>> } | null;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;
@@ -1388,6 +1390,11 @@ export const integrations = {
         `/integrations/planning/checkin-agent/route?from=${from}&to=${to}` +
         (agentIds?.length ? `&agentIds=${agentIds.join(',')}` : ''),
       ),
+    /** The agent's report on a check-in, with the agent and the cleaners of that turnover. */
+    report: (bookingId: string) =>
+      get<(CheckInReportData & { agentName: string | null; cleanerNames: string[] }) | null>(
+        `/integrations/planning/checkin-agent/${bookingId}/report`,
+      ),
     /** The agent agreed to an override on the phone. */
     agreeByPhone: (bookingId: string) =>
       post<{ ok: boolean }>(`/integrations/planning/checkin-agent/${bookingId}/consent-by-phone`),
@@ -2219,6 +2226,41 @@ export interface MyCheckIn {
   awaitingMyAnswer: boolean;
   /** Guest registration link — shown only to the assigned agent. */
   checkInLinkUrl: string | null;
+  /** The agent has written the report for this check-in. */
+  reported: boolean;
+}
+
+export type RatingAspect = 'CLEANLINESS';
+
+export interface CheckInReportData {
+  comment: string | null;
+  submittedAt: string;
+  updatedAt: string;
+  ratings: Array<{ aspect: RatingAspect; score: number; comment: string | null }>;
+}
+
+/** One of my check-ins, opened: what the agent needs at the door. */
+export interface CheckInDetail {
+  id: string;
+  bookingRef: string;
+  accommodationName: string;
+  day: string;
+  time: string;
+  arrivalAssumed: boolean;
+  numAdults: number;
+  numChildren: number;
+  needsCrib: boolean;
+  separateBeds: boolean;
+  guestName: string | null;
+  guestPhone: string | null;
+  checkInLinkUrl: string | null;
+  awaitingMyAnswer: boolean;
+  /** From the arrival day for 14 days. */
+  canReport: boolean;
+  aspects: RatingAspect[];
+  /** Below this a rating needs a comment. */
+  lowScore: number;
+  report: CheckInReportData | null;
 }
 
 export interface CheckInPendingChange {
@@ -2245,6 +2287,11 @@ export interface MyCheckIns {
 /** The check-in agent's own view. */
 export const checkins = {
   mine: () => get<MyCheckIns>('/checkins/mine'),
+  detail: (bookingId: string) => get<CheckInDetail>(`/checkins/${bookingId}`),
+  saveReport: (
+    bookingId: string,
+    body: { comment?: string; ratings: Array<{ aspect: RatingAspect; score: number; comment?: string }> },
+  ) => put<CheckInReportData>(`/checkins/${bookingId}/report`, body),
   count: () => get<{ count: number }>('/checkins/mine/count'),
   respond: (recipientId: string, response: 'ACK' | 'ACCEPT' | 'DECLINE') =>
     post<{ ok: boolean }>(`/checkins/changes/${recipientId}/respond`, { response }),

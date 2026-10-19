@@ -194,6 +194,13 @@ export class IntegrationsController {
     });
   }
 
+  @Get('planning/checkin-agent/:bookingId/report')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({ summary: 'The agent\'s report on a check-in (null when none yet)' })
+  checkInReport(@Req() req: TenantRequest, @Param('bookingId') bookingId: string) {
+    return this.checkInAgents.reportForDesk(req.tenantId!, bookingId);
+  }
+
   @Post('planning/checkin-agent/:bookingId/consent-by-phone')
   @Roles(...PLANNING_ROLES)
   @ApiOperation({

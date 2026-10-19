@@ -361,6 +361,7 @@ export class BookingSyncService {
         property: { select: { id: true, name: true, pmsPropertyId: true } },
         cleaning: { select: { id: true, timeSlot: true } },
         checkInAgent: { select: { id: true, name: true } },
+        checkInReport: { select: { submittedAt: true, comment: true, ratings: { select: { aspect: true, score: true } } } },
         // The cleaning *before this guest arrives* — the live turnover whose
         // `toBooking` is this booking. This is what cleaners take, start and
         // mark done, so it is what the desk needs to see. The legacy
@@ -440,6 +441,14 @@ export class BookingSyncService {
       checkInAgentAssignedAt: b.checkInAgentAssignedAt ?? null,
       checkInAgentConsent: b.checkInAgentConsent ?? 'NOT_REQUIRED',
       checkInDeclinedAgentName: b.checkInDeclinedAgentName ?? null,
+      /** The agent's report, summarised: when, and the scores. Full text via the report endpoint. */
+      checkInReport: b.checkInReport
+        ? {
+            submittedAt: b.checkInReport.submittedAt,
+            hasComment: !!b.checkInReport.comment,
+            scores: Object.fromEntries(b.checkInReport.ratings.map((r: any) => [r.aspect, r.score])),
+          }
+        : null,
       checkInDeclinedAt: b.checkInDeclinedAt ?? null,
       /** Null when nothing was sent (no agent, or assigned before notifications existed). */
       checkInAgentSeenAt: (() => {
@@ -1905,7 +1914,7 @@ export class BookingSyncService {
 }
 
 /** "Name Surname" from a stored Avantio payload, or undefined. */
-function guestNameFromRaw(raw: unknown): string | undefined {
+export function guestNameFromRaw(raw: unknown): string | undefined {
   const c = (raw as any)?.customer;
   if (!c) return undefined;
   const name = [c.name, ...(Array.isArray(c.surnames) ? c.surnames : [])]
@@ -1913,4 +1922,18 @@ function guestNameFromRaw(raw: unknown): string | undefined {
     .join(' ')
     .trim();
   return name || undefined;
+}
+
+/**
+ * The guest's phone from the stored Avantio payload: a mobile if there is one,
+ * else the first number. Shown to the desk and to the agent assigned to meet
+ * the guest — never to cleaners.
+ */
+export function guestPhoneFromRaw(raw: unknown): string | null {
+  const c = (raw as any)?.customer ?? (raw as any)?.data?.customer;
+  const phones: Array<{ number?: unknown; type?: unknown }> = Array.isArray(c?.contact?.phones) ? c.contact.phones : [];
+  const usable = phones.filter((p) => typeof p?.number === 'string' && p.number.trim());
+  const mobile = usable.find((p) => String(p.type ?? '').toUpperCase().includes('MOBILE'));
+  const pick = mobile ?? usable[0];
+  return pick ? String(pick.number).trim() : null;
 }

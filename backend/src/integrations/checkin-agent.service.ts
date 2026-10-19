@@ -10,6 +10,50 @@ import { CleanOpsGateway } from '../websocket/websocket.module';
 import { startOfDayInAppZone, timeInAppZone, todayInAppZone } from '../common/time';
 import { addDays, isLocked } from '../availability/availability.service';
 import { BUFFER_MINUTES, Leg, SERVICE_MINUTES, legsInto, loadCoordinates } from './checkin-legs';
+import { guestNameFromRaw, guestPhoneFromRaw } from './booking-sync.service';
+
+/** Aspects of the apartment's readiness the agent rates, 1–5. */
+export const RATING_ASPECTS = ['CLEANLINESS'] as const;
+export type RatingAspect = (typeof RATING_ASPECTS)[number];
+/** A score below this needs a comment saying what was wrong. */
+export const LOW_SCORE = 3;
+/** The agent can report from the arrival day until this many days after. */
+const REPORT_WINDOW_DAYS = 14;
+/** The agent's list keeps check-ins this many days back, so a report can follow the next day. */
+const MINE_LOOKBACK_DAYS = 2;
+
+export interface ReportDto {
+  comment?: string | null;
+  ratings?: Array<{ aspect?: string; score?: unknown; comment?: string | null }>;
+}
+
+/**
+ * Pure: check and normalise a report. Every aspect must be rated exactly once,
+ * 1–5; below LOW_SCORE the rating needs a comment of its own.
+ */
+export function validateReport(dto: ReportDto): {
+  comment: string | null;
+  ratings: Array<{ aspect: RatingAspect; score: number; comment: string | null }>;
+} {
+  const comment = (dto?.comment ?? '').toString().trim().slice(0, 2000) || null;
+  const given = Array.isArray(dto?.ratings) ? dto.ratings : [];
+  const ratings = RATING_ASPECTS.map((aspect) => {
+    const r = given.filter((g) => String(g?.aspect ?? '').toUpperCase() === aspect);
+    if (r.length !== 1) throw new BadRequestException(`Rate ${aspect.toLowerCase()} (1–5)`);
+    const score = Number(r[0].score);
+    if (!Number.isInteger(score) || score < 1 || score > 5) {
+      throw new BadRequestException(`${aspect.toLowerCase()} must be a whole number from 1 to 5`);
+    }
+    const why = (r[0].comment ?? '').toString().trim().slice(0, 1000) || null;
+    if (score < LOW_SCORE && (!why || why.length < 5)) {
+      throw new BadRequestException(
+        `${aspect.toLowerCase()} below ${LOW_SCORE} needs a comment saying what was wrong`,
+      );
+    }
+    return { aspect, score, comment: why };
+  });
+  return { comment, ratings };
+}
 
 /**
  * Why an agent is, or is not, a fit for one arrival.
@@ -375,7 +419,7 @@ export class CheckInAgentService {
 
   /** Upcoming check-ins assigned to this agent, and the changes waiting for their answer. */
   async mine(tenantId: string, userId: string) {
-    const from = startOfDayInAppZone(todayInAppZone());
+    const from = startOfDayInAppZone(addDays(todayInAppZone(), -MINE_LOOKBACK_DAYS));
     const [bookings, pending] = await Promise.all([
       this.prisma.booking.findMany({
         where: {
@@ -390,6 +434,7 @@ export class CheckInAgentService {
           checkInAgentConsent: true,
           // The assigned agent may open guest registration; nobody else on this API may.
           checkInLinkUrl: true,
+          checkInReport: { select: { id: true } },
         },
       }),
       this.pendingFor(tenantId, userId),
@@ -408,8 +453,156 @@ export class CheckInAgentService {
         numChildren: b.numChildren,
         awaitingMyAnswer: b.checkInAgentConsent === ('PENDING' as any),
         checkInLinkUrl: b.checkInLinkUrl ?? null,
+        reported: !!(b as any).checkInReport,
       })),
       pending,
+    };
+  }
+
+  /**
+   * One check-in, for the agent assigned to it: what they need at the door —
+   * the guest's name and phone, the time and the registration link — and
+   * their report if they wrote one.
+   */
+  async detail(tenantId: string, userId: string, bookingId: string) {
+    const b = await this.prisma.booking.findFirst({
+      where: { id: bookingId, tenantId, checkInAgentId: userId, status: BookingStatus.CONFIRMED },
+      select: {
+        id: true, bookingRef: true, accommodationName: true, checkInTime: true, checkInSource: true,
+        numAdults: true, numChildren: true, checkInAgentConsent: true, checkInLinkUrl: true,
+        pmsRawData: true, needsCrib: true, separateBeds: true,
+        checkInReport: { include: { ratings: true } },
+      },
+    });
+    if (!b) throw new NotFoundException('This check-in is not assigned to you');
+    const day = todayInAppZone(b.checkInTime);
+    return {
+      id: b.id,
+      bookingRef: b.bookingRef,
+      accommodationName: b.accommodationName,
+      day,
+      time: timeInAppZone(b.checkInTime),
+      arrivalAssumed: b.checkInSource === 'FALLBACK',
+      numAdults: b.numAdults,
+      numChildren: b.numChildren,
+      needsCrib: b.needsCrib,
+      separateBeds: b.separateBeds,
+      guestName: guestNameFromRaw(b.pmsRawData) ?? null,
+      guestPhone: guestPhoneFromRaw(b.pmsRawData),
+      checkInLinkUrl: b.checkInLinkUrl ?? null,
+      awaitingMyAnswer: b.checkInAgentConsent === ('PENDING' as any),
+      canReport: this.reportOpen(day),
+      aspects: RATING_ASPECTS,
+      lowScore: LOW_SCORE,
+      report: b.checkInReport ? this.shapeReport(b.checkInReport) : null,
+    };
+  }
+
+  /** Write or correct the report. Only the assigned agent, from arrival day for two weeks. */
+  async saveReport(tenantId: string, userId: string, bookingId: string, dto: ReportDto) {
+    const b = await this.prisma.booking.findFirst({
+      where: { id: bookingId, tenantId, checkInAgentId: userId, status: BookingStatus.CONFIRMED },
+      select: {
+        id: true, bookingRef: true, accommodationName: true, checkInTime: true, checkInAgentConsent: true,
+        checkInReport: { select: { id: true } },
+        turnoversAsTo: {
+          where: { supersededById: null },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, assignments: { select: { userId: true, status: true } } },
+        },
+      },
+    });
+    if (!b) throw new NotFoundException('This check-in is not assigned to you');
+    if (b.checkInAgentConsent === ('PENDING' as any)) {
+      throw new ConflictException('Accept the check-in first');
+    }
+    const day = todayInAppZone(b.checkInTime);
+    if (!this.reportOpen(day)) {
+      throw new BadRequestException(
+        day > todayInAppZone() ? 'You can write the report on the arrival day' : 'This check-in is too old to report on',
+      );
+    }
+    const { comment, ratings } = validateReport(dto);
+    const turnover = (b as any).turnoversAsTo?.[0] ?? null;
+    const cleanerIds: string[] = turnover
+      ? [...new Set<string>(
+          turnover.assignments
+            .filter((a: any) => ['ASSIGNED', 'STARTED', 'COMPLETED'].includes(String(a.status)))
+            .map((a: any) => a.userId as string),
+        )]
+      : [];
+    const existed = !!(b as any).checkInReport;
+
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const report = await tx.checkInReport.upsert({
+        where: { bookingId: b.id },
+        create: { tenantId, bookingId: b.id, agentId: userId, comment, turnoverId: turnover?.id ?? null, cleanerIds },
+        update: { agentId: userId, comment, turnoverId: turnover?.id ?? null, cleanerIds },
+      });
+      await tx.checkInRating.deleteMany({ where: { reportId: report.id } });
+      await tx.checkInRating.createMany({
+        data: ratings.map((r) => ({ reportId: report.id, aspect: r.aspect, score: r.score, comment: r.comment })),
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.ASSIGNMENT_LIFECYCLE,
+          action: existed ? 'checkin.report_updated' : 'checkin.report_submitted',
+          actorId: userId,
+          targetType: 'Booking',
+          targetId: b.id,
+          metadata: {
+            bookingRef: b.bookingRef,
+            accommodationName: b.accommodationName,
+            scores: Object.fromEntries(ratings.map((r) => [r.aspect, r.score])),
+            low: ratings.filter((r) => r.score < LOW_SCORE).map((r) => r.aspect),
+            turnoverId: turnover?.id ?? null,
+            cleanerIds,
+          } as any,
+        },
+      });
+      return tx.checkInReport.findUniqueOrThrow({ where: { id: report.id }, include: { ratings: true } });
+    });
+
+    this.nudge(tenantId, b.id, []);
+    return this.shapeReport(saved);
+  }
+
+  /** The desk reads a report (Planning modal). */
+  async reportForDesk(tenantId: string, bookingId: string) {
+    const r = await this.prisma.checkInReport.findFirst({
+      where: { tenantId, bookingId },
+      include: { ratings: true },
+    });
+    if (!r) return null;
+    const [agent, cleaners] = await Promise.all([
+      this.prisma.user.findFirst({ where: { id: r.agentId, tenantId }, select: { name: true } }),
+      r.cleanerIds.length
+        ? this.prisma.user.findMany({ where: { id: { in: r.cleanerIds }, tenantId }, select: { name: true } })
+        : Promise.resolve([] as Array<{ name: string }>),
+    ]);
+    return {
+      ...this.shapeReport(r),
+      agentName: agent?.name ?? null,
+      cleanerNames: cleaners.map((c) => c.name),
+    };
+  }
+
+  private reportOpen(arrivalDay: string): boolean {
+    const today = todayInAppZone();
+    return arrivalDay <= today && arrivalDay >= addDays(today, -REPORT_WINDOW_DAYS);
+  }
+
+  private shapeReport(r: {
+    comment: string | null; submittedAt: Date; updatedAt: Date;
+    ratings: Array<{ aspect: string; score: number; comment: string | null }>;
+  }) {
+    return {
+      comment: r.comment,
+      submittedAt: r.submittedAt,
+      updatedAt: r.updatedAt,
+      ratings: r.ratings.map((x) => ({ aspect: x.aspect, score: x.score, comment: x.comment })),
     };
   }
 

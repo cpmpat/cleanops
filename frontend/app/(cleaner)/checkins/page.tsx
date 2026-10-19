@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { checkins as checkinsApi, type MyCheckIns, type CheckInPendingChange } from '@/lib/api';
 import { HelpLink } from '@/components/HelpLink';
@@ -8,7 +9,7 @@ import { useCheckInStrings } from '@/i18n/checkins';
 import { addDays, dayParts } from '@/i18n/availability';
 import { useRefreshOnReconnect, useSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
-import { AlertCircle, ExternalLink, LogOut, UserCheck, UserMinus, Users } from 'lucide-react';
+import { AlertCircle, ChevronRight, ExternalLink, LogOut, UserCheck, UserMinus, Users } from 'lucide-react';
 
 /**
  * Agent · Check-ins.
@@ -63,6 +64,7 @@ export default function CheckInsPage() {
     if (!day || !data) return '';
     if (day === data.today) return s.today;
     if (day === addDays(data.today, 1)) return s.tomorrow;
+    if (day < data.today) return `${s.earlier} · ${dayParts(day, locale).short}`;
     return dayParts(day, locale).short;
   };
 
@@ -182,7 +184,7 @@ export default function CheckInsPage() {
           <section key={day} className="space-y-2">
             <h2 className="text-[11px] font-bold uppercase tracking-wider text-ink-muted px-1 pt-2">{dayLabel(day)}</h2>
             {items.map(i => (
-              <div key={i.id} className="rounded-2xl bg-white border border-surface-border p-4">
+              <Link key={i.id} href={`/checkins/${i.id}`} className={cn('block rounded-2xl bg-white border p-4 active:scale-[0.99] transition', i.day < (data?.today ?? '') && !i.reported ? 'border-amber-300' : 'border-surface-border')}>
                 <div className="flex items-start gap-3">
                   <div className="text-center flex-shrink-0 w-14">
                     <p className={cn('text-lg font-bold', i.arrivalAssumed ? 'text-amber-700' : 'text-ink')}>{i.time}</p>
@@ -200,20 +202,24 @@ export default function CheckInsPage() {
                         {s.awaiting}
                       </span>
                     )}
+                    {i.day <= (data?.today ?? '') && (
+                      <span className={cn(
+                        'inline-block mt-1.5 ml-1 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5',
+                        i.reported ? 'text-emerald-800 bg-emerald-100' : 'text-amber-800 bg-amber-100',
+                      )}>
+                        {i.reported ? s.reported : s.reportMissing}
+                      </span>
+                    )}
                     {i.checkInLinkUrl && (
-                      <a
-                        href={i.checkInLinkUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-accent"
-                      >
+                      <span className="mt-2 flex items-center gap-1 text-xs font-semibold text-accent">
                         <ExternalLink size={12} />
                         {s.openChekin}
-                      </a>
+                      </span>
                     )}
                   </div>
+                  <ChevronRight size={18} className="text-ink-faint self-center flex-shrink-0" />
                 </div>
-              </div>
+              </Link>
             ))}
           </section>
         ))}
