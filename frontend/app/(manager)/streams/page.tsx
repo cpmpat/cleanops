@@ -9,7 +9,7 @@ import {
 import { streams, properties as propertiesApi, ApiError } from '@/lib/api';
 import type { StreamItem, StreamItemType, Property } from '@/lib/api';
 import { ManualEventComposer } from '@/components/ManualEventComposer';
-import { MoveMark } from '@/components/StreamItemCard';
+import { MoveMark, STREAM_TONE } from '@/components/StreamItemCard';
 import { useSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 
@@ -26,18 +26,16 @@ const TYPES: {
   label: string;
   side: 'left' | 'right';
   icon: React.ReactNode;
-  dot: string;
-  chip: string;
 }[] = [
-  { key: 'RESERVATION',   label: 'Rezervace',  side: 'right', icon: <BedDouble size={12} />,      dot: 'bg-sky-500',     chip: 'text-sky-700 bg-sky-50 border-sky-200' },
-  { key: 'TURNOVER',      label: 'Úklidy',     side: 'left',  icon: <Sparkles size={12} />,       dot: 'bg-amber-400',   chip: 'text-amber-800 bg-amber-50 border-amber-300' },
-  { key: 'DIRECT_CHAT',   label: 'Přímé chaty', side: 'left', icon: <MessageSquare size={12} />,  dot: 'bg-[#243b6b]',   chip: 'text-[#243b6b] bg-[#eef2fa] border-[#c8d4ea]' },
-  { key: 'INCIDENT',      label: 'Incidenty',  side: 'left',  icon: <AlertTriangle size={12} />,  dot: 'bg-red-500',     chip: 'text-red-700 bg-red-50 border-red-200' },
-  { key: 'REPAIR',        label: 'Opravy',     side: 'left',  icon: <Wrench size={12} />,         dot: 'bg-violet-500',  chip: 'text-violet-700 bg-violet-50 border-violet-200' },
-  { key: 'INSPECTION',    label: 'Kontroly',   side: 'left',  icon: <ClipboardCheck size={12} />, dot: 'bg-teal-500',    chip: 'text-teal-700 bg-teal-50 border-teal-200' },
-  { key: 'MANUAL',        label: 'Ručně',      side: 'left',  icon: <PenLine size={12} />,        dot: 'bg-stone-400',   chip: 'text-stone-700 bg-stone-100 border-stone-300' },
-  { key: 'PRICING',       label: 'Cenová skupina', side: 'left', icon: <ArrowUpDown size={12} />, dot: 'bg-emerald-600', chip: 'text-emerald-800 bg-emerald-50 border-emerald-200' },
-  { key: 'CLEANING',      label: 'Úklidy (staré)', side: 'left', icon: <Sparkles size={12} />,    dot: 'bg-stone-300',   chip: 'text-stone-600 bg-stone-50 border-stone-200' },
+  { key: 'RESERVATION',   label: 'Rezervace',      side: 'right', icon: <BedDouble size={12} /> },
+  { key: 'TURNOVER',      label: 'Úklidy',         side: 'left',  icon: <Sparkles size={12} /> },
+  { key: 'DIRECT_CHAT',   label: 'Přímé chaty',    side: 'left',  icon: <MessageSquare size={12} /> },
+  { key: 'INCIDENT',      label: 'Incidenty',      side: 'left',  icon: <AlertTriangle size={12} /> },
+  { key: 'REPAIR',        label: 'Opravy',         side: 'left',  icon: <Wrench size={12} /> },
+  { key: 'INSPECTION',    label: 'Kontroly',       side: 'left',  icon: <ClipboardCheck size={12} /> },
+  { key: 'MANUAL',        label: 'Ručně',          side: 'left',  icon: <PenLine size={12} /> },
+  { key: 'PRICING',       label: 'Cenová skupina', side: 'left',  icon: <ArrowUpDown size={12} /> },
+  { key: 'CLEANING',      label: 'Úklidy (staré)', side: 'left',  icon: <Sparkles size={12} /> },
 ];
 
 const META = Object.fromEntries(TYPES.map((t) => [t.key, t])) as Record<
@@ -137,6 +135,13 @@ export default function StreamsPage() {
     return copy;
   }, [items, oldestFirst]);
 
+  // How many of each type are loaded — shown on the type chips.
+  const typeCounts = useMemo(() => {
+    const c: Partial<Record<StreamItemType, number>> = {};
+    for (const it of items) c[it.type] = (c[it.type] ?? 0) + 1;
+    return c;
+  }, [items]);
+
   const unitLabel =
     units.length === 0
       ? 'Všechny jednotky'
@@ -178,32 +183,34 @@ export default function StreamsPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 max-w-[1100px]">
       {/* Header */}
-      <div className="flex items-start justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-ink">Stream</h1>
-          <p className="text-sm text-ink-muted mt-0.5">
+      <div className="flex items-end justify-between gap-3 flex-wrap mb-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Provoz</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Stream</h1>
+          <p className="text-sm text-ink-muted">
             Rezervace vpravo, co jsme s nimi udělali vlevo
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => setOldestFirst((v) => !v)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white border border-surface-border rounded-xl text-sm font-semibold hover:bg-surface-sunken transition"
+            className="h-9 flex items-center gap-2 px-3 bg-white border border-surface-border rounded-[10px] text-[13px] font-semibold text-ink-soft hover:text-ink transition"
           >
             <ArrowUpDown size={14} />
             {oldestFirst ? 'Od nejstarších' : 'Od nejnovějších'}
           </button>
           <button
             onClick={() => load(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white border border-surface-border rounded-xl text-sm font-semibold hover:bg-surface-sunken transition"
+            aria-label="Obnovit"
+            className="h-9 w-9 flex items-center justify-center bg-white border border-surface-border rounded-[10px] text-ink-muted hover:text-ink transition"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
           <button
             onClick={() => setComposerOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition"
+            className="h-9 flex items-center gap-1.5 px-3.5 bg-accent text-white rounded-[10px] text-sm font-semibold hover:bg-accent-hover transition"
           >
             <Plus size={15} />
             Nová událost
@@ -217,8 +224,8 @@ export default function StreamsPage() {
           <button
             onClick={() => setUnitOpen((v) => !v)}
             className={cn(
-              'flex items-center gap-2 px-3.5 py-2 bg-white border rounded-xl text-sm font-semibold transition',
-              units.length > 0 ? 'border-ink text-ink' : 'border-surface-border text-ink-muted hover:text-ink',
+              'h-9 flex items-center gap-2 px-3 border rounded-[10px] text-[13px] font-semibold transition',
+              units.length > 0 ? 'bg-accent-soft border-transparent text-accent' : 'bg-white border-surface-border text-ink-soft hover:text-ink',
             )}
           >
             <Building2 size={14} />
@@ -229,7 +236,7 @@ export default function StreamsPage() {
           {unitOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setUnitOpen(false)} />
-              <div className="absolute z-40 mt-2 w-80 bg-white border border-surface-border rounded-xl shadow-lg p-2">
+              <div className="absolute z-40 mt-2 w-80 bg-white border border-surface-border rounded-2xl shadow-lg p-2">
                 <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-surface-border">
                   <Search size={13} className="text-ink-faint flex-shrink-0" />
                   <input
@@ -282,8 +289,8 @@ export default function StreamsPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-surface-border rounded-xl">
-          <CalendarRange size={14} className="text-ink-faint flex-shrink-0" />
+        <div className={cn('h-9 flex items-center gap-1.5 px-3 border rounded-[10px]', from || to ? 'bg-accent-soft border-transparent' : 'bg-white border-surface-border')}>
+          <CalendarRange size={14} className="text-ink-muted flex-shrink-0" />
           <input
             type="date"
             value={from}
@@ -313,15 +320,15 @@ export default function StreamsPage() {
         {dirty && (
           <button
             onClick={resetFilters}
-            className="text-xs font-semibold text-accent px-2 underline"
+            className="h-9 flex items-center gap-1 px-2 text-[12.5px] font-semibold text-ink-muted hover:text-ink"
           >
-            Výchozí filtr
+            <X size={12} /> Výchozí filtr
           </button>
         )}
       </div>
 
       {/* Type filter */}
-      <div className="flex gap-1.5 flex-wrap mb-6">
+      <div className="flex gap-1.5 flex-wrap mb-5">
         {TYPES.map((t) => {
           const on = selectedTypes.includes(t.key);
           return (
@@ -329,27 +336,30 @@ export default function StreamsPage() {
               key={t.key}
               onClick={() => toggleType(t.key)}
               className={cn(
-                'inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition',
-                on ? 'bg-ink text-white border-ink' : 'bg-white text-ink-muted border-surface-border hover:text-ink',
+                'inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-full border transition',
+                on ? 'bg-accent text-white border-accent font-semibold' : 'bg-white text-ink-soft border-surface-border hover:text-ink',
               )}
             >
-              <span className={cn('w-1.5 h-1.5 rounded-full', t.dot)} />
+              <span className={cn('w-2 h-2 rounded-full', STREAM_TONE[t.key].dot, on && 'ring-2 ring-white/70')} />
               {t.label}
+              {typeCounts[t.key] ? (
+                <span className={cn('font-mono text-[11px]', on ? 'text-white/75' : 'text-ink-muted')}>{typeCounts[t.key]}</span>
+              ) : null}
             </button>
           );
         })}
         {selectedTypes.length > 0 && (
           <button
             onClick={() => setSelectedTypes([])}
-            className="text-xs font-semibold text-accent px-2 underline"
+            className="flex items-center gap-1 text-[12.5px] font-semibold text-ink-muted hover:text-ink px-2"
           >
-            Zrušit filtr
+            <X size={12} /> Zrušit filtr
           </button>
         )}
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-4 text-sm">
+        <div className="bg-coral-soft text-coral-deep rounded-xl px-4 py-3 mb-4 text-sm">
           {error}
         </div>
       )}
@@ -368,8 +378,13 @@ export default function StreamsPage() {
         </div>
       ) : (
         <div className="relative">
+          <div className="hidden md:grid grid-cols-[1fr_40px_1fr] pb-1 text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">
+            <span className="text-right">Co jsme udělali</span>
+            <span />
+            <span>Hosté · rezervace</span>
+          </div>
           {/* the line itself */}
-          <div className="absolute top-0 bottom-0 left-[19px] md:left-1/2 w-px bg-[#c8d4ea] md:-translate-x-px" />
+          <div className="absolute top-0 bottom-0 left-[19px] md:left-1/2 w-px bg-[#DCD6CB] md:-translate-x-px" />
 
           {ordered.map((item, i) => {
             const meta = META[item.type] ?? META.MANUAL;
@@ -392,7 +407,7 @@ export default function StreamsPage() {
           <button
             onClick={() => load(false, nextCursor)}
             disabled={loadingMore}
-            className="px-5 py-2.5 bg-white border border-surface-border rounded-xl text-sm font-semibold hover:bg-surface-sunken transition disabled:opacity-50"
+            className="h-9 px-4 bg-white border border-surface-border rounded-[10px] text-[13px] font-semibold text-ink-soft hover:text-ink transition disabled:opacity-50"
           >
             {loadingMore ? 'Načítám…' : 'Načíst starší'}
           </button>
@@ -416,10 +431,8 @@ export default function StreamsPage() {
 function DayMarker({ iso }: { iso: string }) {
   return (
     <div className="relative flex md:justify-center py-4">
-      <span className="ml-[6px] md:ml-0 relative z-10 bg-ink text-white text-[10px] font-bold uppercase tracking-wider rounded-full px-3 py-1">
-        {new Date(iso).toLocaleDateString('cs-CZ', {
-          day: 'numeric', month: 'long', year: 'numeric',
-        })}
+      <span className="ml-[6px] md:ml-0 relative z-10 bg-white border border-surface-border text-ink-soft text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full px-3 py-1">
+        {dayLabel(iso)}
       </span>
     </div>
   );
@@ -443,7 +456,7 @@ function TimelineRow({
 
       {/* the dot */}
       <div className="absolute md:static left-[13px] top-1/2 md:top-auto -translate-y-1/2 md:translate-y-0 flex justify-center">
-        <span className={cn('w-3 h-3 rounded-full ring-4 ring-surface', meta.dot)} />
+        <span className={cn('w-3 h-3 rounded-full ring-4 ring-surface', STREAM_TONE[meta.key].dot)} />
       </div>
 
       {/* right cell */}
@@ -471,21 +484,21 @@ function Card({
     <button
       onClick={onOpen}
       className={cn(
-        'w-full md:max-w-[380px] bg-white border border-surface-border rounded-2xl p-3.5 text-left',
-        'hover:border-[#c8d4ea] hover:shadow-[0_2px_12px_rgba(36,59,107,0.08)] transition',
+        'w-full md:max-w-[400px] bg-white border border-surface-border rounded-xl p-3.5 text-left',
+        'shadow-[0_1px_0_rgba(27,36,32,0.04)] hover:border-[#D6D0C4] transition',
         align === 'right' ? 'md:text-right' : '',
       )}
     >
       <div className={cn('flex items-center gap-2', align === 'right' ? 'md:flex-row-reverse' : '')}>
-        <span className={cn('inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide border rounded-full px-2 py-0.5', meta.chip)}>
+        <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-md px-1.5 py-0.5', STREAM_TONE[meta.key].chip)}>
           {meta.icon}
           {meta.label}
         </span>
-        <span className="text-[10.5px] text-ink-faint">
-          {new Date(item.occurredAt).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}
+        <span className="font-mono text-[11px] text-ink-muted">
+          {new Date(item.occurredAt).toLocaleTimeString('cs-CZ', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit' })}
         </span>
         {item.status && (
-          <span className="text-[10px] font-semibold text-ink-muted bg-surface-sunken rounded-full px-2 py-0.5">
+          <span className="text-[10.5px] font-semibold text-ink-muted bg-surface-sunken rounded-md px-1.5 py-0.5">
             {item.status}
           </span>
         )}
@@ -496,7 +509,7 @@ function Card({
         <p className="text-[11.5px] text-ink-muted mt-1 line-clamp-2">{item.subtitle}</p>
       )}
       {item.propertyName && (
-        <p className="text-[10.5px] text-ink-faint mt-1">{item.propertyName}</p>
+        <p className="text-[11px] text-ink-muted mt-1.5 pt-1.5 border-t border-[#F3EFE7] truncate">{item.propertyName}</p>
       )}
 
       {/* A chat about this cleaning is part of this record, not a line of its
@@ -505,7 +518,7 @@ function Card({
         <span
           className={cn(
             'inline-flex items-center gap-1.5 mt-2 text-[10px] font-semibold',
-            'text-[#243b6b] bg-[#eef2fa] border border-[#c8d4ea] rounded-full px-2 py-0.5',
+            'text-ink-soft bg-surface-sunken rounded-md px-1.5 py-0.5',
           )}
         >
           <MessageSquare size={10} />
@@ -529,17 +542,18 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
       : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-[#1B2420]/25" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md bg-white h-full shadow-2xl p-5 overflow-y-auto"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+            <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-md px-1.5 py-0.5', (STREAM_TONE[item.type] ?? STREAM_TONE.MANUAL).chip)}>
+              {(META[item.type] ?? META.MANUAL).icon}
               {(META[item.type] ?? META.MANUAL).label}
-            </p>
-            <h2 className="text-lg font-bold text-ink mt-1"><MoveMark move={item.move} />{item.title}</h2>
+            </span>
+            <h2 className="text-lg font-semibold tracking-tight text-ink mt-2"><MoveMark move={item.move} />{item.title}</h2>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-surface-sunken flex items-center justify-center">
             <X size={17} />
@@ -547,7 +561,7 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
         </div>
 
         <dl className="mt-5 text-sm divide-y divide-surface-border">
-          <Row label="Kdy" value={new Date(item.occurredAt).toLocaleString('cs-CZ')} />
+          <Row label="Kdy" value={new Date(item.occurredAt).toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })} />
           {item.propertyName && <Row label="Objekt" value={item.propertyName} />}
           {item.status && <Row label="Stav" value={item.status} />}
           {item.priority && <Row label="Priorita" value={item.priority} />}
@@ -567,7 +581,7 @@ function DetailDrawer({ item, onClose }: { item: StreamItem; onClose: () => void
         {href && (
           <Link
             href={href}
-            className="mt-5 inline-flex items-center gap-2 px-4 py-2.5 bg-ink text-white rounded-xl text-sm font-semibold"
+            className="mt-5 inline-flex items-center gap-2 h-9 px-4 bg-accent text-white rounded-[10px] text-sm font-semibold hover:bg-accent-hover"
           >
             Otevřít záznam
             <ExternalLink size={14} />
@@ -589,8 +603,18 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   );
 }
 
-function dayKey(iso: string): string {
-  return iso.slice(0, 10);
+/** Prague calendar day — the raw ISO date is UTC and splits evenings wrongly. */
+function dayKey(iso: string | Date): string {
+  return new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
+}
+
+function dayLabel(iso: string): string {
+  const d = dayKey(iso);
+  if (d === dayKey(new Date())) return 'Dnes';
+  if (d === dayKey(new Date(Date.now() - 86_400_000))) return 'Včera';
+  return new Date(iso).toLocaleDateString('cs-CZ', {
+    timeZone: 'Europe/Prague', weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+  });
 }
 
 /**
