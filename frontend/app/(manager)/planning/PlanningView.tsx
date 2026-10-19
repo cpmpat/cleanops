@@ -579,6 +579,26 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       <span className="font-mono text-xs text-ink-faint truncate max-w-[170px]" title={b.bookingRef}>{b.bookingRef}</span>
                       <ChannelDot channel={b.channel} label={t.channel[b.channel] ?? b.channel} />
                     </div>
+                    {/* From the accommodation sheet: what the desk needs to know before sending anyone. */}
+                    {(b.accommodationStandard || b.checkInType || b.checkInMethod) && (
+                      <div className="flex items-center gap-1 mt-0.5 min-w-0 whitespace-nowrap overflow-hidden">
+                        {([
+                          [b.accommodationStandard, tp.unitStandard],
+                          [b.checkInType, tp.checkInTypeLabel],
+                          [b.checkInMethod, tp.checkInMethodLabel],
+                        ] as const).map(([val, label]) =>
+                          val ? (
+                            <span
+                              key={label}
+                              title={`${label}: ${val}`}
+                              className="rounded border border-surface-border bg-surface-sunken/60 text-ink-soft px-1.5 py-px text-[10px] truncate max-w-[130px]"
+                            >
+                              {val}
+                            </span>
+                          ) : null,
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Guests — same "adults+children" reading the cleaner's card uses */}

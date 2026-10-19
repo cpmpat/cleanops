@@ -372,7 +372,28 @@ export class BookingSyncService {
       orderBy: { [dateField]: 'asc' },
     });
 
+    // Accommodation facts the desk plans by. Read through the CDM join
+    // (idAvantio = property.pmsPropertyId), never copied onto bookings, so a
+    // change in the sheet shows on the next load. Every planning role may read
+    // all three (docs/access-matrix/accommodation.csv).
+    const pmsIds = [...new Set(
+      bookings.map((b: any) => b.property?.pmsPropertyId).filter((v: any): v is string => !!v),
+    )] as string[];
+    const cdmRows = pmsIds.length
+      ? await this.prisma.cdmAccommodation.findMany({
+          where: { tenantId, idAvantio: { in: pmsIds } },
+          select: {
+            idAvantio: true,
+            accommodationStandard: true,
+            checkInType: true,
+            checkInMethod: true,
+          },
+        })
+      : [];
+    const cdmByPmsId = new Map(cdmRows.map((c) => [c.idAvantio, c]));
+
     const rows = bookings.map((b: any) => {
+      const cdm = cdmByPmsId.get((b.property as any)?.pmsPropertyId) ?? null;
       const turnover = (byCheckOut ? b.turnoversAsFrom?.[0] : b.turnoversAsTo?.[0]) ?? null;
       return {
       id: b.id,
@@ -398,6 +419,9 @@ export class BookingSyncService {
       // Lets the Planning view flag times we assumed (FALLBACK) vs. confirmed ones.
       checkInSource: (b as any).checkInSource,
       checkOutSource: (b as any).checkOutSource,
+      accommodationStandard: cdm?.accommodationStandard ?? null,
+      checkInType: cdm?.checkInType ?? null,
+      checkInMethod: cdm?.checkInMethod ?? null,
       timeSlot: b.cleaning?.timeSlot,
       numAdults: b.numAdults,
       numChildren: b.numChildren,
@@ -959,7 +983,9 @@ export class BookingSyncService {
         // A unit change in the PMS used to be invisible here, which left the
         // booking (and its whole turnover chain) attached to the old property.
         existing.propertyId !== property.id ||
-        existing.isOwnerStay !== incomingOwnerFlag;
+        existing.isOwnerStay !== incomingOwnerFlag ||
+        // The link can appear or change without the booking's own updatedAt moving.
+        (existing.checkInLinkUrl ?? null) !== (booking.checkInLinkUrl ?? null);
 
       if (hasChanges) {
         const now = new Date();
@@ -1008,6 +1034,9 @@ export class BookingSyncService {
               pmsRawData: booking.rawData,
               pmsCreatedAt: booking.pmsCreatedAt ? new Date(booking.pmsCreatedAt) : undefined,
               isOwnerStay: incomingOwnerFlag,
+              checkInLinkUrl: booking.checkInLinkUrl ?? null,
+              checkInLinkProvider: booking.checkInLinkProvider ?? null,
+              checkInLinkSyncedAt: now,
             },
           });
 
@@ -1130,6 +1159,9 @@ export class BookingSyncService {
           pmsRawData: booking.rawData,
           pmsCreatedAt: booking.pmsCreatedAt ? new Date(booking.pmsCreatedAt) : undefined,
           isOwnerStay: booking.isOwnerStay ?? false,
+          checkInLinkUrl: booking.checkInLinkUrl ?? null,
+          checkInLinkProvider: booking.checkInLinkProvider ?? null,
+          checkInLinkSyncedAt: syncedAt,
         },
       });
       // Cleaning is preparation for the incoming guest.
@@ -1659,6 +1691,11 @@ export class BookingSyncService {
       if (property && existing.propertyId !== property.id) diffs.push('property moved');
       if (existing.isOwnerStay !== (b.isOwnerStay ?? false)) {
         diffs.push(`isOwnerStay ${existing.isOwnerStay} -> ${b.isOwnerStay ?? false}`);
+      }
+
+      // Presence only: the value is a bearer token and stays out of reports.
+      if ((existing.checkInLinkUrl ?? null) !== (b.checkInLinkUrl ?? null)) {
+        diffs.push(`check-in link ${existing.checkInLinkUrl ? 'changed' : 'added'}`);
       }
 
       outcomes.push(

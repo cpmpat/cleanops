@@ -25,6 +25,10 @@ export interface PmsBooking {
   isOwnerStay?: boolean;
   /** When the guest booked, per the PMS — ISO. Drives the last-minute mark. */
   pmsCreatedAt?: string;
+  /** Guest online check-in link (https only), or null when the PMS has none. */
+  checkInLinkUrl?: string | null;
+  /** Provider code, e.g. 'CHEKIN'. */
+  checkInLinkProvider?: string | null;
 }
 
 export interface PmsAccommodation {

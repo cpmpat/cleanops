@@ -30,6 +30,8 @@ import { BookingSyncService, BookingSyncOutcome } from './booking-sync.service';
 import { TurnoverReconcileService, ReconcileReport } from './turnover-reconcile.service';
 
 export const SWEEP_ACTOR = 'safety-sweep@cleanops';
+/** How far ahead the sweep re-fetches bookings that still have no check-in link. */
+const CHECKIN_LINK_HORIZON_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Cap on items stored in the audit row; the counts are always complete. */
 const MAX_ITEMS = 200;
@@ -60,6 +62,15 @@ export interface SweepResult {
     refetched: number;
     outcomes: BookingSyncOutcome[];
     stillOverlapping: number;
+  };
+  /**
+   * Upcoming bookings still without a check-in link, re-fetched by id. A link
+   * added in Avantio does not move the booking's updatedAt, so the watermark
+   * never lists it again.
+   */
+  checkInLinks: {
+    refetched: number;
+    outcomes: Record<BookingSyncOutcome['result'], number>;
   };
   turnovers:
     | { skipped: string }
@@ -120,6 +131,10 @@ export class SafetySweepService {
       },
       turnovers: { skipped: 'not run' },
       overlaps: { refetched: 0, outcomes: [], stillOverlapping: 0 },
+      checkInLinks: {
+        refetched: 0,
+        outcomes: { created: 0, updated: 0, cancelled: 0, skipped: 0, error: 0 },
+      },
     };
 
     try {
@@ -143,6 +158,27 @@ export class SafetySweepService {
           }
         }
         result.bookings.items = outcomes.slice(0, MAX_ITEMS);
+      }
+
+      // ── 1b. Upcoming bookings with no check-in link yet ──
+      const linkRows = await this.prisma.booking.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: 'CONFIRMED',
+          pmsBookingId: { not: null },
+          checkInLinkUrl: null,
+          isOwnerStay: false,
+          checkInTime: { gte: new Date(started), lte: new Date(started + CHECKIN_LINK_HORIZON_DAYS * DAY_MS) },
+        },
+        select: { pmsBookingId: true },
+      });
+      const linkIds = linkRows.map((r) => r.pmsBookingId!).filter(Boolean);
+      if (linkIds.length) {
+        const outcomes = opts.apply
+          ? await this.bookingSync.syncBookingsByPmsIds(tenant.id, linkIds, { concurrency: 3 })
+          : await this.bookingSync.previewBookingsByPmsIds(tenant.id, linkIds, { concurrency: 3 });
+        result.checkInLinks.refetched = linkIds.length;
+        for (const o of outcomes) result.checkInLinks.outcomes[o.result]++;
       }
 
       // ── 2. Turnover chain, after the bookings are in ──
