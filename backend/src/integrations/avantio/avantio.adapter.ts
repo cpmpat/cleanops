@@ -85,6 +85,41 @@ export interface AvantioBookingRaw {
   comments?: { customer?: string; company?: string };
   extras?: Array<{ info?: { name?: string; category?: { code?: string } } }>;
   tags?: string[];
+  externalPartners?: Array<{
+    category?: string;
+    code?: string;
+    info?: Array<{ type?: string; value?: string }>;
+  }>;
+}
+
+/**
+ * Pull the guest check-in link out of Avantio `externalPartners`.
+ *
+ * Prefers the CHEKIN entry, falls back to any CHECK-IN_APPS entry. Only an
+ * https URL is accepted; anything else (empty, relative, http, javascript:)
+ * is treated as absent. Exported so the backfill script uses the same code.
+ */
+export function extractCheckInLink(
+  partners: AvantioBookingRaw['externalPartners'],
+): { url: string; provider: string } | null {
+  if (!Array.isArray(partners)) return null;
+  const apps = partners.filter((p) => (p?.category ?? '').toUpperCase() === 'CHECK-IN_APPS');
+  const ordered = [
+    ...apps.filter((p) => (p?.code ?? '').toUpperCase() === 'CHEKIN'),
+    ...apps.filter((p) => (p?.code ?? '').toUpperCase() !== 'CHEKIN'),
+  ];
+  for (const p of ordered) {
+    const link = (p.info ?? []).find((i) => (i?.type ?? '').toUpperCase() === 'LINK');
+    const value = (link?.value ?? '').trim();
+    if (!value) continue;
+    try {
+      if (new URL(value).protocol !== 'https:') continue;
+    } catch {
+      continue;
+    }
+    return { url: value, provider: (p.code ?? 'UNKNOWN').toUpperCase() };
+  }
+  return null;
 }
 
 /**
@@ -538,6 +573,7 @@ export class AvantioAdapter implements PmsAdapter {
     const guestEmail = raw.customer?.contact?.emails?.[0]?.address || undefined;
     const channel = raw.salesChannel?.name || 'Other';
     const { numAdults, numChildren } = parseOccupancy(raw.occupancy);
+    const checkInLink = extractCheckInLink(raw.externalPartners);
 
     return {
       pmsBookingId: String(raw.id),
@@ -555,6 +591,8 @@ export class AvantioAdapter implements PmsAdapter {
       guestName,
       guestEmail,
       pmsCreatedAt: raw.createdAt || undefined,
+      checkInLinkUrl: checkInLink?.url ?? null,
+      checkInLinkProvider: checkInLink?.provider ?? null,
       rawData: raw,
     };
   }

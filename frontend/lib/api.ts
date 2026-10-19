@@ -211,6 +211,10 @@ export interface PlanningBooking {
   /** Where the stored check-in time came from — FALLBACK means we assumed it. */
   checkInSource?: TimeSource;
   checkOutSource?: TimeSource;
+  /** From the accommodation sheet (CDM), read through the property join. Planning list only. */
+  accommodationStandard?: string | null;
+  checkInType?: string | null;
+  checkInMethod?: string | null;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;

@@ -342,6 +342,14 @@ model Booking {
   /// createdAt is when *we* first saw it, which a backfill makes meaningless.
   pmsCreatedAt      DateTime?
 
+  /// Guest online check-in link (Avantio `externalPartners`, category
+  /// CHECK-IN_APPS). A bearer token to guest registration: planning roles and
+  /// the assigned agent only. Never logged, never in audit values, never in
+  /// socket payloads, never in cleaner endpoints.
+  checkInLinkUrl      String?
+  checkInLinkProvider String?
+  checkInLinkSyncedAt DateTime?
+
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

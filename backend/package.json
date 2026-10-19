@@ -18,6 +18,7 @@
     "sweep:run": "ts-node -P tsconfig.scripts.json scripts/safety-sweep.ts",
     "refresh:oxpoint-lookups": "ts-node -P tsconfig.scripts.json scripts/refresh-oxpoint-lookups.ts",
     "backfill:bookings": "ts-node -P tsconfig.scripts.json scripts/backfill-bookings.ts",
+    "backfill:checkin-links": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-links.ts",
     "backfill:occupancy": "ts-node -P tsconfig.scripts.json scripts/backfill-occupancy.ts",
     "backfill:checkin-times": "ts-node -P tsconfig.scripts.json scripts/backfill-checkin-times.ts",
     "diag:booking": "ts-node -P tsconfig.scripts.json scripts/diag-booking.ts",
