@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListChecks, CalendarDays, Bookmark, Bell, Clock } from 'lucide-react';
+import { ListChecks, CalendarDays, Bookmark, Bell, Clock, UserCheck } from 'lucide-react';
+import { useCheckInStrings } from '@/i18n/checkins';
 import { useAvailabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
 import type { Translations } from '@/i18n/translations';
@@ -17,6 +18,8 @@ interface BottomNavProps {
   todayArrivals?: number;
   /** The signed-in user's role. AGENT gets its own tabs. */
   role?: string;
+  /** Agent: desk changes waiting for an answer — red. */
+  pendingCheckIns?: number;
 }
 
 /**
@@ -26,17 +29,18 @@ interface BottomNavProps {
  * Notifikace is something to read. Same colour for both would flatten that
  * difference, and red already means "urgent" everywhere else in the app.
  */
-export function BottomNav({ t, locale, unconfirmedNotes = 0, todayArrivals = 0, role }: BottomNavProps) {
+export function BottomNav({ t, locale, unconfirmedNotes = 0, todayArrivals = 0, role, pendingCheckIns = 0 }: BottomNavProps) {
   const pathname = usePathname();
   const m = useMessageStrings(locale);
   const av = useAvailabilityStrings(locale);
+  const ci = useCheckInStrings(locale);
 
   // Agents do not clean: the pool, the calendar of cleanings and "Mine" are
   // cleaner work (claiming is CLEANER-only on the API). They get their
-  // Availability and the same inbox. Their check-in jobs will take the first
-  // slot when that module exists.
+  // check-ins, their Availability and the same inbox.
   const links = role === 'AGENT'
     ? [
+        { href: '/checkins', icon: UserCheck, label: ci.navLabel, badge: pendingCheckIns, tone: 'red' as const },
         { href: '/availability', icon: Clock, label: av.navLabel, badge: 0, tone: 'red' as const },
         { href: '/notifications', icon: Bell, label: m.section.navLabel, badge: unconfirmedNotes, tone: 'blue' as const },
       ]
@@ -49,7 +53,7 @@ export function BottomNav({ t, locale, unconfirmedNotes = 0, todayArrivals = 0, 
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-surface-border safe-area-pb">
-      <div className={cn('grid items-center px-2 pt-2 pb-safe', links.length === 2 ? 'grid-cols-2' : 'grid-cols-4')}>
+      <div className={cn('grid items-center px-2 pt-2 pb-safe', links.length === 2 ? 'grid-cols-2' : links.length === 3 ? 'grid-cols-3' : 'grid-cols-4')}>
         {links.map(({ href, icon: Icon, label, badge, tone }) => {
           const active = pathname === href || pathname?.startsWith(href + '/');
           return (

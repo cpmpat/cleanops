@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { availability as availabilityApi, type AvailabilityBlock, type MyAvailability } from '@/lib/api';
+import { availability as availabilityApi, type AvailabilityBlock, type MyAvailability, type TimeOffDay, type TimeOffReason } from '@/lib/api';
 import { HelpLink } from '@/components/HelpLink';
 import { translations, type Locale } from '@/i18n/translations';
 import {
@@ -10,7 +10,7 @@ import {
 } from '@/i18n/availability';
 import { useRefreshOnReconnect } from '@/lib/socket';
 import { cn } from '@/lib/utils';
-import { Clock, Copy, Lock, LogOut, Minus, Plus, X } from 'lucide-react';
+import { CalendarOff, Clock, Copy, Lock, LogOut, Minus, Plus, X } from 'lucide-react';
 
 /** Minutes. A block ends by 06:00 next morning and is never 24 h long. */
 const STEP = 30;
@@ -47,6 +47,7 @@ export default function AvailabilityPage() {
   const [data, setData] = useState<MyAvailability | null>(null);
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [offSheet, setOffSheet] = useState(false);
   const [toast, setToast] = useState('');
 
   const load = useCallback(async () => {
@@ -77,6 +78,19 @@ export default function AvailabilityPage() {
     }
     return map;
   }, [data]);
+
+  const offByDay = useMemo(
+    () => new Map((data?.timeOff ?? []).map(o => [o.day, o] as const)),
+    [data],
+  );
+
+  async function removeOff(day: string) {
+    try {
+      setData(await availabilityApi.removeTimeOff(day));
+    } catch (e: any) {
+      setToast(e?.message ?? s.saveFailed);
+    }
+  }
 
   // Today → Sunday of next week, in two groups.
   const groups = useMemo(() => {
@@ -138,11 +152,22 @@ export default function AvailabilityPage() {
           </div>
         </div>
         {data && (
-          <span className="mt-3 inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5 text-xs font-semibold">
-            <Clock size={12} />
-            {s.summary(summary.n, formatDuration(summary.minutes))}
-          </span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5 text-xs font-semibold">
+              <Clock size={12} />
+              {s.summary(summary.n, formatDuration(summary.minutes))}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOffSheet(true)}
+              className="inline-flex items-center gap-1.5 bg-white text-ink rounded-full px-3 py-1.5 text-xs font-semibold"
+            >
+              <CalendarOff size={12} />
+              {s.markTimeOff}
+            </button>
+          </div>
         )}
+        <p className="text-white/50 text-[11px] mt-2">{s.deadlineNote}</p>
       </div>
 
       <div className="px-4 py-4 space-y-2">
@@ -178,11 +203,14 @@ export default function AvailabilityPage() {
                 key={day}
                 day={day}
                 isToday={day === today}
+                locked={!!data && day <= data.lockedThrough}
+                timeOff={offByDay.get(day)}
                 blocks={byDay.get(day) ?? []}
                 locale={locale}
                 s={s}
                 onAdd={() => setSheet({ mode: 'add', day })}
                 onEdit={block => setSheet({ mode: 'edit', block })}
+                onRemoveOff={() => void removeOff(day)}
               />
             ))}
           </section>
@@ -206,23 +234,173 @@ export default function AvailabilityPage() {
           onSaved={next => { setData(next); setSheet(null); }}
         />
       )}
+
+      {offSheet && data && (
+        <TimeOffSheet
+          today={data.today}
+          s={s}
+          onClose={() => setOffSheet(false)}
+          onSaved={next => { setData(next); setOffSheet(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Mark a range of days off: vacation, sick or other. Hours on those days are removed. */
+function TimeOffSheet({
+  today, s, onClose, onSaved,
+}: {
+  today: string;
+  s: AvailabilityStrings;
+  onClose: () => void;
+  onSaved: (next: MyAvailability) => void;
+}) {
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const [reason, setReason] = useState<TimeOffReason>('VACATION');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const days = to >= from
+    ? Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000) + 1
+    : 0;
+
+  async function save() {
+    setBusy(true);
+    setErr('');
+    try {
+      onSaved(await availabilityApi.setTimeOff(from, to, reason, note.trim() || undefined));
+    } catch (e: any) {
+      setErr(e?.message ?? s.saveFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true" aria-label={s.markTimeOff}>
+      <button type="button" aria-label={s.close} onClick={onClose} className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white rounded-t-3xl px-5 pt-2.5 pb-6 max-h-[92vh] overflow-y-auto space-y-4 safe-area-pb animate-slide-up">
+        <div className="w-10 h-1 rounded-full bg-stone-300 mx-auto" />
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-xl font-bold text-ink">{s.markTimeOff}</h2>
+          <button type="button" onClick={onClose} aria-label={s.close} className="w-11 h-11 rounded-xl bg-surface-sunken text-ink-soft flex items-center justify-center">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {(['VACATION', 'SICK', 'OTHER'] as const).map(r => (
+            <button
+              key={r}
+              type="button"
+              aria-pressed={reason === r}
+              onClick={() => setReason(r)}
+              className={cn(
+                'h-12 rounded-2xl text-sm font-bold transition',
+                reason === r ? 'bg-violet-50 border-2 border-violet-700 text-violet-900' : 'bg-white border border-stone-300 text-ink',
+              )}
+            >
+              {s.reasonLabel[r]}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <label className="border border-surface-border rounded-2xl p-2 space-y-1">
+            <span className="block text-[11.5px] font-semibold text-ink-muted pl-1">{s.from}</span>
+            <input
+              type="date"
+              value={from}
+              min={today}
+              onChange={e => { setFrom(e.target.value); if (e.target.value > to) setTo(e.target.value); }}
+              className="w-full h-11 px-2 rounded-xl bg-surface-sunken text-ink font-semibold"
+            />
+          </label>
+          <label className="border border-surface-border rounded-2xl p-2 space-y-1">
+            <span className="block text-[11.5px] font-semibold text-ink-muted pl-1">{s.till}</span>
+            <input
+              type="date"
+              value={to}
+              min={from}
+              onChange={e => setTo(e.target.value)}
+              className="w-full h-11 px-2 rounded-xl bg-surface-sunken text-ink font-semibold"
+            />
+          </label>
+        </div>
+
+        <input
+          type="text"
+          value={note}
+          maxLength={300}
+          onChange={e => setNote(e.target.value)}
+          placeholder={s.timeOffNote}
+          className="w-full h-12 px-3 rounded-2xl border border-stone-300 text-sm"
+        />
+
+        {err && <p className="text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={busy || days < 1}
+          className="w-full h-[54px] rounded-2xl bg-ink text-white text-[15px] font-bold disabled:opacity-60"
+        >
+          {s.saveTimeOff(days)}
+        </button>
+      </div>
     </div>
   );
 }
 
 function DayCard({
-  day, isToday, blocks, locale, s, onAdd, onEdit,
+  day, isToday, locked, timeOff, blocks, locale, s, onAdd, onEdit, onRemoveOff,
 }: {
   day: string;
   isToday: boolean;
+  /** Past the deadline: hours can be added, not changed. */
+  locked: boolean;
+  timeOff?: TimeOffDay;
   blocks: AvailabilityBlock[];
   locale: Locale;
   s: AvailabilityStrings;
   onAdd: () => void;
   onEdit: (b: AvailabilityBlock) => void;
+  onRemoveOff: () => void;
 }) {
   const p = dayParts(day, locale);
   const empty = blocks.length === 0;
+  const lockedTitle = isToday ? s.todayLocked : s.lockedHint(`${dayParts(addDays(day, -2), locale).short} 18:00`);
+
+  if (timeOff) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5 bg-violet-50 border border-violet-200">
+        <div className="w-11 flex flex-col items-center flex-shrink-0">
+          <span className="text-[11px] font-bold text-violet-700">{p.dow}</span>
+          <span className="text-xl font-bold leading-tight text-violet-900">{p.num}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-violet-900">{s.timeOff} · {s.reasonLabel[timeOff.reason]}</p>
+          {(timeOff.note || timeOff.via === 'DESK') && (
+            <p className="text-[11.5px] text-violet-700 truncate">
+              {[timeOff.via === 'DESK' ? s.timeOffSetByDesk : null, timeOff.note].filter(Boolean).join(' · ')}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onRemoveOff}
+          aria-label={s.removeTimeOff}
+          title={s.removeTimeOff}
+          className="w-11 h-11 rounded-xl border border-violet-200 bg-white text-violet-700 flex items-center justify-center flex-shrink-0"
+        >
+          <X size={18} />
+        </button>
+      </div>
+    );
+  }
   return (
     <div
       className={cn(
@@ -254,11 +432,11 @@ function DayCard({
         <>
           <div className="flex-1 flex flex-wrap gap-1.5 min-w-0">
             {blocks.map(b => (
-              isToday ? (
-                // Today is fixed: shown, not editable.
+              isToday || locked ? (
+                // Past the deadline the hours are fixed: shown, not editable.
                 <span
                   key={b.id}
-                  title={s.todayLocked}
+                  title={lockedTitle}
                   className="inline-flex items-center gap-1.5 min-h-10 px-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-bold"
                 >
                   {rangeLabel(b.startMinute, b.endMinute)}

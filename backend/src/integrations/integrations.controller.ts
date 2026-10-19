@@ -142,6 +142,22 @@ export class IntegrationsController {
     return this.syncService.updateSetupRequests(req.tenantId!, bookingId, body ?? {});
   }
 
+  @Get('planning/checkin-agent/route')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Split "Assigned" view: agents\' check-ins in order, with the leg between each',
+    description: 'Query: from, to (YYYY-MM-DD, ≤ 7 days), agentIds (comma-separated, optional).',
+  })
+  checkInRoute(
+    @Req() req: TenantRequest,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('agentIds') agentIds?: string,
+  ) {
+    const ids = (agentIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    return this.checkInAgents.route(req.tenantId!, from, to ?? from, ids.length ? ids : undefined);
+  }
+
   @Get('planning/checkin-agent/:bookingId/options')
   @Roles(...PLANNING_ROLES)
   @ApiOperation({
@@ -176,6 +192,16 @@ export class IntegrationsController {
       agentId: body.agentId,
       override: body.override === true,
     });
+  }
+
+  @Post('planning/checkin-agent/:bookingId/consent-by-phone')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Record that the agent agreed to an override by phone',
+    description: 'Only while the booking is waiting for the agent\'s answer. Logged as the desk user\'s act.',
+  })
+  agreeByPhone(@Req() req: TenantRequest, @Param('bookingId') bookingId: string) {
+    return this.checkInAgents.agreeByPhone(req.tenantId!, bookingId, req.userId!);
   }
 
   @Get('planning/cleaners')

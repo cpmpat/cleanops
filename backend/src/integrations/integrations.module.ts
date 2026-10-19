@@ -9,10 +9,11 @@ import { TurnoverReconcileService } from './turnover-reconcile.service';
 import { SafetySweepService } from './safety-sweep.service';
 import { CheckInAgentService } from './checkin-agent.service';
 import { IntegrationsController } from './integrations.controller';
+import { CheckInsController } from './checkins.controller';
 
 @Module({
   imports: [AuthModule, StorageModule, WebsocketModule],
-  controllers: [IntegrationsController],
+  controllers: [IntegrationsController, CheckInsController],
   providers: [
     AvantioAdapter,
     BookingSyncService,

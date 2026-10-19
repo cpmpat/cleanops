@@ -7,6 +7,7 @@ import {
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
+import { legsInto, loadCoordinates } from './checkin-legs';
 import { CleanOpsGateway } from '../websocket/websocket.module';
 import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus, TurnoverStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
@@ -393,6 +394,19 @@ export class BookingSyncService {
       : [];
     const cdmByPmsId = new Map(cdmRows.map((c) => [c.idAvantio, c]));
 
+    // Has the current check-in agent seen (or answered) their latest change?
+    const ackRows = bookings.length
+      ? await this.prisma.checkInChangeRecipient.findMany({
+          where: {
+            tenantId,
+            role: 'GAINING',
+            change: { bookingId: { in: bookings.map((b: any) => b.id) }, supersededAt: null },
+          },
+          select: { userId: true, ackedAt: true, change: { select: { bookingId: true, changedAt: true } } },
+        })
+      : [];
+    const ackByBooking = new Map(ackRows.map((r) => [r.change.bookingId, r]));
+
     const rows = bookings.map((b: any) => {
       const cdm = cdmByPmsId.get((b.property as any)?.pmsPropertyId) ?? null;
       const turnover = (byCheckOut ? b.turnoversAsFrom?.[0] : b.turnoversAsTo?.[0]) ?? null;
@@ -424,6 +438,18 @@ export class BookingSyncService {
       checkInAgentName: b.checkInAgent?.name ?? null,
       checkInAgentOverride: b.checkInAgentOverride ?? false,
       checkInAgentAssignedAt: b.checkInAgentAssignedAt ?? null,
+      checkInAgentConsent: b.checkInAgentConsent ?? 'NOT_REQUIRED',
+      checkInDeclinedAgentName: b.checkInDeclinedAgentName ?? null,
+      checkInDeclinedAt: b.checkInDeclinedAt ?? null,
+      /** Null when nothing was sent (no agent, or assigned before notifications existed). */
+      checkInAgentSeenAt: (() => {
+        const a = ackByBooking.get(b.id);
+        return a && a.userId === b.checkInAgentId ? a.ackedAt : null;
+      })(),
+      checkInAgentNotified: (() => {
+        const a = ackByBooking.get(b.id);
+        return !!a && a.userId === b.checkInAgentId;
+      })(),
       accommodationStandard: cdm?.accommodationStandard ?? null,
       checkInType: cdm?.checkInType ?? null,
       checkInMethod: cdm?.checkInMethod ?? null,
@@ -444,6 +470,28 @@ export class BookingSyncService {
       })),
       };
     });
+
+    // The leg into each check-in from the same agent's previous one that day.
+    // Check-In view only: on Check-Out the agent is not the point.
+    if (!byCheckOut) {
+      const assigned = bookings.filter((b: any) => b.checkInAgentId && !b.isOwnerStay);
+      const coords = await loadCoordinates(
+        this.prisma,
+        tenantId,
+        [...new Set(assigned.map((b: any) => b.property?.pmsPropertyId).filter(Boolean))] as string[],
+      );
+      const legs = legsInto(
+        assigned.map((b: any) => ({
+          bookingId: b.id,
+          agentId: b.checkInAgentId,
+          arrival: b.checkInTime,
+          assumed: b.checkInSource === 'FALLBACK',
+          accommodationName: b.accommodationName,
+          coord: coords.get(b.property?.pmsPropertyId) ?? null,
+        })),
+      );
+      for (const r of rows as any[]) r.legIn = legs.get(r.id) ?? null;
+    }
 
     return filters.status ? rows.filter((r) => r.status === filters.status) : rows;
   }

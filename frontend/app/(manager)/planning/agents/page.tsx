@@ -7,6 +7,8 @@ import {
   type AvailabilityBoard,
   type AvailabilityBlock,
   type AvailabilityBoardArrival,
+  type TimeOffDay,
+  type TimeOffReason,
 } from '@/lib/api';
 import {
   useAvailabilityStrings, addDays, mondayOf, dayParts, hhmm, formatDuration,
@@ -14,7 +16,7 @@ import {
 } from '@/i18n/availability';
 import type { Locale } from '@/i18n/translations';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, ChevronLeft, ChevronRight, Phone } from 'lucide-react';
+import { AlertTriangle, CalendarOff, ChevronLeft, ChevronRight, Phone, X } from 'lucide-react';
 
 /** The timeline runs 08:00 → 02:00 next morning: when guests arrive and agents work. */
 const WINDOW_START = 8 * 60;
@@ -96,6 +98,9 @@ export default function AgentsPlanningPage() {
   const [board, setBoard] = useState<AvailabilityBoard | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Desk records an agent's time off after a phone call.
+  const [offFor, setOffFor] = useState<{ id: string; name: string; day: string } | null>(null);
+  const [actionError, setActionError] = useState('');
 
   const range = useMemo(() => {
     if (view === 'day') return { from: day, to: day };
@@ -175,18 +180,136 @@ export default function AgentsPlanningPage() {
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border text-sm text-ink-muted">{s.noAgents}</div>
       )}
 
+      {actionError && <p className="mb-4 text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{actionError}</p>}
+
       {board && board.agents.length > 0 && (view === 'day'
-        ? <DayView board={board} day={day} today={today} locale={locale as Locale} s={s} />
-        : <WeekView board={board} today={today} locale={locale as Locale} s={s} onOpenDay={d => { setDay(d); setView('day'); }} />
+        ? <DayView
+            board={board} day={day} today={today} locale={locale as Locale} s={s}
+            onTimeOff={(a, d) => setOffFor({ id: a.id, name: a.name, day: d })}
+            onRemoveOff={o => void removeOff(o)}
+          />
+        : <WeekView
+            board={board} today={today} locale={locale as Locale} s={s}
+            onOpenDay={d => { setDay(d); setView('day'); }}
+            onTimeOff={(a, d) => setOffFor({ id: a.id, name: a.name, day: d })}
+            onRemoveOff={o => void removeOff(o)}
+          />
       )}
+
+      {offFor && (
+        <DeskTimeOffModal
+          agent={offFor}
+          today={today}
+          s={s}
+          onClose={() => setOffFor(null)}
+          onSaved={() => { setOffFor(null); void load(); }}
+        />
+      )}
+    </div>
+  );
+
+  async function removeOff(o: TimeOffDay) {
+    setActionError('');
+    try {
+      await availabilityApi.removeAgentTimeOff(o.userId, o.day);
+      await load();
+    } catch (e: any) {
+      setActionError(e?.message ?? 'Could not remove');
+    }
+  }
+}
+
+/** The desk records time off for an agent who phoned in. Logged under the desk user. */
+function DeskTimeOffModal({ agent, today, s, onClose, onSaved }: {
+  agent: { id: string; name: string; day: string };
+  today: string;
+  s: AvailabilityStrings;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const start = agent.day < today ? today : agent.day;
+  const [from, setFrom] = useState(start);
+  const [to, setTo] = useState(start);
+  const [reason, setReason] = useState<TimeOffReason>('SICK');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function save() {
+    setBusy(true);
+    setErr('');
+    try {
+      await availabilityApi.setAgentTimeOff(agent.id, from, to, reason, note.trim() || undefined);
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.message ?? 'Could not save');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-modal w-full max-w-sm mx-4 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-ink">{s.deskTimeOffFor(agent.name)}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-sunken text-ink-muted"><X size={16} /></button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(['VACATION', 'SICK', 'OTHER'] as const).map(r => (
+            <button
+              key={r}
+              onClick={() => setReason(r)}
+              className={cn(
+                'h-10 rounded-xl text-sm font-semibold transition',
+                reason === r ? 'bg-violet-50 border-2 border-violet-700 text-violet-900' : 'border border-surface-border text-ink',
+              )}
+            >
+              {s.reasonLabel[r]}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs text-ink-muted space-y-1">
+            <span>{s.from}</span>
+            <input type="date" value={from} min={today}
+              onChange={e => { setFrom(e.target.value); if (e.target.value > to) setTo(e.target.value); }}
+              className="w-full px-2 py-2 rounded-xl border border-surface-border text-sm text-ink" />
+          </label>
+          <label className="text-xs text-ink-muted space-y-1">
+            <span>{s.till}</span>
+            <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
+              className="w-full px-2 py-2 rounded-xl border border-surface-border text-sm text-ink" />
+          </label>
+        </div>
+        <input
+          type="text" value={note} maxLength={300} onChange={e => setNote(e.target.value)}
+          placeholder={s.timeOffNote}
+          className="w-full px-3 py-2 rounded-xl border border-surface-border text-sm"
+        />
+        <p className="text-[11.5px] text-ink-muted">{s.deskByPhone}</p>
+        {err && <p className="text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+        <button
+          onClick={() => void save()}
+          disabled={busy || to < from}
+          className="w-full py-2.5 bg-ink text-white rounded-xl text-sm font-semibold disabled:opacity-50"
+        >
+          {s.deskSetTimeOff}
+        </button>
+      </div>
     </div>
   );
 }
 
 // ─── Day ─────────────────────────────────────────────────────────────────────
 
-function DayView({ board, day, today, locale, s }: {
+type AgentRef = { id: string; name: string };
+
+function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
   board: AvailabilityBoard; day: string; today: string; locale: Locale; s: AvailabilityStrings;
+  onTimeOff: (agent: AgentRef, day: string) => void;
+  onRemoveOff: (o: TimeOffDay) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [now, setNow] = useState(pragueNowMinute);
@@ -340,12 +463,49 @@ function DayView({ board, day, today, locale, s }: {
             );
           })}
 
-          {rows.off.length > 0 && (
-            <div className="px-5 py-3 text-[13px] text-ink-muted">
-              <strong className="text-ink-soft">{s.notAvailableToday(rows.off.length)}</strong>
-              {' · '}{rows.off.map(a => a.name).join(', ')}
-            </div>
-          )}
+          {rows.off.length > 0 && (() => {
+            const offOn = new Map(board.timeOff.filter(o => o.day === day).map(o => [o.userId, o] as const));
+            const away = rows.off.filter(a => offOn.has(a.id));
+            const silent = rows.off.filter(a => !offOn.has(a.id));
+            // Past the deadline an empty day is late, not pending.
+            const late = day >= today && day <= board.lockedThrough;
+            return (
+              <div className="px-5 py-3 text-[13px] text-ink-muted space-y-1.5">
+                {away.length > 0 && (
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <strong className="text-violet-800">{s.deskTimeOff}</strong>
+                    {away.map(a => {
+                      const o = offOn.get(a.id)!;
+                      return (
+                        <span key={a.id} className="inline-flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-900 rounded-full pl-2 pr-1 py-0.5 text-[12px]">
+                          {a.name} · {s.reasonLabel[o.reason]}
+                          <button onClick={() => onRemoveOff(o)} title={s.removeTimeOff} className="p-0.5 rounded-full hover:bg-violet-100"><X size={11} /></button>
+                        </span>
+                      );
+                    })}
+                  </p>
+                )}
+                {silent.length > 0 && (
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <strong className={late ? 'text-red-700' : 'text-ink-soft'}>
+                      {late ? s.deskNotDeclaredLate : s.notAvailableToday(silent.length)}
+                    </strong>
+                    {silent.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => onTimeOff(a, day)}
+                        title={s.deskSetTimeOff}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-surface-border px-2 py-0.5 text-[12px] text-ink-soft hover:border-violet-400 hover:text-violet-800"
+                      >
+                        {a.name}
+                        <CalendarOff size={11} />
+                      </button>
+                    ))}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {showNow && (
             <div className="pointer-events-none absolute top-9 bottom-0 left-5 right-5">
@@ -422,8 +582,10 @@ function Legend({ swatch, style, children }: { swatch: string; style?: React.CSS
 
 // ─── Week ────────────────────────────────────────────────────────────────────
 
-function WeekView({ board, today, locale, s, onOpenDay }: {
+function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }: {
   board: AvailabilityBoard; today: string; locale: Locale; s: AvailabilityStrings; onOpenDay: (d: string) => void;
+  onTimeOff: (agent: AgentRef, day: string) => void;
+  onRemoveOff: (o: TimeOffDay) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(board.from, i));
   const totals = days.map(d => {
@@ -466,18 +628,42 @@ function WeekView({ board, today, locale, s, onOpenDay }: {
           <div key={agent.id} className={cn(grid, 'min-h-14 items-center border-b border-stone-100')}>
             <div className="flex items-center gap-2.5 min-w-0 py-2">
               <span className="w-8 h-8 rounded-full bg-ink text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{initials(agent.name)}</span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-[13.5px] font-semibold text-ink truncate">{agent.name}</p>
                 <p className="text-[11.5px] text-ink-muted">{total ? formatDuration(total) : s.nothingDeclared}</p>
               </div>
+              <button
+                onClick={() => onTimeOff(agent, days[0] < today ? today : days[0])}
+                title={s.deskSetTimeOff}
+                className="p-1.5 rounded-lg text-ink-faint hover:text-violet-800 hover:bg-violet-50 flex-shrink-0"
+              >
+                <CalendarOff size={14} />
+              </button>
             </div>
             {days.map(d => {
               const list = mine.filter(b => b.day === d);
               const past = d < today;
+              const off = board.timeOff.find(o => o.userId === agent.id && o.day === d);
+              const late = !past && d <= board.lockedThrough;
               return (
                 <div key={d} className={cn('flex flex-col items-start gap-1 px-2 py-2 h-full justify-center', d === today && 'bg-emerald-50/50')}>
-                  {list.length === 0 ? (
-                    <span className="text-sm text-stone-300">—</span>
+                  {off ? (
+                    <span
+                      title={[s.reasonLabel[off.reason], off.note, off.via === 'DESK' ? s.timeOffSetByDesk : null].filter(Boolean).join(' · ')}
+                      className="inline-flex items-center gap-1 text-[12px] rounded-lg px-2 py-0.5 bg-violet-50 border border-violet-200 text-violet-900 font-semibold"
+                    >
+                      {s.deskTimeOff}
+                      {!past && (
+                        <button onClick={() => onRemoveOff(off)} title={s.removeTimeOff} className="rounded hover:bg-violet-100"><X size={11} /></button>
+                      )}
+                    </span>
+                  ) : list.length === 0 ? (
+                    <span
+                      title={late ? s.deskNotDeclaredLate : undefined}
+                      className={cn('text-sm', late ? 'text-red-400 font-bold' : 'text-stone-300')}
+                    >
+                      —
+                    </span>
                   ) : list.map(b => (
                     <span
                       key={b.id}

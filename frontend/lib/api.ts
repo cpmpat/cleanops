@@ -221,6 +221,16 @@ export interface PlanningBooking {
   /** Picked although they had not declared the arrival. */
   checkInAgentOverride?: boolean;
   checkInAgentAssignedAt?: string | null;
+  /** Only an override needs the agent's yes: PENDING until accepted in the app or agreed by phone. */
+  checkInAgentConsent?: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' | 'PHONE';
+  checkInDeclinedAgentName?: string | null;
+  checkInDeclinedAt?: string | null;
+  /** The agent was told about their latest change (false for assignments made before notifications existed). */
+  checkInAgentNotified?: boolean;
+  /** When they answered it; null while unseen. */
+  checkInAgentSeenAt?: string | null;
+  /** The leg from the same agent's previous check-in that day (Check-In tab only). */
+  legIn?: CheckInLeg | null;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;
@@ -650,8 +660,57 @@ export interface TurnoverBookingRef {
   pmsCreatedAt?: string | null;
 }
 
+/** Can the agent get from the previous check-in to this one? */
+export interface CheckInLeg {
+  fromBookingId: string;
+  toBookingId: string;
+  fromName: string;
+  fromTime: string;
+  sameBuilding: boolean;
+  distanceKm: number | null;
+  travelMinutes: number | null;
+  mode: 'SAME_BUILDING' | 'WALK' | 'TRANSIT' | null;
+  /** Minutes left after service, travel and buffer; negative = short. */
+  slackMinutes: number | null;
+  /** Minutes between getting there and the guest's arrival; negative = late. */
+  gapMinutes: number | null;
+  state: 'OK' | 'TIGHT' | 'IMPOSSIBLE' | 'UNKNOWN';
+  unknownReason: 'NO_COORDINATES' | 'TIME_UNCONFIRMED' | null;
+}
+
+export interface CheckInRouteItem {
+  bookingId: string;
+  bookingRef: string;
+  accommodationName: string;
+  time: string;
+  arrivalAssumed: boolean;
+  guests: string;
+  consent: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' | 'PHONE';
+  seen: boolean;
+  legIn: CheckInLeg | null;
+}
+
+export interface CheckInRoute {
+  from: string;
+  to: string;
+  serviceMinutes: number;
+  bufferMinutes: number;
+  unassignedCount: number;
+  agents: { id: string; name: string; count: number }[];
+  columns: {
+    agentId: string;
+    name: string;
+    mobileNumber: string | null;
+    days: {
+      day: string;
+      items: CheckInRouteItem[];
+      footer: { count: number; first: string | null; last: string | null; travelMinutes: number; unknownLegs: number; red: number; amber: number };
+    }[];
+  }[];
+}
+
 /** How an agent's declared availability fits one arrival. */
-export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED';
+export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF';
 
 export interface AgentOption {
   id: string;
@@ -660,6 +719,7 @@ export interface AgentOption {
   eligible: boolean;
   /** "HH:mm–HH:mm" blocks declared for the arrival day. */
   declared: string[];
+  timeOffReason: TimeOffReason | null;
 }
 
 export interface AgentOptionsResponse {
@@ -667,6 +727,7 @@ export interface AgentOptionsResponse {
   day: string;
   arrival: string;
   arrivalAssumed: boolean;
+  deadlinePassed: boolean;
   currentAgentId: string | null;
   options: AgentOption[];
 }
@@ -1321,6 +1382,15 @@ export const integrations = {
         checkInAgentAssignedAt: string | null;
         checkInAgentOverride: boolean;
       }>(`/integrations/planning/checkin-agent/${bookingId}`, body),
+    /** Split "Assigned" view: agents' check-ins in order with the leg between each. */
+    route: (from: string, to: string, agentIds?: string[]) =>
+      get<CheckInRoute>(
+        `/integrations/planning/checkin-agent/route?from=${from}&to=${to}` +
+        (agentIds?.length ? `&agentIds=${agentIds.join(',')}` : ''),
+      ),
+    /** The agent agreed to an override on the phone. */
+    agreeByPhone: (bookingId: string) =>
+      post<{ ok: boolean }>(`/integrations/planning/checkin-agent/${bookingId}/consent-by-phone`),
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
@@ -2089,12 +2159,28 @@ export interface AvailabilityBlock {
   updatedAt: string;
 }
 
+export type TimeOffReason = 'VACATION' | 'SICK' | 'OTHER';
+
+export interface TimeOffDay {
+  userId: string;
+  day: string;
+  reason: TimeOffReason;
+  note: string | null;
+  /** APP (the agent) or DESK (recorded after a call). */
+  via: 'APP' | 'DESK';
+  setById: string;
+}
+
 export interface MyAvailability {
   /** Today in Prague — the server's, so a phone on another clock still agrees. */
   today: string;
   /** Last day an agent may plan. */
   horizon: string;
+  /** Every day up to this one is past its deadline (18:00 two days before): add-only. */
+  lockedThrough: string;
+  deadline: { time: string; daysBefore: number };
   blocks: AvailabilityBlock[];
+  timeOff: TimeOffDay[];
 }
 
 export interface AvailabilityBoardArrival {
@@ -2113,10 +2199,56 @@ export interface AvailabilityBoard {
   from: string;
   to: string;
   today: string;
+  /** Every day up to this one is past its deadline. */
+  lockedThrough: string;
   agents: { id: string; name: string; mobileNumber: string | null }[];
+  timeOff: TimeOffDay[];
   blocks: AvailabilityBlock[];
   arrivals: AvailabilityBoardArrival[];
 }
+
+export interface MyCheckIn {
+  id: string;
+  bookingRef: string;
+  accommodationName: string;
+  day: string;
+  time: string;
+  arrivalAssumed: boolean;
+  numAdults: number;
+  numChildren: number;
+  awaitingMyAnswer: boolean;
+  /** Guest registration link — shown only to the assigned agent. */
+  checkInLinkUrl: string | null;
+}
+
+export interface CheckInPendingChange {
+  id: string;
+  role: 'GAINING' | 'LOSING';
+  kind: 'ASSIGNED' | 'REASSIGNED' | 'UNASSIGNED';
+  override: boolean;
+  changedAt: string;
+  bookingId: string;
+  bookingRef: string | null;
+  accommodationName: string | null;
+  day: string | null;
+  time: string | null;
+  arrivalAssumed: boolean;
+  answers: Array<'ACK' | 'ACCEPT' | 'DECLINE'>;
+}
+
+export interface MyCheckIns {
+  today: string;
+  items: MyCheckIn[];
+  pending: CheckInPendingChange[];
+}
+
+/** The check-in agent's own view. */
+export const checkins = {
+  mine: () => get<MyCheckIns>('/checkins/mine'),
+  count: () => get<{ count: number }>('/checkins/mine/count'),
+  respond: (recipientId: string, response: 'ACK' | 'ACCEPT' | 'DECLINE') =>
+    post<{ ok: boolean }>(`/checkins/changes/${recipientId}/respond`, { response }),
+};
 
 export const availability = {
   mine: () => get<MyAvailability>('/availability/mine'),
@@ -2130,4 +2262,14 @@ export const availability = {
     post<MyAvailability & { copied: number }>('/availability/mine/copy-week', { weekStart }),
   board: (from: string, to: string) =>
     get<AvailabilityBoard>(`/availability/board?from=${from}&to=${to}`),
+  /** Removes hours on those days. Refused (409) while the agent holds check-ins on them. */
+  setTimeOff: (from: string, to: string, reason: TimeOffReason, note?: string) =>
+    post<MyAvailability>('/availability/mine/time-off', { from, to, reason, note }),
+  removeTimeOff: (from: string, to: string = from) =>
+    del<MyAvailability>(`/availability/mine/time-off?from=${from}&to=${to}`),
+  /** Desk, after a phone call. */
+  setAgentTimeOff: (userId: string, from: string, to: string, reason: TimeOffReason, note?: string) =>
+    post<{ ok: boolean }>(`/availability/agents/${userId}/time-off`, { from, to, reason, note }),
+  removeAgentTimeOff: (userId: string, from: string, to: string = from) =>
+    del<{ ok: boolean }>(`/availability/agents/${userId}/time-off?from=${from}&to=${to}`),
 };
