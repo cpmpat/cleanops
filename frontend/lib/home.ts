@@ -16,7 +16,6 @@ export function homeFor(role?: string | null): string {
   if (role && NEWSFEED_HOME_ROLES.includes(role)) return '/newsfeed';
   if (role === 'AGENT') return '/availability';
   if (role === 'OPERATION_MANAGER' || role === 'ASSIST') return '/airchat';
-  if (role === 'TERENAK') return '/datasets';
   if (role === 'REPAIRMAN') return '/my-repairs';
   if (role === 'CLEANER') return '/cleanings';
   // A role with no screen yet (RESOLUTIONS) is told so,

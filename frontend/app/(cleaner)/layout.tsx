@@ -38,7 +38,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         MANAGER: '/newsfeed', ADMIN: '/newsfeed',
         FRONT_DESK_MANAGER: '/newsfeed', OPERATIONS_ASSISTANT: '/newsfeed', FRONT_DESK: '/newsfeed',
         OPERATION_MANAGER: '/airchat', ASSIST: '/airchat',
-        EVIDENCE: '/newsfeed', TERENAK: '/datasets',
+        EVIDENCE: '/newsfeed',
         DIRECTOR: '/newsfeed', FINANCE: '/newsfeed', REVENUE_MANAGER: '/newsfeed', MARKETING_MANAGER: '/newsfeed',
         MARKETING_SPECIALIST: '/newsfeed',
       };
