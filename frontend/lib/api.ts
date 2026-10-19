@@ -215,6 +215,12 @@ export interface PlanningBooking {
   accommodationStandard?: string | null;
   checkInType?: string | null;
   checkInMethod?: string | null;
+  /** The AGENT who meets the guest. Ours: never sent to the PMS. */
+  checkInAgentId?: string | null;
+  checkInAgentName?: string | null;
+  /** Picked although they had not declared the arrival. */
+  checkInAgentOverride?: boolean;
+  checkInAgentAssignedAt?: string | null;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;
@@ -642,6 +648,27 @@ export interface TurnoverBookingRef {
   separateBeds?: boolean;
   /** When the guest booked, per the PMS. Null for rows that never carried it. */
   pmsCreatedAt?: string | null;
+}
+
+/** How an agent's declared availability fits one arrival. */
+export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED';
+
+export interface AgentOption {
+  id: string;
+  name: string;
+  fit: AgentFit;
+  eligible: boolean;
+  /** "HH:mm–HH:mm" blocks declared for the arrival day. */
+  declared: string[];
+}
+
+export interface AgentOptionsResponse {
+  bookingId: string;
+  day: string;
+  arrival: string;
+  arrivalAssumed: boolean;
+  currentAgentId: string | null;
+  options: AgentOption[];
 }
 
 export interface Turnover {
@@ -1283,6 +1310,17 @@ export const integrations = {
       get(`/integrations/planning/bookings/${pmsBookingId}`),
     /** Active cleaners (id, name) for the assign dropdown — open to everyone who can use Planning. */
     cleaners: () => get<User[]>('/integrations/planning/cleaners'),
+    /** Active agents for one booking's arrival, available ones first. */
+    agentOptions: (bookingId: string) =>
+      get<AgentOptionsResponse>(`/integrations/planning/checkin-agent/${bookingId}/options`),
+    /** Set (or clear with null) the check-in agent. Unavailable agents need `override: true`. */
+    setAgent: (bookingId: string, body: { agentId: string | null; override?: boolean }) =>
+      patch<{
+        checkInAgentId: string | null;
+        checkInAgentName: string | null;
+        checkInAgentAssignedAt: string | null;
+        checkInAgentOverride: boolean;
+      }>(`/integrations/planning/checkin-agent/${bookingId}`, body),
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),

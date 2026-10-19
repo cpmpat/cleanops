@@ -7,6 +7,7 @@ import { BookingSyncService } from './booking-sync.service';
 import { TurnoverSyncService } from './turnover-sync.service';
 import { TurnoverReconcileService } from './turnover-reconcile.service';
 import { SafetySweepService } from './safety-sweep.service';
+import { CheckInAgentService } from './checkin-agent.service';
 import { IntegrationsController } from './integrations.controller';
 
 @Module({
@@ -18,6 +19,7 @@ import { IntegrationsController } from './integrations.controller';
     TurnoverSyncService,
     TurnoverReconcileService,
     SafetySweepService,
+    CheckInAgentService,
   ],
   exports: [
     BookingSyncService,

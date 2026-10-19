@@ -177,6 +177,7 @@ model User {
   noteTargets                NoteTarget[]
   noteAcks                   NoteAck[]
   agentAvailability          AgentAvailability[]
+  checkInBookings            Booking[]           @relation("BookingCheckInAgent")
   newsfeedDismissals         NewsfeedDismissal[]
 
   // Tasks (16 Oct 2026)
@@ -350,11 +351,21 @@ model Booking {
   checkInLinkProvider String?
   checkInLinkSyncedAt DateTime?
 
+  /// The AGENT who meets the guest. One per booking; no separate assignment
+  /// model. Ours, never sent to the PMS, never touched by the sync.
+  checkInAgentId           String?
+  checkInAgentAssignedById String?
+  checkInAgentAssignedAt   DateTime?
+  /// True when the desk picked an agent who had not declared availability
+  /// for the arrival (an override). Cleared when the assignment changes.
+  checkInAgentOverride     Boolean   @default(false)
+
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
   tenant            Tenant         @relation(fields: [tenantId], references: [id])
   property          Property       @relation(fields: [propertyId], references: [id])
+  checkInAgent      User?          @relation("BookingCheckInAgent", fields: [checkInAgentId], references: [id], onDelete: SetNull)
   cleaning          Cleaning?      // 1:1 (a booking has at most one cleaning)
   turnoversAsFrom   Turnover[]            @relation("TurnoverFromBooking")
   turnoversAsTo     Turnover[]            @relation("TurnoverToBooking")
@@ -363,6 +374,7 @@ model Booking {
   @@unique([tenantId, pmsBookingId])
   @@index([tenantId])
   @@index([tenantId, checkInTime])
+  @@index([tenantId, checkInAgentId, checkInTime])
   @@index([propertyId])
   @@index([bookingRef])
   @@map("bookings")

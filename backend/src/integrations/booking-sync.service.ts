@@ -359,6 +359,7 @@ export class BookingSyncService {
       include: {
         property: { select: { id: true, name: true, pmsPropertyId: true } },
         cleaning: { select: { id: true, timeSlot: true } },
+        checkInAgent: { select: { id: true, name: true } },
         // The cleaning *before this guest arrives* — the live turnover whose
         // `toBooking` is this booking. This is what cleaners take, start and
         // mark done, so it is what the desk needs to see. The legacy
@@ -419,6 +420,10 @@ export class BookingSyncService {
       // Lets the Planning view flag times we assumed (FALLBACK) vs. confirmed ones.
       checkInSource: (b as any).checkInSource,
       checkOutSource: (b as any).checkOutSource,
+      checkInAgentId: b.checkInAgentId ?? null,
+      checkInAgentName: b.checkInAgent?.name ?? null,
+      checkInAgentOverride: b.checkInAgentOverride ?? false,
+      checkInAgentAssignedAt: b.checkInAgentAssignedAt ?? null,
       accommodationStandard: cdm?.accommodationStandard ?? null,
       checkInType: cdm?.checkInType ?? null,
       checkInMethod: cdm?.checkInMethod ?? null,
