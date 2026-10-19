@@ -266,6 +266,8 @@ export class AuthService {
         language: true,
         tenantId: true,
         preferences: true,
+        // The person's id in the CDM User list — shown in their menu card / app header.
+        cdmUserId: true,
         tenant: { select: { name: true, slug: true, settings: true } },
       },
     });
@@ -308,6 +310,7 @@ export class AuthService {
         tenantId: user.tenantId,
         tenantName: user.tenant?.name,
         preferences: user.preferences,
+        cdmUserId: user.cdmUserId ?? null,
       },
     };
   }

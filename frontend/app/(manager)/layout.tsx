@@ -9,6 +9,7 @@ import {
   CalendarRange, Settings, LogOut, Search,
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
   LogIn, Clock, Bell, History, Newspaper, Layers, KanbanSquare,
+  Gauge,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
@@ -76,7 +77,7 @@ const SECTION_OF: Record<string, SectionKey> = {
   '/planning': 'operations', '/tasks': 'operations', '/schedule': 'operations', '/streams': 'operations',
   '/incidents': 'operations', '/repairs': 'operations',
   '/airchat': 'communication', '/messages': 'communication', '/notify': 'communication',
-  '/datasets': 'records',
+  '/datasets': 'records', '/controlling': 'records',
   '/staff': 'admin', '/properties': 'admin', '/settings': 'admin',
 };
 const SECTION_ORDER: SectionKey[] = ['overview', 'operations', 'communication', 'records', 'admin'];
@@ -292,6 +293,8 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/messages',   icon: Mail,            label: messageStrings[locale].manager.navLabel },
     { href: '/notify',     icon: Bell,            label: NOTIFY_LABEL[locale] ?? 'Notifications' },
     { href: '/datasets',   icon: Database,        label: (t.nav as any).data ?? 'Data' },
+    // Manager only: no role in ROLE_PATHS lists it, and the API refuses everyone else.
+    ...(user?.role === 'MANAGER' ? [{ href: '/controlling', icon: Gauge, label: 'Controlling' }] : []),
     { href: '/staff',      icon: Users,           label: t.nav.staff },
     { href: '/properties', icon: Building2,       label: t.nav.properties },
     { href: '/settings',   icon: Settings,        label: t.nav.settings },
@@ -443,9 +446,19 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
         <div className="px-3 pb-4">
           <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white ring-1 ring-black/[0.05] shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-            <div className="w-8 h-8 rounded-full bg-[#1B2420] flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-semibold">{user.name?.[0] ?? '?'}</span>
-            </div>
+            {/* The person's CDM id where the generic initial used to be; the initial only until the account is linked. */}
+            {user.cdmUserId ? (
+              <div
+                title={`CDM user id: ${user.cdmUserId}`}
+                className="min-w-[2rem] h-8 px-2 rounded-[10px] bg-accent flex items-center justify-center flex-shrink-0"
+              >
+                <span className="text-white text-[11px] font-mono font-semibold tracking-tight">{user.cdmUserId}</span>
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-[#1B2420] flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xs font-semibold">{user.name?.[0] ?? '?'}</span>
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-[#1B2420] text-[12.5px] font-semibold truncate leading-tight">{user.name}</p>
               <p className="text-[#6A6F69] text-[11px] truncate leading-tight">{user.email}</p>

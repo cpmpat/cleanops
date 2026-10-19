@@ -28,6 +28,7 @@ import { DatasetsModule } from './datasets/datasets.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { NewsfeedModule } from './newsfeed/newsfeed.module';
+import { ControllingModule } from './controlling/controlling.module';
 import { TasksModule } from './tasks/tasks.module';
 
 @Module({
@@ -59,6 +60,7 @@ import { TasksModule } from './tasks/tasks.module';
     ConversationsModule,
     AvailabilityModule,
     NewsfeedModule,
+    ControllingModule,
     TasksModule,
   ],
 })

@@ -24,12 +24,18 @@ export function HelpLink({ locale }: { locale: Locale }) {
     helpApi.meta().then(setMeta).catch(() => {});
   }, []);
 
-  if (!meta?.exists) return null;
+  // The person's CDM id sits under Nápověda (Oct 2026) — shown even when no manual exists yet.
+  const cdmId = user?.cdmUserId ? (
+    <span title="CDM user id" className="px-2 text-[11px] font-mono text-white/45">ID {user.cdmUserId}</span>
+  ) : null;
+
+  if (!meta?.exists) return cdmId;
 
   const seen = (user?.preferences as any)?.helpSeenVersion ?? 0;
   const isNew = meta.version > seen;
 
   return (
+    <>
     <Link
       href="/help"
       className="flex items-center gap-1.5 text-white/60 hover:text-white transition text-xs py-1.5 px-2 rounded-lg hover:bg-white/10"
@@ -38,5 +44,7 @@ export function HelpLink({ locale }: { locale: Locale }) {
       {m.help.title}
       {isNew && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
     </Link>
+    {cdmId}
+    </>
   );
 }

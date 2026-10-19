@@ -1056,7 +1056,7 @@ function DatasetsPageInner() {
                             />
                           ) : pos === 0 && data.rowIds ? (
                             <div className="relative pr-6 truncate">
-                              <CellValue value={shown} />
+                              <CellValue value={shown} column={c.key} />
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setDrawer(di); }}
@@ -1068,7 +1068,7 @@ function DatasetsPageInner() {
                               </button>
                             </div>
                           ) : (
-                            <CellValue value={shown} />
+                            <CellValue value={shown} column={c.key} />
                           )}
                         </td>
                       );
@@ -1221,7 +1221,23 @@ function PanelButton({
  * glance. The full URL stays in the title, so hovering still answers "which
  * folder is this?" without a click.
  */
-function CellValue({ value }: { value: string }) {
+/** Columns stored as text that are amounts in Czech crowns: shown as "5 000 Kč", edited as the raw number. */
+const CZK_COLUMNS = new Set(['allowedSpendingForRepairs']);
+const CZK = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 2, minimumFractionDigits: 0 });
+
+/** "5000", "5 000", "5000,50", "5000 Kč" → number; anything else (e.g. "dle dohody") → null, shown as typed. */
+function parseCzk(v: string): number | null {
+  const t = v.replace(/\s|\u00a0/g, '').replace(/kč|czk/gi, '').replace(',', '.');
+  if (!/^-?\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function CellValue({ value, column }: { value: string; column?: string }) {
+  if (column && CZK_COLUMNS.has(column) && value) {
+    const n = parseCzk(value);
+    if (n !== null) return <span className="block text-right tabular-nums">{CZK.format(n)}</span>;
+  }
   if (!/^https?:\/\//i.test(value)) return <>{value}</>;
 
   const Icon =

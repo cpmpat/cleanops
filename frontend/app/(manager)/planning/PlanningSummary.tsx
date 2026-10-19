@@ -2,12 +2,14 @@
 import { useMemo } from 'react';
 import type { PlanningBooking } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Clock, Flame, MessageSquareWarning, UserX } from 'lucide-react';
+import { Brush, Flame, UserX } from 'lucide-react';
 
 const pragueDay = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
 const pragueHour = (iso: string) =>
   Number(new Date(iso).toLocaleTimeString('sv-SE', { timeZone: 'Europe/Prague', hour: '2-digit', hourCycle: 'h23' }));
 const street = (name: string) => name.split(' - ')[0];
+const hhmm = (iso: string) =>
+  new Date(iso).toLocaleTimeString('sv-SE', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 type Attention = {
   id: string;
@@ -17,6 +19,7 @@ type Attention = {
   tone: 'coral' | 'sand' | 'neutral';
   icon: React.ElementType;
   rank: number;
+  at: string;
 };
 
 /** Hour buckets the arrivals chart shows. */
@@ -45,36 +48,35 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
     const firstNoAgent = noAgent
       .map(b => b.checkInTime)
       .sort()[0];
-    const firstNoAgentTime = firstNoAgent
-      ? new Date(firstNoAgent).toLocaleTimeString('sv-SE', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-      : null;
+    const firstNoAgentTime = firstNoAgent ? hhmm(firstNoAgent) : null;
 
-    // Needs attention, most urgent first.
+    // Needs attention: every check-in not processed yet — no agent, or no
+    // cleaner on the turnover before it. Last-minute ones go first and leave
+    // the list like any other once both are set. Owner stays need a cleaner
+    // only (no agent meets the owner).
     const today = pragueDay(new Date().toISOString());
-    const now = Date.now();
     const att: Attention[] = [];
-    for (const b of guests) {
+    for (const b of bookings) {
+      const owner = !!b.isOwnerStay;
+      const noAgent = !owner && !b.checkInAgentId;
+      const noCleaner = !b.assignments.some(a => a.status !== 'REASSIGNED' && a.status !== 'REJECTED')
+        && b.status !== 'COMPLETED' && b.status !== 'IN_PROGRESS';
+      if (!noAgent && !noCleaner) continue;
       const lastMinute = !!b.pmsCreatedAt && pragueDay(b.pmsCreatedAt) === today && pragueDay(b.checkInTime) === today;
-      if (!b.checkInAgentId && b.checkInDeclinedAgentName) {
-        att.push({ id: b.id, unit: street(b.accommodationName), why: `${b.checkInDeclinedAgentName} declined · pick someone else`, tag: 'Declined', tone: 'coral', icon: UserX, rank: 0 });
-      } else if (lastMinute && !b.checkInAgentId) {
-        att.push({ id: b.id, unit: street(b.accommodationName), why: 'Booked today for today · no agent yet', tag: 'Last minute', tone: 'coral', icon: Flame, rank: 1 });
-      } else if (b.checkInAgentId && b.checkInAgentConsent === 'PENDING') {
-        att.push({ id: b.id, unit: street(b.accommodationName), why: `Waiting for ${b.checkInAgentName ?? 'the agent'} to accept`, tag: 'Awaiting', tone: 'sand', icon: Clock, rank: 2 });
-      } else if (b.checkInAgentId && b.checkInAgentNotified && !b.checkInAgentSeenAt && b.checkInAgentAssignedAt) {
-        const mins = Math.round((now - new Date(b.checkInAgentAssignedAt).getTime()) / 60_000);
-        if (mins >= 15) {
-          att.push({ id: b.id, unit: street(b.accommodationName), why: `${b.checkInAgentName ?? 'Agent'} has not seen the change · ${mins} min`, tag: 'Not seen', tone: 'sand', icon: Clock, rank: 3 });
-        }
-      }
-      if (b.legIn?.state === 'IMPOSSIBLE') {
-        att.push({ id: b.id, unit: street(b.accommodationName), why: `${b.checkInAgentName ?? 'Agent'} cannot make it from ${street(b.legIn.fromName)}`, tag: 'Too far', tone: 'coral', icon: AlertTriangle, rank: 1 });
-      }
-      if (b.checkInReport && (b.checkInReport.scores.CLEANLINESS ?? 5) < 3) {
-        att.push({ id: b.id, unit: street(b.accommodationName), why: `Agent report · cleanliness ${b.checkInReport.scores.CLEANLINESS}/5`, tag: 'Report', tone: 'neutral', icon: MessageSquareWarning, rank: 4 });
-      }
+      const missing = [noAgent && 'no agent', noCleaner && 'no cleaner'].filter(Boolean).join(' · ');
+      const declined = noAgent && b.checkInDeclinedAgentName ? ` · ${b.checkInDeclinedAgentName} declined` : '';
+      att.push({
+        id: b.id,
+        unit: street(b.accommodationName),
+        why: `${hhmm(b.checkInTime)} · ${missing}${declined}`,
+        tag: lastMinute ? 'Last minute' : noAgent && noCleaner ? 'Both missing' : noAgent ? 'No agent' : 'No cleaner',
+        tone: lastMinute || (noAgent && noCleaner) ? 'coral' : 'sand',
+        icon: lastMinute ? Flame : noAgent ? UserX : Brush,
+        rank: lastMinute ? 0 : noAgent && noCleaner ? 1 : 2,
+        at: b.checkInTime,
+      });
     }
-    att.sort((a, b) => a.rank - b.rank);
+    att.sort((a, b) => a.rank - b.rank || a.at.localeCompare(b.at));
 
     // Arrivals by hour, with / without agent.
     const buckets = BUCKETS.map(k => {
@@ -109,7 +111,7 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
   return (
     <div className="space-y-3">
       <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
-        <Kpi label="Check-ins" value={s.total} unit="in range" chip={s.owner ? `${s.owner} owner stay${s.owner === 1 ? '' : 's'}` : null} chipTone="bg-accent-soft text-accent" />
+        <Kpi label="Check-ins" value={s.total} unit="in view" chip={s.owner ? `${s.owner} owner stay${s.owner === 1 ? '' : 's'}` : null} chipTone="bg-accent-soft text-accent" />
         <Kpi label="Without agent" value={s.noAgent} unit="check-ins" chip={s.firstNoAgentTime ? `first at ${s.firstNoAgentTime}` : null} chipTone="bg-coral-soft text-coral-deep" />
         <Kpi label="Time not confirmed" value={s.assumed} unit="assumed" chip={s.assumed ? 'pick the time to confirm' : null} chipTone="bg-sand-soft text-sand-deep" />
         <Kpi label="Agent reports" value={s.reports} unit="received" chip={s.lowReports ? `${s.lowReports} cleanliness below 3` : null} chipTone="bg-coral-soft text-coral-deep" />
@@ -117,9 +119,13 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
 
       <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
         <section className="bg-white border border-surface-border rounded-2xl p-4 flex flex-col gap-2.5">
-          <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Needs attention</h2>
-          {s.att.length === 0 && <p className="text-sm text-ink-muted py-2">Nothing pressing in this range.</p>}
-          {s.att.slice(0, 5).map((a, i) => (
+          <h2 className="flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">
+            Needs attention
+            {s.att.length > 0 && <span className="rounded-full bg-coral text-white px-2 py-0.5 text-[10px] tracking-normal">{s.att.length}</span>}
+          </h2>
+          {s.att.length === 0 && <p className="text-sm text-accent py-2">Everything in view has an agent and a cleaner.</p>}
+          <div className="flex flex-col gap-1 max-h-[232px] overflow-y-auto -mr-2 pr-2">
+          {s.att.map((a, i) => (
             <button key={`${a.id}-${i}`} type="button" onClick={() => onPick(a.id)} className="flex items-center gap-2.5 text-left rounded-xl -mx-1.5 px-1.5 py-1 hover:bg-surface transition">
               <span className={cn('w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0', tone[a.tone])}>
                 <a.icon size={14} />
@@ -128,10 +134,10 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
                 <span className="text-[13px] font-semibold text-ink truncate">{a.unit}</span>
                 <span className="text-[11.5px] text-ink-muted truncate">{a.why}</span>
               </span>
-              <span className={cn('rounded-md px-1.5 py-0.5 text-[11px] font-semibold flex-shrink-0', a.tone === 'coral' && a.rank <= 1 ? 'bg-coral text-white' : tone[a.tone])}>{a.tag}</span>
+              <span className={cn('rounded-md px-1.5 py-0.5 text-[11px] font-semibold flex-shrink-0', a.rank === 0 ? 'bg-coral text-white' : tone[a.tone])}>{a.tag}</span>
             </button>
           ))}
-          {s.att.length > 5 && <p className="text-[11.5px] text-ink-muted text-center">+ {s.att.length - 5} more</p>}
+          </div>
         </section>
 
         <section className="bg-white border border-surface-border rounded-2xl p-4 flex flex-col gap-2.5">
@@ -165,7 +171,7 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
         </section>
 
         <section className="bg-white border border-surface-border rounded-2xl p-4 flex flex-col gap-3">
-          <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Agents in this range</h2>
+          <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Agents in view</h2>
           {s.agents.length === 0 && <p className="text-sm text-ink-muted py-2">No agent assigned yet.</p>}
           {s.agents.slice(0, 5).map(a => (
             <div key={a.name} className="flex flex-col gap-1.5">

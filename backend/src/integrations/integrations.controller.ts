@@ -142,6 +142,22 @@ export class IntegrationsController {
     return this.syncService.updateSetupRequests(req.tenantId!, bookingId, body ?? {});
   }
 
+  @Patch('planning/guest-phone/:bookingId')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Set or clear the guest phone of a booking (desk), then push it to Avantio',
+    description:
+      'Body: { phone: string | null }. Saved locally first (the check-in agent sees it at once), ' +
+      'then sent to Avantio. A refused push is returned as pushError, not as an error.',
+  })
+  updateGuestPhone(
+    @Req() req: TenantRequest,
+    @Param('bookingId') bookingId: string,
+    @Body() body: { phone?: string | null },
+  ) {
+    return this.syncService.updateGuestPhone(req.tenantId!, bookingId, body?.phone ?? null, req.userId);
+  }
+
   @Get('planning/checkin-agent/route')
   @Roles(...PLANNING_ROLES)
   @ApiOperation({
