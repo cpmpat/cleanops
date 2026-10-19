@@ -1,12 +1,12 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { integrations, turnovers as turnoversApi, type PlanningBooking, type User } from '@/lib/api';
+import { integrations, turnovers as turnoversApi, type PlanningBooking, type User, type AgentOptionsResponse, type AgentOption } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
 import { useSocket } from '@/lib/socket';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
@@ -119,6 +119,42 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [selectedCleaner, setSelectedCleaner] = useState('');
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState('');
+
+  // ── Check-in agent picker ──
+  const [agentFor, setAgentFor] = useState<PlanningBooking | null>(null);
+  const [agentData, setAgentData] = useState<AgentOptionsResponse | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentError, setAgentError] = useState('');
+  // An agent who has not declared the arrival: picked once, confirmed on the second click.
+  const [agentOverride, setAgentOverride] = useState<AgentOption | null>(null);
+
+  function openAgentPicker(b: PlanningBooking) {
+    setAgentFor(b);
+    setAgentData(null);
+    setAgentError('');
+    setAgentOverride(null);
+    setAgentLoading(true);
+    integrations.planning.agentOptions(b.id)
+      .then(setAgentData)
+      .catch(e => setAgentError(e?.message ?? 'Could not load agents'))
+      .finally(() => setAgentLoading(false));
+  }
+
+  async function saveAgent(agentId: string | null, override = false) {
+    if (!agentFor) return;
+    setAgentBusy(true);
+    setAgentError('');
+    try {
+      const r = await integrations.planning.setAgent(agentFor.id, { agentId, override });
+      setBookings(prev => prev.map(x => x.id === agentFor.id ? { ...x, ...r } : x));
+      setAgentFor(null);
+    } catch (e: any) {
+      setAgentError(e?.message ?? 'Could not save');
+    } finally {
+      setAgentBusy(false);
+    }
+  }
 
   // Everyone who can open Planning may assign and reassign (MANAGER, ADMIN,
   // FRONT_DESK_MANAGER, FRONT_DESK — PLANNING_ROLES on the API).
@@ -725,6 +761,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   </div>
 
                   {/* Assignees */}
+                  <div className="flex flex-col items-end gap-1 min-w-0">
                   <div className="flex items-center gap-2 justify-end min-w-0">
                     {b.assignments.length === 0 ? (
                       b.turnoverId && !done
@@ -761,6 +798,25 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         <UserPlus size={15} />
                       </button>
                     )}
+                  </div>
+                  {/* Check-in agent: who meets the guest. Only on the Check-In tab. */}
+                  {!byCheckOut && mayAssign && !b.isOwnerStay && (
+                    <button
+                      onClick={() => openAgentPicker(b)}
+                      title={b.checkInAgentOverride ? 'Agent had not declared this arrival (override)' : 'Check-in agent'}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition max-w-full',
+                        b.checkInAgentName
+                          ? b.checkInAgentOverride
+                            ? 'border-amber-300 bg-amber-50 text-amber-900 font-medium'
+                            : 'border-surface-border bg-surface-sunken text-ink-soft font-medium'
+                          : 'border-dashed border-surface-border text-ink-faint hover:text-accent hover:border-accent',
+                      )}
+                    >
+                      <UserCheck size={11} className="flex-shrink-0" />
+                      <span className="truncate">{b.checkInAgentName ? b.checkInAgentName.split(' ')[0] : 'Agent'}</span>
+                    </button>
+                  )}
                   </div>
                 </div>
               );
@@ -870,6 +926,106 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
               <UserPlus size={15} />
               {assignBusy ? 'Saving...' : reassigningUserId ? 'Confirm Reassignment' : 'Assign'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Check-in agent modal ── */}
+      {agentFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setAgentFor(null)} />
+          <div className="relative bg-white rounded-2xl shadow-modal w-full max-w-sm mx-4 p-6 animate-scale-in">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-ink">Check-in agent</h3>
+                <p className="text-xs text-ink-muted mt-0.5 truncate max-w-[240px]">
+                  {agentFor.accommodationName}
+                  {agentData && ` · ${agentData.day} ${agentData.arrival}`}
+                </p>
+              </div>
+              <button onClick={() => setAgentFor(null)} className="p-1.5 rounded-lg hover:bg-surface-sunken text-ink-muted">
+                <X size={16} />
+              </button>
+            </div>
+
+            {agentData?.arrivalAssumed && (
+              <p className="mb-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                Arrival time not confirmed (assumed {agentData.arrival}). Agents who declared anything that day are listed as a fit.
+              </p>
+            )}
+
+            {agentLoading && <p className="text-sm text-ink-faint py-4">Loading…</p>}
+
+            {agentData && (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {agentData.options.length === 0 && (
+                  <p className="text-sm text-ink-faint py-2">No active agents.</p>
+                )}
+                {agentData.options.map(o => {
+                  const current = o.id === agentData.currentAgentId;
+                  const note =
+                    o.fit === 'AVAILABLE' ? (o.declared.join(', ') || 'Available')
+                    : o.fit === 'TIME_UNCONFIRMED' ? `Time not confirmed${o.declared.length ? ` · ${o.declared.join(', ')}` : ''}`
+                    : o.fit === 'OUTSIDE_HOURS' ? `Not available · declared ${o.declared.join(', ') || 'other hours'}`
+                    : 'Not available · nothing declared';
+                  return (
+                    <button
+                      key={o.id}
+                      disabled={agentBusy || current}
+                      onClick={() => (o.eligible ? void saveAgent(o.id) : setAgentOverride(o))}
+                      className={cn(
+                        'w-full text-left flex items-center gap-2 rounded-xl px-3 py-2 border transition disabled:opacity-60',
+                        current ? 'border-accent bg-accent-soft' : o.eligible ? 'border-surface-border hover:bg-surface-sunken' : 'border-surface-border bg-surface-sunken/50 hover:bg-surface-sunken',
+                        agentOverride?.id === o.id && 'border-amber-400 bg-amber-50',
+                      )}
+                    >
+                      <div className={cn('w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold', o.eligible ? 'bg-ink text-white' : 'bg-surface-border text-ink-muted')}>
+                        {o.name[0]}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn('text-sm font-medium truncate', o.eligible ? 'text-ink' : 'text-ink-muted')}>{o.name}</p>
+                        <p className={cn('text-[11px] truncate', o.fit === 'TIME_UNCONFIRMED' ? 'text-amber-700' : 'text-ink-faint')}>{note}</p>
+                      </div>
+                      {current && <span className="text-[10px] text-accent font-semibold">current</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {agentOverride && (
+              <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                <p className="text-xs text-amber-900">
+                  <strong>{agentOverride.name}</strong> has not declared this arrival. Assign only if you have agreed it with them. This is recorded as an override.
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => void saveAgent(agentOverride.id, true)}
+                    disabled={agentBusy}
+                    className="flex-1 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition disabled:opacity-50"
+                  >
+                    {agentBusy ? 'Saving…' : 'Assign anyway'}
+                  </button>
+                  <button onClick={() => setAgentOverride(null)} className="px-3 py-2 rounded-lg text-xs text-ink-muted hover:bg-white transition">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {agentError && (
+              <p className="mt-3 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{agentError}</p>
+            )}
+
+            {agentFor.checkInAgentId && (
+              <button
+                onClick={() => void saveAgent(null)}
+                disabled={agentBusy}
+                className="mt-3 w-full py-2.5 rounded-xl border border-surface-border text-sm text-ink-soft hover:bg-surface-sunken transition disabled:opacity-50"
+              >
+                Remove agent
+              </button>
+            )}
           </div>
         </div>
       )}

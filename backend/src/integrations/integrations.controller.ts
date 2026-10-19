@@ -6,6 +6,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { AuthGuard, RolesGuard, Roles } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { BookingSyncService } from './booking-sync.service';
+import { CheckInAgentService } from './checkin-agent.service';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { PmsTenantConfig } from '../common/interfaces/pms-adapter.interface';
 import { PrismaService } from '../common/prisma.service';
@@ -20,6 +21,7 @@ import { PLANNING_ROLES } from '../common/roles';
 export class IntegrationsController {
   constructor(
     private syncService: BookingSyncService,
+    private checkInAgents: CheckInAgentService,
     private avantioAdapter: AvantioAdapter,
     private prisma: PrismaService,
   ) {}
@@ -138,6 +140,42 @@ export class IntegrationsController {
     @Body() body: { needsCrib?: boolean; separateBeds?: boolean },
   ) {
     return this.syncService.updateSetupRequests(req.tenantId!, bookingId, body ?? {});
+  }
+
+  @Get('planning/checkin-agent/:bookingId/options')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Check-in agents for one booking, available ones first',
+    description:
+      'Each active agent with how well their declared availability fits this arrival ' +
+      '(AVAILABLE, TIME_UNCONFIRMED, OUTSIDE_HOURS, NOT_DECLARED). The unavailable ones ' +
+      'are still returned so the desk can override.',
+  })
+  checkInAgentOptions(@Req() req: TenantRequest, @Param('bookingId') bookingId: string) {
+    return this.checkInAgents.options(req.tenantId!, bookingId);
+  }
+
+  @Patch('planning/checkin-agent/:bookingId')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Set or clear the check-in agent of a booking',
+    description:
+      'Body: { agentId: string | null, override?: boolean }. An agent who has not declared ' +
+      'the arrival is refused (409 AGENT_NOT_AVAILABLE) unless override is true. Local to ' +
+      'CleanOps, never sent to the PMS. The change and its audit row are one transaction.',
+  })
+  setCheckInAgent(
+    @Req() req: TenantRequest,
+    @Param('bookingId') bookingId: string,
+    @Body() body: { agentId: string | null; override?: boolean },
+  ) {
+    if (body?.agentId !== null && typeof body?.agentId !== 'string') {
+      throw new BadRequestException('agentId must be a user id or null');
+    }
+    return this.checkInAgents.setAgent(req.tenantId!, bookingId, req.userId!, {
+      agentId: body.agentId,
+      override: body.override === true,
+    });
   }
 
   @Get('planning/cleaners')
