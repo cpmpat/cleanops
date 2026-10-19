@@ -9,6 +9,7 @@ import {
   notes as notesApi,
   conversations as conversationsApi,
   turnovers as turnoversApi,
+  checkins as checkinsApi,
   ensureFreshSession,
 } from '@/lib/api';
 import { useSocket, useRefreshOnReconnect } from '@/lib/socket';
@@ -22,6 +23,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   const [unread, setUnread] = useState(0);
   const [unconfirmedNotes, setUnconfirmedNotes] = useState(0);
   const [todayArrivals, setTodayArrivals] = useState(0);
+  const [pendingCheckIns, setPendingCheckIns] = useState(0);
 
   useEffect(() => { loadFromStorage(); }, []);
 
@@ -58,6 +60,10 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
       // have no Availability. Everything else (inbox, chats, help, settings)
       // is shared.
       const CLEANING_SCREENS = ['/cleanings', '/calendar', '/mine'];
+      if (user.role !== 'AGENT' && pathname?.startsWith('/checkins')) {
+        router.replace('/cleanings');
+        return;
+      }
       if (user.role === 'AGENT' && CLEANING_SCREENS.some(p => pathname === p || pathname?.startsWith(p + '/'))) {
         router.replace('/availability');
         return;
@@ -109,8 +115,12 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
       (threads.status === 'fulfilled' ? threads.value.count : 0) +
       (changes.status === 'fulfilled' ? changes.value.count : 0),
     );
-    turnoversApi.todayArrivalCount().then(r => setTodayArrivals(r.count)).catch(() => {});
-  }, []);
+    if (user?.role === 'AGENT') {
+      checkinsApi.count().then(r => setPendingCheckIns(r.count)).catch(() => {});
+    } else {
+      turnoversApi.todayArrivalCount().then(r => setTodayArrivals(r.count)).catch(() => {});
+    }
+  }, [user?.role]);
 
   useEffect(() => { loadBadges(); }, [loadBadges]);
   useSocket({
@@ -119,6 +129,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
     'event:updated': loadBadges,
     'event:cancelled': loadBadges,
     'event:created': loadBadges,
+    'checkin:changed': loadBadges,
   });
   useRefreshOnReconnect(loadBadges);
 
@@ -154,6 +165,7 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
         unconfirmedNotes={unconfirmedNotes}
         todayArrivals={todayArrivals}
         role={user.role}
+        pendingCheckIns={pendingCheckIns}
       />
     </div>
   );

@@ -359,6 +359,13 @@ model Booking {
   /// True when the desk picked an agent who had not declared availability
   /// for the arrival (an override). Cleared when the assignment changes.
   checkInAgentOverride     Boolean   @default(false)
+  /// Only an override needs the agent's yes. PENDING until they accept in the
+  /// app (ACCEPTED) or the desk records a phone call (PHONE); a decline
+  /// unassigns the booking instead.
+  checkInAgentConsent      CheckInConsent @default(NOT_REQUIRED)
+  /// Who said no and when, so the desk sees it until someone else is assigned.
+  checkInDeclinedAgentName String?
+  checkInDeclinedAt        DateTime?
 
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
@@ -368,6 +375,7 @@ model Booking {
   checkInAgent      User?          @relation("BookingCheckInAgent", fields: [checkInAgentId], references: [id], onDelete: SetNull)
   cleaning          Cleaning?      // 1:1 (a booking has at most one cleaning)
   turnoversAsFrom   Turnover[]            @relation("TurnoverFromBooking")
+  checkInChanges    CheckInAssignmentChange[]
   turnoversAsTo     Turnover[]            @relation("TurnoverToBooking")
   incidents         Incident[]
 
@@ -2173,4 +2181,78 @@ model TaskNotification {
   @@index([userId, readAt])
   @@index([tenantId, createdAt])
   @@map("task_notifications")
+}
+
+
+// ─── CHECK-IN AGENT: change log, notification, consent ────────────────────────
+
+enum CheckInChangeKind {
+  ASSIGNED
+  REASSIGNED
+  UNASSIGNED
+}
+
+enum CheckInConsent {
+  NOT_REQUIRED
+  PENDING
+  ACCEPTED
+  PHONE
+}
+
+enum CheckInResponse {
+  /// "Got it" on a plain assignment, or on losing one.
+  ACK
+  ACCEPT
+  DECLINE
+  /// The desk recorded a phone agreement on the agent's behalf.
+  PHONE
+}
+
+/// One desk decision about a booking's check-in agent. Every change is kept;
+/// a newer change marks the older unanswered ones superseded so an agent is
+/// only ever shown the net result.
+model CheckInAssignmentChange {
+  id           String            @id @default(uuid())
+  tenantId     String
+  bookingId    String
+  kind         CheckInChangeKind
+  fromAgentId  String?
+  toAgentId    String?
+  changedById  String
+  /// The agent had not declared this arrival; needs their consent.
+  override     Boolean           @default(false)
+  /// Unit, arrival time and time source at the moment of the change. Never the check-in link.
+  snapshot     Json
+  changedAt    DateTime          @default(now())
+  supersededAt DateTime?
+
+  booking    Booking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  recipients CheckInChangeRecipient[]
+
+  @@index([tenantId, bookingId, changedAt])
+  @@map("checkin_assignment_changes")
+}
+
+/// Who has to see a change. The gaining agent, and the agent who loses the job
+/// (who would otherwise still turn up).
+model CheckInChangeRecipient {
+  id           String           @id @default(uuid())
+  tenantId     String
+  changeId     String
+  userId       String
+  /// GAINING | LOSING
+  role         String
+  createdAt    DateTime         @default(now())
+  ackedAt      DateTime?
+  response     CheckInResponse?
+  /// APP | DESK
+  via          String?
+  /// Who pressed the button: the agent, or the desk user for a phone agreement.
+  recordedById String?
+
+  change CheckInAssignmentChange @relation(fields: [changeId], references: [id], onDelete: Cascade)
+
+  @@unique([changeId, userId])
+  @@index([userId, ackedAt])
+  @@map("checkin_change_recipients")
 }

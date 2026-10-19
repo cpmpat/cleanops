@@ -221,6 +221,14 @@ export interface PlanningBooking {
   /** Picked although they had not declared the arrival. */
   checkInAgentOverride?: boolean;
   checkInAgentAssignedAt?: string | null;
+  /** Only an override needs the agent's yes: PENDING until accepted in the app or agreed by phone. */
+  checkInAgentConsent?: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' | 'PHONE';
+  checkInDeclinedAgentName?: string | null;
+  checkInDeclinedAt?: string | null;
+  /** The agent was told about their latest change (false for assignments made before notifications existed). */
+  checkInAgentNotified?: boolean;
+  /** When they answered it; null while unseen. */
+  checkInAgentSeenAt?: string | null;
   timeSlot?: string;
   numAdults: number;
   numChildren: number;
@@ -1321,6 +1329,9 @@ export const integrations = {
         checkInAgentAssignedAt: string | null;
         checkInAgentOverride: boolean;
       }>(`/integrations/planning/checkin-agent/${bookingId}`, body),
+    /** The agent agreed to an override on the phone. */
+    agreeByPhone: (bookingId: string) =>
+      post<{ ok: boolean }>(`/integrations/planning/checkin-agent/${bookingId}/consent-by-phone`),
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
@@ -2117,6 +2128,49 @@ export interface AvailabilityBoard {
   blocks: AvailabilityBlock[];
   arrivals: AvailabilityBoardArrival[];
 }
+
+export interface MyCheckIn {
+  id: string;
+  bookingRef: string;
+  accommodationName: string;
+  day: string;
+  time: string;
+  arrivalAssumed: boolean;
+  numAdults: number;
+  numChildren: number;
+  awaitingMyAnswer: boolean;
+  /** Guest registration link — shown only to the assigned agent. */
+  checkInLinkUrl: string | null;
+}
+
+export interface CheckInPendingChange {
+  id: string;
+  role: 'GAINING' | 'LOSING';
+  kind: 'ASSIGNED' | 'REASSIGNED' | 'UNASSIGNED';
+  override: boolean;
+  changedAt: string;
+  bookingId: string;
+  bookingRef: string | null;
+  accommodationName: string | null;
+  day: string | null;
+  time: string | null;
+  arrivalAssumed: boolean;
+  answers: Array<'ACK' | 'ACCEPT' | 'DECLINE'>;
+}
+
+export interface MyCheckIns {
+  today: string;
+  items: MyCheckIn[];
+  pending: CheckInPendingChange[];
+}
+
+/** The check-in agent's own view. */
+export const checkins = {
+  mine: () => get<MyCheckIns>('/checkins/mine'),
+  count: () => get<{ count: number }>('/checkins/mine/count'),
+  respond: (recipientId: string, response: 'ACK' | 'ACCEPT' | 'DECLINE') =>
+    post<{ ok: boolean }>(`/checkins/changes/${recipientId}/respond`, { response }),
+};
 
 export const availability = {
   mine: () => get<MyAvailability>('/availability/mine'),

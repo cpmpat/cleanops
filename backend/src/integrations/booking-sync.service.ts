@@ -393,6 +393,19 @@ export class BookingSyncService {
       : [];
     const cdmByPmsId = new Map(cdmRows.map((c) => [c.idAvantio, c]));
 
+    // Has the current check-in agent seen (or answered) their latest change?
+    const ackRows = bookings.length
+      ? await this.prisma.checkInChangeRecipient.findMany({
+          where: {
+            tenantId,
+            role: 'GAINING',
+            change: { bookingId: { in: bookings.map((b: any) => b.id) }, supersededAt: null },
+          },
+          select: { userId: true, ackedAt: true, change: { select: { bookingId: true, changedAt: true } } },
+        })
+      : [];
+    const ackByBooking = new Map(ackRows.map((r) => [r.change.bookingId, r]));
+
     const rows = bookings.map((b: any) => {
       const cdm = cdmByPmsId.get((b.property as any)?.pmsPropertyId) ?? null;
       const turnover = (byCheckOut ? b.turnoversAsFrom?.[0] : b.turnoversAsTo?.[0]) ?? null;
@@ -424,6 +437,18 @@ export class BookingSyncService {
       checkInAgentName: b.checkInAgent?.name ?? null,
       checkInAgentOverride: b.checkInAgentOverride ?? false,
       checkInAgentAssignedAt: b.checkInAgentAssignedAt ?? null,
+      checkInAgentConsent: b.checkInAgentConsent ?? 'NOT_REQUIRED',
+      checkInDeclinedAgentName: b.checkInDeclinedAgentName ?? null,
+      checkInDeclinedAt: b.checkInDeclinedAt ?? null,
+      /** Null when nothing was sent (no agent, or assigned before notifications existed). */
+      checkInAgentSeenAt: (() => {
+        const a = ackByBooking.get(b.id);
+        return a && a.userId === b.checkInAgentId ? a.ackedAt : null;
+      })(),
+      checkInAgentNotified: (() => {
+        const a = ackByBooking.get(b.id);
+        return !!a && a.userId === b.checkInAgentId;
+      })(),
       accommodationStandard: cdm?.accommodationStandard ?? null,
       checkInType: cdm?.checkInType ?? null,
       checkInMethod: cdm?.checkInMethod ?? null,

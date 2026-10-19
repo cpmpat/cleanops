@@ -156,6 +156,24 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     }
   }
 
+  async function agreedByPhone() {
+    if (!agentFor) return;
+    setAgentBusy(true);
+    setAgentError('');
+    try {
+      await integrations.planning.agreeByPhone(agentFor.id);
+      const now = new Date().toISOString();
+      setBookings(prev => prev.map(x => x.id === agentFor.id
+        ? { ...x, checkInAgentConsent: 'PHONE' as const, checkInAgentSeenAt: now }
+        : x));
+      setAgentFor(null);
+    } catch (e: any) {
+      setAgentError(e?.message ?? 'Could not save');
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
   // Everyone who can open Planning may assign and reassign (MANAGER, ADMIN,
   // FRONT_DESK_MANAGER, FRONT_DESK — PLANNING_ROLES on the API).
   const mayAssign = true;
@@ -198,6 +216,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   useSocket({
     'event:updated': () => { if (loaded) void load(undefined, true); },
     'event:cancelled': () => { if (loaded) void load(undefined, true); },
+    // An agent answered, or another desk user changed an agent.
+    'checkin:changed': () => { if (loaded) void load(undefined, true); },
   });
 
   function pickQuick(w: QuickWindow) {
@@ -801,23 +821,31 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     )}
                   </div>
                   {/* Check-in agent: who meets the guest. Only on the Check-In tab. */}
-                  {!byCheckOut && mayAssign && !b.isOwnerStay && (
-                    <button
-                      onClick={() => openAgentPicker(b)}
-                      title={b.checkInAgentOverride ? 'Agent had not declared this arrival (override)' : 'Check-in agent'}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition max-w-full',
-                        b.checkInAgentName
-                          ? b.checkInAgentOverride
-                            ? 'border-amber-300 bg-amber-50 text-amber-900 font-medium'
-                            : 'border-surface-border bg-surface-sunken text-ink-soft font-medium'
-                          : 'border-dashed border-surface-border text-ink-faint hover:text-accent hover:border-accent',
-                      )}
-                    >
-                      <UserCheck size={11} className="flex-shrink-0" />
-                      <span className="truncate">{b.checkInAgentName ? b.checkInAgentName.split(' ')[0] : 'Agent'}</span>
-                    </button>
-                  )}
+                  {!byCheckOut && mayAssign && !b.isOwnerStay && (() => {
+                    const a = agentChipState(b);
+                    return (
+                      <button
+                        onClick={() => openAgentPicker(b)}
+                        title={a.title}
+                        className={cn(
+                          'relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition max-w-full',
+                          a.kind === 'awaiting' && 'border-amber-300 bg-amber-50 text-amber-900 font-medium',
+                          a.kind === 'set' && 'border-surface-border bg-surface-sunken text-ink-soft font-medium',
+                          a.kind === 'declined' && 'border-dashed border-red-300 text-red-600 font-medium',
+                          a.kind === 'empty' && 'border-dashed border-surface-border text-ink-faint hover:text-accent hover:border-accent',
+                        )}
+                      >
+                        <UserCheck size={11} className="flex-shrink-0" />
+                        <span className="truncate">{a.label}</span>
+                        {a.dot && (
+                          <span className={cn(
+                            'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white',
+                            a.dot === 'red' ? 'bg-red-500 animate-pulse' : 'bg-amber-400',
+                          )} />
+                        )}
+                      </button>
+                    );
+                  })()}
                   </div>
                 </div>
               );
@@ -949,6 +977,28 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
               </button>
             </div>
 
+            {agentFor.checkInAgentId && agentFor.checkInAgentConsent === 'PENDING' && (
+              <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                <p className="text-xs text-amber-900">
+                  Waiting for <strong>{agentFor.checkInAgentName}</strong> to accept in the app — they had not declared this arrival.
+                </p>
+                <button
+                  onClick={() => void agreedByPhone()}
+                  disabled={agentBusy}
+                  className="mt-2 w-full py-2 bg-white border border-amber-300 text-amber-900 rounded-lg text-xs font-semibold hover:bg-amber-100 transition disabled:opacity-50"
+                >
+                  Agreed by phone
+                </button>
+              </div>
+            )}
+
+            {!agentFor.checkInAgentId && agentFor.checkInDeclinedAgentName && (
+              <p className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                {agentFor.checkInDeclinedAgentName} declined
+                {agentFor.checkInDeclinedAt && ` at ${formatTime(agentFor.checkInDeclinedAt)}`}. Pick someone else.
+              </p>
+            )}
+
             {agentData?.arrivalAssumed && (
               <p className="mb-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                 Arrival time not confirmed (assumed {agentData.arrival}). Agents who declared anything that day are listed as a fit.
@@ -1032,6 +1082,47 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
       )}
     </div>
   );
+}
+
+/**
+ * What the check-in agent chip says. An unseen change gets an amber dot; one
+ * still unseen 15 minutes after it was made, with the guest due within three
+ * hours, gets a red one — the desk should phone.
+ */
+function agentChipState(b: PlanningBooking): {
+  kind: 'empty' | 'declined' | 'awaiting' | 'set';
+  label: string;
+  title: string;
+  dot: null | 'amber' | 'red';
+} {
+  const first = (n?: string | null) => (n ?? '').split(' ')[0];
+  if (!b.checkInAgentId) {
+    return b.checkInDeclinedAgentName
+      ? { kind: 'declined', label: `${first(b.checkInDeclinedAgentName)} ✕`, title: `${b.checkInDeclinedAgentName} declined — pick someone else`, dot: 'red' }
+      : { kind: 'empty', label: 'Agent', title: 'Check-in agent', dot: null };
+  }
+  const awaiting = b.checkInAgentConsent === 'PENDING';
+  const unseen = !!b.checkInAgentNotified && !b.checkInAgentSeenAt;
+  const changedAt = b.checkInAgentAssignedAt ? new Date(b.checkInAgentAssignedAt).getTime() : null;
+  const now = Date.now();
+  const urgent =
+    (awaiting || unseen) &&
+    changedAt !== null &&
+    now - changedAt > 15 * 60_000 &&
+    new Date(b.checkInTime).getTime() - now < 3 * 3600_000;
+  const name = b.checkInAgentName ?? '';
+  return {
+    kind: awaiting ? 'awaiting' : 'set',
+    label: awaiting ? `${first(name)} ?` : first(name),
+    title: awaiting
+      ? `Waiting for ${name} to accept (override)`
+      : unseen
+        ? `${name} has not seen this yet`
+        : b.checkInAgentConsent === 'PHONE'
+          ? `${name} — agreed by phone`
+          : `${name}`,
+    dot: urgent ? 'red' : awaiting || unseen ? 'amber' : null,
+  };
 }
 
 /** A copy of `obj` without `key`. */

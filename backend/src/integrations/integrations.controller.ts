@@ -178,6 +178,16 @@ export class IntegrationsController {
     });
   }
 
+  @Post('planning/checkin-agent/:bookingId/consent-by-phone')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Record that the agent agreed to an override by phone',
+    description: 'Only while the booking is waiting for the agent\'s answer. Logged as the desk user\'s act.',
+  })
+  agreeByPhone(@Req() req: TenantRequest, @Param('bookingId') bookingId: string) {
+    return this.checkInAgents.agreeByPhone(req.tenantId!, bookingId, req.userId!);
+  }
+
   @Get('planning/cleaners')
   @Roles(...PLANNING_ROLES)
   @ApiOperation({

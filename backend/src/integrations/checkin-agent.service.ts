@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { AuditCategory, BookingStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
-import { timeInAppZone, todayInAppZone } from '../common/time';
+import { CleanOpsGateway } from '../websocket/websocket.module';
+import { startOfDayInAppZone, timeInAppZone, todayInAppZone } from '../common/time';
 import { addDays } from '../availability/availability.service';
 
 /**
@@ -85,9 +86,25 @@ function hhmm(minute: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+export type RecipientRole = 'GAINING' | 'LOSING';
+export type AgentResponse = 'ACK' | 'ACCEPT' | 'DECLINE';
+
+/**
+ * What an agent may answer to a change. Losing a job, or getting one they
+ * declared for, is "got it". Getting one they had NOT declared (an override)
+ * is a real question: accept or decline.
+ */
+export function allowedResponses(role: RecipientRole, override: boolean): AgentResponse[] {
+  if (role === 'GAINING' && override) return ['ACCEPT', 'DECLINE'];
+  return ['ACK'];
+}
+
 @Injectable()
 export class CheckInAgentService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private gateway: CleanOpsGateway,
+  ) {}
 
   /** Active agents for one booking's arrival, available ones first. */
   async options(tenantId: string, bookingId: string) {
@@ -138,7 +155,10 @@ export class CheckInAgentService {
    * Set or clear the booking's check-in agent. The server decides whether the
    * agent may be picked: an agent who did not declare the arrival needs
    * `override: true`, so the dropdown is a convenience, not the rule.
-   * The change and its audit row are one transaction.
+   *
+   * One transaction writes the booking, the change record, who has to see it
+   * and the audit row. Earlier unanswered changes for the same booking are
+   * marked superseded so an agent only ever sees the net result.
    */
   async setAgent(
     tenantId: string,
@@ -187,6 +207,7 @@ export class CheckInAgentService {
 
     const previous = booking.checkInAgent ?? null;
     const now = new Date();
+    const notify: string[] = [];
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.booking.update({
@@ -196,12 +217,61 @@ export class CheckInAgentService {
           checkInAgentAssignedById: agentId ? actorId : null,
           checkInAgentAssignedAt: agentId ? now : null,
           checkInAgentOverride: override,
+          checkInAgentConsent: (override ? 'PENDING' : 'NOT_REQUIRED') as any,
+          checkInDeclinedAgentName: null,
+          checkInDeclinedAt: null,
         },
         select: {
           id: true, bookingRef: true, accommodationName: true, checkInTime: true,
           checkInAgentId: true, checkInAgentAssignedAt: true, checkInAgentOverride: true,
         },
       });
+
+      // The agent who loses the job is told only if they were ever told they had it.
+      const losing = previous
+        ? await tx.checkInChangeRecipient.findFirst({
+            where: {
+              tenantId, userId: previous.id, role: 'GAINING',
+              change: { bookingId: booking.id },
+            },
+            select: { id: true },
+          })
+        : null;
+
+      await tx.checkInAssignmentChange.updateMany({
+        where: { tenantId, bookingId: booking.id, supersededAt: null },
+        data: { supersededAt: now },
+      });
+
+      const kind = !agentId ? 'UNASSIGNED' : previous ? 'REASSIGNED' : 'ASSIGNED';
+      const recipients: Array<{ tenantId: string; userId: string; role: RecipientRole }> = [];
+      if (agent) recipients.push({ tenantId, userId: agent.id, role: 'GAINING' });
+      if (previous && losing) recipients.push({ tenantId, userId: previous.id, role: 'LOSING' });
+
+      // Never the check-in link: it is a bearer token to guest registration.
+      const snapshot = {
+        bookingRef: booking.bookingRef,
+        accommodationName: booking.accommodationName,
+        arrival: booking.checkInTime.toISOString(),
+        arrivalAssumed: booking.checkInSource === 'FALLBACK',
+        fit,
+      };
+
+      await tx.checkInAssignmentChange.create({
+        data: {
+          tenantId,
+          bookingId: booking.id,
+          kind: kind as any,
+          fromAgentId: previous?.id ?? null,
+          toAgentId: agent?.id ?? null,
+          changedById: actorId,
+          override,
+          snapshot: snapshot as any,
+          changedAt: now,
+          recipients: { create: recipients as any },
+        },
+      });
+      notify.push(...recipients.map((r) => r.userId));
 
       await tx.auditEvent.create({
         data: {
@@ -215,7 +285,6 @@ export class CheckInAgentService {
           actorId,
           targetType: 'Booking',
           targetId: booking.id,
-          // Never the check-in link: it is a bearer token to guest registration.
           metadata: {
             bookingRef: booking.bookingRef,
             accommodationName: booking.accommodationName,
@@ -227,13 +296,221 @@ export class CheckInAgentService {
             toAgentName: agent?.name ?? null,
             fit,
             override,
+            notified: recipients.map((r) => ({ userId: r.userId, role: r.role })),
           } as any,
         },
       });
       return row;
     });
 
+    this.nudge(tenantId, booking.id, notify);
     return this.shape(updated, agent?.name ?? null);
+  }
+
+  /**
+   * The desk records that an override was agreed on the phone. Same effect as
+   * the agent pressing Accept, logged as the desk user's act.
+   */
+  async agreeByPhone(tenantId: string, bookingId: string, actorId: string) {
+    const booking = await this.loadBooking(tenantId, bookingId);
+    if (!booking.checkInAgentId || booking.checkInAgentConsent !== ('PENDING' as any)) {
+      throw new ConflictException('Nothing is waiting for the agent\'s answer on this booking');
+    }
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { checkInAgentConsent: 'PHONE' as any },
+      });
+      await tx.checkInChangeRecipient.updateMany({
+        where: {
+          tenantId, userId: booking.checkInAgentId!, role: 'GAINING', ackedAt: null,
+          change: { bookingId: booking.id, supersededAt: null },
+        },
+        data: { ackedAt: now, response: 'PHONE' as any, via: 'DESK', recordedById: actorId },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.ASSIGNMENT_LIFECYCLE,
+          action: 'checkin.consent_phone',
+          actorId,
+          targetType: 'Booking',
+          targetId: booking.id,
+          metadata: {
+            bookingRef: booking.bookingRef,
+            agentId: booking.checkInAgentId,
+            agentName: booking.checkInAgent?.name ?? null,
+            via: 'DESK',
+          } as any,
+        },
+      });
+    });
+    this.nudge(tenantId, booking.id, [booking.checkInAgentId]);
+    return { ok: true, checkInAgentConsent: 'PHONE' };
+  }
+
+  // ─── Agent: their own check-ins and what they have to answer ───────────────
+
+  /** Upcoming check-ins assigned to this agent, and the changes waiting for their answer. */
+  async mine(tenantId: string, userId: string) {
+    const from = startOfDayInAppZone(todayInAppZone());
+    const [bookings, pending] = await Promise.all([
+      this.prisma.booking.findMany({
+        where: {
+          tenantId, checkInAgentId: userId, status: BookingStatus.CONFIRMED,
+          checkInTime: { gte: from },
+        },
+        orderBy: { checkInTime: 'asc' },
+        take: 200,
+        select: {
+          id: true, bookingRef: true, accommodationName: true, checkInTime: true,
+          checkInSource: true, numAdults: true, numChildren: true,
+          checkInAgentConsent: true,
+          // The assigned agent may open guest registration; nobody else on this API may.
+          checkInLinkUrl: true,
+        },
+      }),
+      this.pendingFor(tenantId, userId),
+    ]);
+
+    return {
+      today: todayInAppZone(),
+      items: bookings.map((b) => ({
+        id: b.id,
+        bookingRef: b.bookingRef,
+        accommodationName: b.accommodationName,
+        day: todayInAppZone(b.checkInTime),
+        time: timeInAppZone(b.checkInTime),
+        arrivalAssumed: b.checkInSource === 'FALLBACK',
+        numAdults: b.numAdults,
+        numChildren: b.numChildren,
+        awaitingMyAnswer: b.checkInAgentConsent === ('PENDING' as any),
+        checkInLinkUrl: b.checkInLinkUrl ?? null,
+      })),
+      pending,
+    };
+  }
+
+  async pendingCount(tenantId: string, userId: string) {
+    const count = await this.prisma.checkInChangeRecipient.count({
+      where: { tenantId, userId, ackedAt: null, change: { supersededAt: null } },
+    });
+    return { count };
+  }
+
+  /**
+   * The agent answers one change. Strict about which answer fits: an override
+   * needs accept or decline, everything else is "got it".
+   */
+  async respond(tenantId: string, userId: string, recipientId: string, response: string) {
+    const rec = await this.prisma.checkInChangeRecipient.findFirst({
+      where: { id: recipientId, tenantId, userId },
+      include: { change: true },
+    });
+    if (!rec) throw new NotFoundException('Nothing to answer');
+    if (rec.ackedAt) return { ok: true, already: true };
+    if (rec.change.supersededAt) {
+      throw new ConflictException({
+        code: 'CHANGE_SUPERSEDED',
+        message: 'This was replaced by a newer change — reload',
+      });
+    }
+
+    const role = rec.role as RecipientRole;
+    const allowed = allowedResponses(role, rec.change.override);
+    if (!allowed.includes(response as AgentResponse)) {
+      throw new BadRequestException(`Answer must be one of: ${allowed.join(', ')}`);
+    }
+
+    const booking = await this.prisma.booking.findFirst({
+      where: { id: rec.change.bookingId, tenantId },
+      select: { id: true, bookingRef: true, accommodationName: true, checkInAgentId: true },
+    });
+    const me = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { name: true },
+    });
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.checkInChangeRecipient.update({
+        where: { id: rec.id },
+        data: { ackedAt: now, response: response as any, via: 'APP', recordedById: userId },
+      });
+
+      let action = 'checkin.change_acknowledged';
+
+      if (response === 'ACCEPT' && booking) {
+        await tx.booking.updateMany({
+          where: { id: booking.id, checkInAgentId: userId, checkInAgentConsent: 'PENDING' as any },
+          data: { checkInAgentConsent: 'ACCEPTED' as any },
+        });
+        action = 'checkin.consent_accepted';
+      }
+
+      if (response === 'DECLINE' && booking) {
+        // Only if the job is still theirs; if the desk already moved on, the
+        // answer is recorded and nothing else changes.
+        await tx.booking.updateMany({
+          where: { id: booking.id, checkInAgentId: userId },
+          data: {
+            checkInAgentId: null,
+            checkInAgentAssignedById: null,
+            checkInAgentAssignedAt: null,
+            checkInAgentOverride: false,
+            checkInAgentConsent: 'NOT_REQUIRED' as any,
+            checkInDeclinedAgentName: me?.name ?? null,
+            checkInDeclinedAt: now,
+          },
+        });
+        action = 'checkin.consent_declined';
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: AuditCategory.ASSIGNMENT_LIFECYCLE,
+          action,
+          actorId: userId,
+          targetType: 'Booking',
+          targetId: rec.change.bookingId,
+          metadata: {
+            bookingRef: booking?.bookingRef ?? null,
+            accommodationName: booking?.accommodationName ?? null,
+            changeId: rec.changeId,
+            role,
+            response,
+            via: 'APP',
+          } as any,
+        },
+      });
+    });
+
+    this.nudge(tenantId, rec.change.bookingId, []);
+    return { ok: true };
+  }
+
+  /** Planning rows: for each booking, the state of the current agent's answer. */
+  async ackStateFor(tenantId: string, bookingIds: string[]) {
+    if (!bookingIds.length) return new Map<string, { userId: string; ackedAt: Date | null; response: string | null; changedAt: Date }>();
+    const rows = await this.prisma.checkInChangeRecipient.findMany({
+      where: { tenantId, role: 'GAINING', change: { bookingId: { in: bookingIds }, supersededAt: null } },
+      select: {
+        userId: true, ackedAt: true, response: true,
+        change: { select: { bookingId: true, changedAt: true } },
+      },
+    });
+    const out = new Map<string, { userId: string; ackedAt: Date | null; response: string | null; changedAt: Date }>();
+    for (const r of rows) {
+      out.set(r.change.bookingId, {
+        userId: r.userId,
+        ackedAt: r.ackedAt,
+        response: (r.response as string | null) ?? null,
+        changedAt: r.change.changedAt,
+      });
+    }
+    return out;
   }
 
   // ─── internals ─────────────────────────────────────────────────────────────
@@ -245,11 +522,51 @@ export class CheckInAgentService {
         id: true, bookingRef: true, status: true, accommodationName: true,
         checkInTime: true, checkInSource: true,
         checkInAgentId: true, checkInAgentAssignedAt: true, checkInAgentOverride: true,
+        checkInAgentConsent: true,
         checkInAgent: { select: { id: true, name: true } },
       },
     });
     if (!booking) throw new NotFoundException('Booking not found');
     return booking;
+  }
+
+  private async pendingFor(tenantId: string, userId: string) {
+    const rows = await this.prisma.checkInChangeRecipient.findMany({
+      where: { tenantId, userId, ackedAt: null, change: { supersededAt: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true, role: true,
+        change: { select: { kind: true, override: true, changedAt: true, snapshot: true, bookingId: true } },
+      },
+    });
+    return rows.map((r) => {
+      const snap = (r.change.snapshot ?? {}) as any;
+      const arrival = snap.arrival ? new Date(snap.arrival) : null;
+      return {
+        id: r.id,
+        role: r.role as RecipientRole,
+        kind: r.change.kind as string,
+        override: r.change.override,
+        changedAt: r.change.changedAt,
+        bookingId: r.change.bookingId,
+        bookingRef: snap.bookingRef ?? null,
+        accommodationName: snap.accommodationName ?? null,
+        day: arrival ? todayInAppZone(arrival) : null,
+        time: arrival ? timeInAppZone(arrival) : null,
+        arrivalAssumed: !!snap.arrivalAssumed,
+        answers: allowedResponses(r.role as RecipientRole, r.change.override),
+      };
+    });
+  }
+
+  /** A nudge, not the data: clients refetch. Office rooms get the booking id. */
+  private nudge(tenantId: string, bookingId: string, userIds: Array<string | null>) {
+    const at = new Date().toISOString();
+    for (const uid of new Set(userIds.filter((u): u is string => !!u))) {
+      this.gateway.emitToUser(uid, 'checkin:changed', { at });
+    }
+    this.gateway.emitToTenant(tenantId, 'checkin:changed', { bookingId, at });
   }
 
   private arrival(booking: { checkInTime: Date; checkInSource: any }) {
