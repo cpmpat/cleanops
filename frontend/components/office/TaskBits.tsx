@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 
 /** Small shared pieces of the Tasks module: avatars, priority flag, people picker, time ago. */
 
-const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#0891B2', '#CA8A04', '#4F46E5'];
+// Earthy tones that sit with the Oct 2026 palette (green / coral / sand).
+const AVATAR_COLORS = ['#1F4D3A', '#2F5DA8', '#7A5BA6', '#B23A26', '#8A5A12', '#3D6B57', '#5B5446', '#2E6E73'];
 
 function hash(s: string) {
   let h = 0;
@@ -47,15 +48,23 @@ export function AvatarStack({ people, size = 22, max = 3 }: { people: TaskPerson
 }
 
 export const STAGE_DOT: Record<TaskStatus, string> = {
-  NEW: '#6A6F69', TODO: '#64748B', IN_PROGRESS: '#3B82F6', ON_HOLD: '#F59E0B', REVIEW: '#8B5CF6', DONE: '#22C55E',
+  NEW: '#8A8E88', TODO: '#2F5DA8', IN_PROGRESS: '#1F4D3A', ON_HOLD: '#D69A2D', REVIEW: '#7A5BA6', DONE: '#A9AEA8',
 };
 
 export const PRIORITY_COLOR: Record<TaskPriority, string> = {
-  LOW: '#6A6F69',
-  MEDIUM: '#3B82F6',
-  HIGH: '#F59E0B',
-  URGENT: '#EF4444',
+  LOW: '#A9AEA8',
+  MEDIUM: '#6A6F69',
+  HIGH: '#D69A2D',
+  URGENT: '#E2553F',
 };
+
+/** Priority as a small chip (board cards): Urgent solid coral, High sand, the rest neutral. */
+export function PriorityChip({ p, label }: { p: TaskPriority; label: string }) {
+  const cls = p === 'URGENT' ? 'bg-coral text-white'
+    : p === 'HIGH' ? 'bg-sand-soft text-sand-deep'
+    : 'bg-[#EFEAE0] text-[#5B5446]';
+  return <span className={cn('rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold leading-none', cls)}>{label}</span>;
+}
 
 export function PriorityFlag({ p, label }: { p: TaskPriority; label?: string }) {
   return (

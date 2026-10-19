@@ -13,6 +13,8 @@ export interface TaskStrings {
   stage: Record<'NEW' | 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'DONE', string>;
   stageHint: Record<'NEW' | 'TODO' | 'IN_PROGRESS' | 'ON_HOLD' | 'REVIEW' | 'DONE', string>;
   priority: Record<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT', string>;
+  /** Board card footer when nobody is responsible yet. */
+  unassigned: string;
   filterAll: string;
   filterOnMe: string;
   filterWatching: string;
@@ -106,6 +108,7 @@ const en: TaskStrings = {
     DONE: 'Closed by the creator',
   },
   priority: { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' },
+  unassigned: 'unassigned',
   filterAll: 'All',
   filterOnMe: 'On me',
   filterWatching: 'Watching',
@@ -215,6 +218,7 @@ const cs: TaskStrings = {
     DONE: 'Uzavřel zakladatel',
   },
   priority: { LOW: 'Nízká', MEDIUM: 'Střední', HIGH: 'Vysoká', URGENT: 'Urgentní' },
+  unassigned: 'nepřiřazeno',
   filterAll: 'Vše',
   filterOnMe: 'Na mně',
   filterWatching: 'Sleduji',
@@ -317,6 +321,7 @@ const ru: TaskStrings = {
     DONE: 'Закрыто автором',
   },
   priority: { LOW: 'Низкий', MEDIUM: 'Средний', HIGH: 'Высокий', URGENT: 'Срочный' },
+  unassigned: 'не назначено',
   filterAll: 'Все',
   filterOnMe: 'На мне',
   filterWatching: 'Слежу',
@@ -419,6 +424,7 @@ const uk: TaskStrings = {
     DONE: 'Закрито автором',
   },
   priority: { LOW: 'Низький', MEDIUM: 'Середній', HIGH: 'Високий', URGENT: 'Терміновий' },
+  unassigned: 'не призначено',
   filterAll: 'Усі',
   filterOnMe: 'На мені',
   filterWatching: 'Стежу',

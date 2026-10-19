@@ -135,7 +135,7 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
           </div>
         </div>
 
-        {error && <p className="mx-6 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</p>}
+        {error && <p className="mx-6 mt-3 rounded-xl bg-coral-soft px-4 py-2.5 text-sm text-coral-deep">{error}</p>}
         {!t ? (
           <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin text-[#6A6F69]" /></div>
         ) : (
@@ -179,7 +179,7 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
             <aside className="w-[280px] flex-shrink-0 border-l border-black/[0.06] overflow-y-auto px-5 py-5 space-y-5 bg-[#FCFCFC]">
               {/* Now on */}
               {t.status !== 'DONE' && (
-                <div className={cn('rounded-xl p-3 ring-1', t.onMe ? 'bg-[#FEF2F2] ring-[#FECACA]' : 'bg-white ring-black/[0.06]')}>
+                <div className={cn('rounded-xl p-3 ring-1', t.onMe ? 'bg-[#FBE3DD] ring-[#FECACA]' : 'bg-white ring-black/[0.06]')}>
                   <p className={label}>{s.nowOn}</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     {t.onWhom.map((uid) => (
@@ -255,7 +255,7 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                 <div>
                   <p className={label}>{s.fieldHoldReason}</p>
                   <InlineText value={t.holdReason ?? ''} editable={t.can.edit} placeholder={s.holdReasonPlaceholder}
-                    icon={<PauseCircle size={13} className="text-[#B45309]" />}
+                    icon={<PauseCircle size={13} className="text-[#8A5A12]" />}
                     onSave={(v) => act(() => tasksApi.update(t.id, { holdReason: v || null }))} />
                 </div>
               )}
@@ -266,14 +266,14 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                 <div className="space-y-1.5">
                   {openWaits.map((w) => (
                     <div key={w.id} className="flex items-center gap-2 rounded-lg bg-[#FFFBEB] ring-1 ring-[#FDE68A] px-2 py-1.5">
-                      <Hourglass size={12} className="text-[#B45309] flex-shrink-0" />
+                      <Hourglass size={12} className="text-[#8A5A12] flex-shrink-0" />
                       <Avatar person={w.user} size={20} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[12.5px] text-[#1B2420] truncate">{w.user.name}</span>
-                        <span className="block text-[10.5px] text-[#92400E]">{w.requestedBy.name} · {ago(w.createdAt, locale)}</span>
+                        <span className="block text-[10.5px] text-[#8A5A12]">{w.requestedBy.name} · {ago(w.createdAt, locale)}</span>
                       </span>
                       {(w.requestedBy.id === me || t.can.edit) && (
-                        <button onClick={() => act(() => tasksApi.clearWait(t.id, w.id))} className="text-[11px] text-[#92400E] hover:underline">{s.clear}</button>
+                        <button onClick={() => act(() => tasksApi.clearWait(t.id, w.id))} className="text-[11px] text-[#8A5A12] hover:underline">{s.clear}</button>
                       )}
                     </div>
                   ))}
@@ -377,7 +377,7 @@ function Mentioned({ body, names, me }: { body: string; names: string[]; me?: st
   return (
     <>
       {body.split(re).map((part, i) => part.startsWith('@') && list.includes(part.slice(1)) ? (
-        <span key={i} className={cn('font-semibold rounded px-0.5', part.slice(1) === me ? 'bg-[#FEF3C7] text-[#92400E]' : 'text-[#2563EB]')}>{part}</span>
+        <span key={i} className={cn('font-semibold rounded px-0.5', part.slice(1) === me ? 'bg-[#F8EBD3] text-[#8A5A12]' : 'text-[#1F4D3A]')}>{part}</span>
       ) : <span key={i}>{part}</span>)}
     </>
   );
@@ -405,7 +405,7 @@ function EditableDescription({ value, editable, onSave, s }: { value: string | n
         <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={6}
           className="w-full px-3 py-2 rounded-lg ring-1 ring-black/[0.12] outline-none text-[13.5px] resize-y" />
         <div className="mt-1.5 flex gap-2">
-          <button onClick={() => { onSave(v.trim() || null); setEditing(false); }} className="h-8 px-3 rounded-lg bg-[#1B2420] text-white text-[12.5px] font-semibold">{s.save}</button>
+          <button onClick={() => { onSave(v.trim() || null); setEditing(false); }} className="h-8 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-[12.5px] font-semibold">{s.save}</button>
           <button onClick={() => { setV(value ?? ''); setEditing(false); }} className="h-8 px-3 rounded-lg text-[12.5px] text-[#3D433E] hover:bg-black/[0.05]">{s.cancel}</button>
         </div>
       </div>
@@ -516,7 +516,7 @@ function Composer({ people, s, disabled, onSend }: {
           className="flex-1 px-3 py-2 rounded-xl ring-1 ring-black/[0.1] outline-none focus:ring-black/[0.25] text-[13.5px] resize-none max-h-40"
         />
         <button onClick={() => void send()} disabled={disabled || !body.trim()}
-          className="h-10 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1B2420] text-white text-[13px] font-semibold disabled:opacity-40">
+          className="h-10 flex items-center gap-1.5 px-3.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-[13px] font-semibold disabled:opacity-40">
           <Send size={14} /> {s.send}
         </button>
       </div>
@@ -528,9 +528,9 @@ function Composer({ people, s, disabled, onSend }: {
                 type="checkbox"
                 checked={waitOn.includes(p.id)}
                 onChange={(e) => setWaitOn((w) => (e.target.checked ? [...w, p.id] : w.filter((x) => x !== p.id)))}
-                className="accent-[#B45309]"
+                className="accent-[#8A5A12]"
               />
-              <Hourglass size={11} className="text-[#B45309]" /> {s.putOn(p.name)}
+              <Hourglass size={11} className="text-[#8A5A12]" /> {s.putOn(p.name)}
             </label>
           ))}
           <span className="text-[11px] text-[#6A6F69]">{s.putOnHint}</span>
