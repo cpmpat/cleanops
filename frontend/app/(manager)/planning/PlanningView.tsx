@@ -34,8 +34,21 @@ function isLastMinute(b: PlanningBooking): boolean {
   return pragueDay(b.checkInTime) === today && pragueDay(b.pmsCreatedAt) === today;
 }
 
-/** Quick arrival windows, measured from *now* — not from midnight. */
+/**
+ * Quick windows in whole Prague days, starting at today's midnight: 24 = today,
+ * 48 = today + tomorrow, 72 = three days. They used to run from *now*, so every
+ * arrival already past — and every unconfirmed one sitting at the assumed
+ * 15:00 — vanished from "today" in the afternoon (19 Oct 2026).
+ */
 type QuickWindow = 24 | 48 | 72;
+
+/** First and last Prague day of a quick window, as YYYY-MM-DD (the API reads a bare date as that whole day). */
+function quickRange(w: QuickWindow): { from: string; to: string } {
+  const from = pragueDay(new Date().toISOString());
+  const [y, m, d] = from.split('-').map(Number);
+  const to = new Date(Date.UTC(y, m - 1, d + w / 24 - 1)).toISOString().slice(0, 10);
+  return { from, to };
+}
 
 /**
  * One row's unsaved edit. Values are "HH:mm" in Europe/Prague — exactly what
@@ -203,11 +216,11 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const load = useCallback(async (window: QuickWindow | null = quick, keepDrafts = false) => {
     setLoading(true);
     try {
-      const now = new Date();
+      const range = window ? quickRange(window) : null;
       const data = await integrations.planning.list({
         by: mode,
-        arrivalFrom: window ? now.toISOString() : (arrivalFrom || undefined),
-        arrivalTo: window ? new Date(now.getTime() + window * 3_600_000).toISOString() : (arrivalTo || undefined),
+        arrivalFrom: range ? range.from : (arrivalFrom || undefined),
+        arrivalTo: range ? range.to : (arrivalTo || undefined),
         creationDateFrom: creationFrom || undefined,
         status: statusFilter || undefined,
       });
