@@ -1,6 +1,6 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { integrations, turnovers as turnoversApi, type PlanningBooking, type User, type AgentOptionsResponse, type AgentOption } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
@@ -57,7 +57,16 @@ function quickRange(w: QuickWindow): { from: string; to: string } {
  * client never builds an instant, because the last time it did it labelled
  * Prague wall-clock as UTC and 15:10 became 17:10 everywhere.
  */
-type Draft = { checkIn: string; checkOut: string };
+type Draft = {
+  checkIn: string;
+  checkOut: string;
+  /**
+   * The desk picked this tab's time on a row whose time was only assumed
+   * (FALLBACK). Picking 15:00 over an assumed 15:00 is still a decision:
+   * it is pushed, and from then on the time counts as set by a person.
+   */
+  confirm?: boolean;
+};
 type RowState = 'pushing' | 'ok' | 'error';
 
 /** How many rows are pushed to Avantio at once. Small: Avantio rate-limits, and one PUT is ~1 s. */
@@ -75,6 +84,12 @@ const GRID = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75r
  * (Check-In tab only — the panel never opens on Check-Out).
  */
 const GRID_COMPACT = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_8.75rem_4rem_11.5rem] items-center gap-x-3';
+/**
+ * Below this list width (px) the full grid leaves the unit name too little
+ * room — a laptop with the menu open, or a zoomed browser — and the list goes
+ * compact on its own, whatever the panel does.
+ */
+const COMPACT_BELOW_PX = 1340;
 
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
@@ -119,8 +134,19 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [planFilter, setPlanFilter] = useState<'ALL' | PlanState>('ALL');
   const [splitOpen, setSplitOpen] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
-  // Assigned view open: the list drops guests, setup and check-out to make room.
-  const compact = splitOpen && !byCheckOut;
+  // The list's own width, so a narrow window (menu open, zoom) goes compact too.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < COMPACT_BELOW_PX));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Compact: guests, setup and the time this tab does not edit step aside so
+  // the unit name has room. On with the Assigned view, or when space is short.
+  const compact = (splitOpen && !byCheckOut) || narrow;
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>(24);
   // Default: by unit name, so the desk reads the list the way the building is laid out.
@@ -137,6 +163,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [pushingAll, setPushingAll] = useState(false);
+  // An assumed time shows empty while its field has focus, so that picking the
+  // same time (15:00 over an assumed 15:00) is a change the browser reports.
+  // Leaving the field without picking restores the assumed time untouched.
+  const [blankFor, setBlankFor] = useState<string | null>(null);
   // Setup-request toggles save on click; this holds the ids mid-flight / failed.
   const [flagBusy, setFlagBusy] = useState<Record<string, 'saving' | 'error'>>({});
 
@@ -313,7 +343,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     const d = drafts[b.id];
     if (!d) return false;
     const s = stored(b);
-    return d.checkIn !== s.checkIn || d.checkOut !== s.checkOut;
+    return d.checkIn !== s.checkIn || d.checkOut !== s.checkOut || (!!d.confirm && ownSource(b) === 'FALLBACK');
   }
 
   function setDraft(b: PlanningBooking, patch: Partial<Draft>) {
@@ -334,15 +364,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
   /** Push one row. Sends only the fields that changed; HH:mm, Prague. */
   /**
-   * `confirm`: push this tab's time even though it did not change. An assumed
-   * time (FALLBACK, e.g. 15:00) that really is the arrival time could not be
-   * confirmed before — picking 15:00 over 15:00 is no edit, so nothing was
-   * dirty. Confirming sends it to Avantio and marks it as set by a person,
-   * which is what turns it bold on the cleaner's card.
+   * A confirmed draft (see Draft.confirm) pushes this tab's time even when it
+   * equals the assumed one: Avantio gets it and the row is marked as set by a
+   * person, which is what turns it bold on the cleaner's card.
    */
-  async function pushRow(b: PlanningBooking, confirm = false): Promise<boolean> {
-    const d = drafts[b.id] ?? (confirm ? stored(b) : undefined);
+  async function pushRow(b: PlanningBooking): Promise<boolean> {
+    const d = drafts[b.id];
     if (!d || !b.pmsBookingId) return false;
+    const confirm = !!d.confirm && ownSource(b) === 'FALLBACK';
     const s = stored(b);
     const body: { checkInTime?: string; checkOutTime?: string } = {};
     // Each tab pushes only the time it owns; the other input is locked anyway.
@@ -584,7 +613,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
       {/* Results — with the split "Assigned" view beside them when on. */}
       <div className={cn(splitOpen && !byCheckOut && loaded && 'flex gap-4 items-start')}>
-      <div className="flex-1 min-w-0">
+      <div ref={listRef} className="flex-1 min-w-0">
       {!loaded ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
           <Filter size={32} className="mx-auto text-ink-faint mb-3" />
@@ -656,7 +685,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
             {!compact && <span className="text-center">{tp.setup}</span>}
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
-            <span className="flex items-center gap-1.5">
+            {!(compact && byCheckOut) && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkInTime}</span>
@@ -665,8 +694,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   ↓ {tp.checkInTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
                 </button>
               )}
-            </span>
-            {!compact && <span className="flex items-center gap-1.5">
+            </span>}
+            {!(compact && !byCheckOut) && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
@@ -819,6 +848,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   </>)}
 
+                  {!(compact && byCheckOut) && (<>
                   {/* Check-in — editable on the Check-In tab, locked on Check-Out. The amber dot means we assumed the time. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -828,10 +858,12 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? tp.lockedHint : undefined}>
                       <input
                         type="time"
-                        value={d.checkIn}
+                        value={blankFor === b.id && !drafts[b.id] ? '' : d.checkIn}
+                        onFocus={() => { if (!byCheckOut && b.checkInSource === 'FALLBACK' && !drafts[b.id]) setBlankFor(b.id); }}
+                        onBlur={() => setBlankFor(prev => (prev === b.id ? null : prev))}
                         disabled={byCheckOut || !editable || state === 'pushing'}
                         readOnly={byCheckOut}
-                        onChange={e => setDraft(b, { checkIn: e.target.value })}
+                        onChange={e => { if (e.target.value) setDraft(b, { checkIn: e.target.value, confirm: b.checkInSource === 'FALLBACK' }); }}
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkInTime}
                         className={cn(
@@ -845,7 +877,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     </label>
                   </div>
 
-                  {!compact && (<>
+                  </>)}
+
+                  {!(compact && !byCheckOut) && (<>
                   {/* Check-out — editable on the Check-Out tab, locked on Check-In. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -855,10 +889,12 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? undefined : tp.lockedHint}>
                       <input
                         type="time"
-                        value={d.checkOut}
+                        value={blankFor === b.id && !drafts[b.id] ? '' : d.checkOut}
+                        onFocus={() => { if (byCheckOut && b.checkOutSource === 'FALLBACK' && !drafts[b.id]) setBlankFor(b.id); }}
+                        onBlur={() => setBlankFor(prev => (prev === b.id ? null : prev))}
                         disabled={!byCheckOut || !editable || state === 'pushing'}
                         readOnly={!byCheckOut}
-                        onChange={e => setDraft(b, { checkOut: e.target.value })}
+                        onChange={e => { if (e.target.value) setDraft(b, { checkOut: e.target.value, confirm: b.checkOutSource === 'FALLBACK' }); }}
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkOutTime}
                         className={cn(
@@ -876,19 +912,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   {/* Row action: push / undo / result */}
                   <div className="flex items-center justify-end gap-1">
-                      {/* An assumed time that is the real one: confirm it as is. */}
-                      {!dirty && editable && state !== 'pushing' && state !== 'ok' && ownSource(b) === 'FALLBACK' && (
-                        <button
-                          type="button"
-                          onClick={() => void pushRow(b, true)}
-                          title={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
-                          aria-label={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
-                          className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-semibold hover:bg-amber-100 transition"
-                        >
-                          <Check size={12} />
-                          {tp.confirmShort}
-                        </button>
-                      )}
                       {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
                       {state === 'ok' && <Check size={15} className="text-emerald-600" />}
                       {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
