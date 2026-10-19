@@ -138,13 +138,14 @@ export default function AgentsPlanningPage() {
 
   return (
     <div className="p-6 max-w-[1600px] tabular-nums">
-      <div className="mb-5">
-        <h1 className="text-2xl font-bold text-ink">{s.deskTitle}</h1>
-        <p className="text-sm text-ink-muted mt-0.5">{s.deskSubtitle}</p>
+      <div className="mb-5 flex flex-col gap-1">
+        <span className="text-xs text-ink-muted">Operations · Planning</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">{s.deskTitle}</h1>
+        <p className="text-sm text-ink-muted">{s.deskSubtitle}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div role="group" className="flex bg-surface-sunken rounded-xl p-[3px]">
+        <div role="group" className="flex gap-1 bg-white border border-surface-border rounded-[10px] p-[3px]">
           {(['day', 'week'] as const).map(v => (
             <button
               key={v}
@@ -152,35 +153,35 @@ export default function AgentsPlanningPage() {
               aria-pressed={view === v}
               onClick={() => setView(v)}
               className={cn(
-                'px-4 py-2 rounded-[9px] text-sm font-semibold transition',
-                view === v ? 'bg-ink text-white' : 'text-ink-muted hover:text-ink',
+                'px-3.5 py-1.5 rounded-lg text-[13px] transition',
+                view === v ? 'bg-accent text-white font-semibold' : 'text-ink-soft hover:bg-surface-sunken',
               )}
             >
               {v === 'day' ? s.day : s.week}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 bg-white border border-surface-border rounded-[10px] p-[3px]">
           <button type="button" aria-label={s.prev} onClick={() => setDay(d => addDays(d, -step))}
-            className="w-9 h-9 rounded-xl border border-surface-border bg-white text-ink-soft flex items-center justify-center hover:text-ink">
+            className="w-8 h-8 rounded-lg text-ink-soft flex items-center justify-center hover:bg-surface-sunken hover:text-ink">
             <ChevronLeft size={16} />
           </button>
-          <span className="text-[15px] font-bold text-ink px-2.5 first-letter:uppercase min-w-[11rem] text-center">{label}</span>
+          <span className="text-[13.5px] font-semibold text-ink px-2 first-letter:uppercase min-w-[11rem] text-center">{label}</span>
           <button type="button" aria-label={s.next} onClick={() => setDay(d => addDays(d, step))}
-            className="w-9 h-9 rounded-xl border border-surface-border bg-white text-ink-soft flex items-center justify-center hover:text-ink">
+            className="w-8 h-8 rounded-lg text-ink-soft flex items-center justify-center hover:bg-surface-sunken hover:text-ink">
             <ChevronRight size={16} />
           </button>
         </div>
         {loading && <span className="text-xs text-ink-faint">…</span>}
       </div>
 
-      {error && <p className="mb-4 text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+      {error && <p className="mb-4 text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{error}</p>}
 
       {board && board.agents.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border text-sm text-ink-muted">{s.noAgents}</div>
       )}
 
-      {actionError && <p className="mb-4 text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{actionError}</p>}
+      {actionError && <p className="mb-4 text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{actionError}</p>}
 
       {board && board.agents.length > 0 && (view === 'day'
         ? <DayView
@@ -263,7 +264,7 @@ function DeskTimeOffModal({ agent, today, s, onClose, onSaved }: {
               onClick={() => setReason(r)}
               className={cn(
                 'h-10 rounded-xl text-sm font-semibold transition',
-                reason === r ? 'bg-violet-50 border-2 border-violet-700 text-violet-900' : 'border border-surface-border text-ink',
+                reason === r ? 'bg-[#EFEAF3] border-2 border-[#5E4B75] text-[#5E4B75]' : 'border border-surface-border text-ink',
               )}
             >
               {s.reasonLabel[r]}
@@ -289,7 +290,7 @@ function DeskTimeOffModal({ agent, today, s, onClose, onSaved }: {
           className="w-full px-3 py-2 rounded-xl border border-surface-border text-sm"
         />
         <p className="text-[11.5px] text-ink-muted">{s.deskByPhone}</p>
-        {err && <p className="text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+        {err && <p className="text-sm text-coral-deep bg-coral-soft rounded-xl px-3 py-2">{err}</p>}
         <button
           onClick={() => void save()}
           disabled={busy || to < from}
@@ -344,13 +345,13 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 text-[12.5px] font-semibold">
-        <span className="bg-emerald-50 text-emerald-900 rounded-full px-3 py-1.5">{s.agentsAvailable(rows.on.length)}</span>
-        <span className="bg-indigo-50 text-indigo-800 rounded-full px-3 py-1.5">{s.arrivalsCount(dayArrivals.length)}</span>
+        <span className="bg-accent-soft text-accent rounded-full px-3 py-1.5">{s.agentsAvailable(rows.on.length)}</span>
+        <span className="bg-[#EFEAE0] text-[#5B5446] rounded-full px-3 py-1.5">{s.arrivalsCount(dayArrivals.length)}</span>
         {gaps.map(r => (
-          <span key={`g${r.from}`} className="bg-red-100 text-red-800 rounded-full px-3 py-1.5">{s.gapNoAgent(rangeText(r))}</span>
+          <span key={`g${r.from}`} className="bg-coral-soft text-coral-deep rounded-full px-3 py-1.5">{s.gapNoAgent(rangeText(r))}</span>
         ))}
         {strains.map(r => (
-          <span key={`s${r.from}`} className="bg-amber-100 text-amber-900 rounded-full px-3 py-1.5">{s.strain(rangeText(r))}</span>
+          <span key={`s${r.from}`} className="bg-sand-soft text-sand-deep rounded-full px-3 py-1.5">{s.strain(rangeText(r))}</span>
         ))}
       </div>
 
@@ -366,20 +367,20 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
           </Row>
 
           {/* Demand */}
-          <Row label={<span className="text-[12.5px] font-semibold text-indigo-800">{s.arrivalsRow}</span>} className="h-9">
+          <Row label={<span className="text-[12.5px] font-semibold text-[#5B5446]">{s.arrivalsRow}</span>} className="h-9">
             <div className="flex h-full items-center gap-1 pr-1">
               {cells.map(c => (
                 <span key={c.minute} className="flex-1 flex justify-center">
                   {c.arrivals > 0 ? (
                     <span
                       title={c.assumed ? `${c.arrivals} · ${c.assumed} ${s.assumedNote}` : String(c.arrivals)}
-                      className="w-full text-center text-[12.5px] font-bold text-indigo-800 bg-indigo-50 rounded-md py-0.5"
-                      style={c.assumed ? { backgroundImage: 'repeating-linear-gradient(135deg, rgba(99,102,241,0.18) 0 4px, transparent 4px 8px)' } : undefined}
+                      className="w-full text-center text-[12.5px] font-bold text-[#5B5446] bg-[#EFEAE0] rounded-md py-0.5"
+                      style={c.assumed ? { backgroundImage: 'repeating-linear-gradient(135deg, rgba(214,154,45,0.22) 0 4px, transparent 4px 8px)' } : undefined}
                     >
                       {c.arrivals}
                     </span>
                   ) : (
-                    <span className="text-xs text-stone-300">·</span>
+                    <span className="text-xs text-[#C9C4BA]">·</span>
                   )}
                 </span>
               ))}
@@ -387,16 +388,16 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
           </Row>
 
           {/* Supply */}
-          <Row label={<span className="text-[12.5px] font-semibold text-emerald-900">{s.onDuty}</span>} className="h-10 border-b border-surface-border">
+          <Row label={<span className="text-[12.5px] font-semibold text-accent">{s.onDuty}</span>} className="h-10 border-b border-surface-border">
             <div className="flex h-full items-center gap-1 pr-1">
               {cells.map(c => (
                 <span key={c.minute} className="flex-1 flex justify-center">
                   <span className={cn(
                     'w-full text-center text-[12.5px] font-bold rounded-md py-0.5',
-                    c.gap ? 'bg-red-700 text-white'
-                      : c.strain ? 'bg-amber-200 text-amber-900'
-                      : c.agents > 0 ? 'bg-emerald-50 text-emerald-900'
-                      : 'text-stone-300',
+                    c.gap ? 'bg-coral text-white'
+                      : c.strain ? 'bg-sand-soft text-sand-deep'
+                      : c.agents > 0 ? 'bg-accent-soft text-accent'
+                      : 'text-[#C9C4BA]',
                   )}>
                     {c.agents > 0 || c.gap ? c.agents : '·'}
                   </span>
@@ -411,10 +412,10 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
             return (
               <Row
                 key={agent.id}
-                className="h-14 border-b border-stone-100"
+                className="h-14 border-b border-[#F3EFE7]"
                 label={
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-8 h-8 rounded-full bg-ink text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{initials(agent.name)}</span>
+                    <span className="w-8 h-8 rounded-full bg-accent text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">{initials(agent.name)}</span>
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-semibold text-ink truncate">{agent.name}</p>
                       <p className="text-[11.5px] text-ink-muted">{s.hoursToday(formatDuration(total), blocks.length)}</p>
@@ -424,7 +425,7 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
               >
                 <div
                   className="relative h-full"
-                  style={{ backgroundImage: `repeating-linear-gradient(to right, #F0EFEE 0 1px, transparent 1px calc(100% / ${HOURS.length}))` }}
+                  style={{ backgroundImage: `repeating-linear-gradient(to right, #F1EDE5 0 1px, transparent 1px calc(100% / ${HOURS.length}))` }}
                 >
                   {blocks.map(b => {
                     const lo = Math.max(b.startMinute, WINDOW_START);
@@ -438,8 +439,8 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
                           onClick={() => setOpen(isOpen ? null : b.id)}
                           aria-expanded={isOpen}
                           className={cn(
-                            'w-full h-full rounded-[10px] bg-teal-700 text-white text-[12.5px] font-bold px-2.5 text-left truncate hover:bg-teal-800 transition',
-                            isOpen && 'ring-[3px] ring-teal-200',
+                            'w-full h-full rounded-[10px] bg-accent text-white text-[12.5px] font-bold px-2.5 text-left truncate hover:bg-accent-hover transition',
+                            isOpen && 'ring-[3px] ring-accent-soft',
                           )}
                         >
                           {b.start} – {b.end}
@@ -448,11 +449,11 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
                           <div className="absolute left-0 bottom-full mb-2 z-20 w-64 bg-ink text-white rounded-xl px-3 py-2.5 text-[12.5px] shadow-modal space-y-1">
                             <p className="font-bold">{agent.name} · {b.start} – {b.end}</p>
                             {agent.mobileNumber && (
-                              <a href={`tel:${agent.mobileNumber.replace(/\s+/g, '')}`} className="flex items-center gap-1.5 text-teal-200 font-semibold hover:text-white">
+                              <a href={`tel:${agent.mobileNumber.replace(/\s+/g, '')}`} className="flex items-center gap-1.5 text-accent-soft font-semibold hover:text-white">
                                 <Phone size={12} />{agent.mobileNumber}
                               </a>
                             )}
-                            <p className="text-stone-300">{s.setAt(new Date(b.updatedAt).toLocaleString(locale === 'en' ? 'en-GB' : locale, { timeZone: 'Europe/Prague', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</p>
+                            <p className="text-[#C9C4BA]">{s.setAt(new Date(b.updatedAt).toLocaleString(locale === 'en' ? 'en-GB' : locale, { timeZone: 'Europe/Prague', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</p>
                           </div>
                         )}
                       </div>
@@ -473,13 +474,13 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
               <div className="px-5 py-3 text-[13px] text-ink-muted space-y-1.5">
                 {away.length > 0 && (
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <strong className="text-violet-800">{s.deskTimeOff}</strong>
+                    <strong className="text-[#5E4B75]">{s.deskTimeOff}</strong>
                     {away.map(a => {
                       const o = offOn.get(a.id)!;
                       return (
-                        <span key={a.id} className="inline-flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-900 rounded-full pl-2 pr-1 py-0.5 text-[12px]">
+                        <span key={a.id} className="inline-flex items-center gap-1 bg-[#EFEAF3] border border-[#D9D0E3] text-[#5E4B75] rounded-full pl-2 pr-1 py-0.5 text-[12px]">
                           {a.name} · {s.reasonLabel[o.reason]}
-                          <button onClick={() => onRemoveOff(o)} title={s.removeTimeOff} className="p-0.5 rounded-full hover:bg-violet-100"><X size={11} /></button>
+                          <button onClick={() => onRemoveOff(o)} title={s.removeTimeOff} className="p-0.5 rounded-full hover:bg-[#E4DDEC]"><X size={11} /></button>
                         </span>
                       );
                     })}
@@ -487,7 +488,7 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
                 )}
                 {silent.length > 0 && (
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <strong className={late ? 'text-red-700' : 'text-ink-soft'}>
+                    <strong className={late ? 'text-coral-deep' : 'text-ink-soft'}>
                       {late ? s.deskNotDeclaredLate : s.notAvailableToday(silent.length)}
                     </strong>
                     {silent.map(a => (
@@ -495,7 +496,7 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
                         key={a.id}
                         onClick={() => onTimeOff(a, day)}
                         title={s.deskSetTimeOff}
-                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-surface-border px-2 py-0.5 text-[12px] text-ink-soft hover:border-violet-400 hover:text-violet-800"
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-surface-border px-2 py-0.5 text-[12px] text-ink-soft hover:border-[#B9A9CC] hover:text-[#5E4B75]"
                       >
                         {a.name}
                         <CalendarOff size={11} />
@@ -510,8 +511,8 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
           {showNow && (
             <div className="pointer-events-none absolute top-9 bottom-0 left-5 right-5">
               <div className="relative h-full ml-[13rem]">
-                <div className="absolute top-0 bottom-0 w-0.5 bg-red-700" style={{ left: pct(nowInWindow!) }}>
-                  <span className="absolute -top-0.5 -translate-x-1/2 text-[10.5px] font-bold text-white bg-red-700 rounded px-1">{hhmm(nowInWindow!)}</span>
+                <div className="absolute top-0 bottom-0 w-0.5 bg-coral" style={{ left: pct(nowInWindow!) }}>
+                  <span className="absolute -top-0.5 -translate-x-1/2 text-[10.5px] font-bold text-white bg-coral rounded px-1">{hhmm(nowInWindow!)}</span>
                 </div>
               </div>
             </div>
@@ -522,12 +523,12 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-4">
           {gaps.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-surface-border px-5 py-4 text-sm text-emerald-900">{s.noGaps}</div>
+            <div className="bg-white rounded-2xl border border-surface-border px-5 py-4 text-sm text-accent">{s.noGaps}</div>
           ) : gaps.map(r => {
             const list = dayArrivals.filter(a => a.minute >= r.from && a.minute < r.to);
             return (
-              <div key={r.from} className="bg-white rounded-2xl border border-red-300 px-5 py-4 space-y-2.5">
-                <p className="flex items-center gap-2 text-sm font-bold text-red-800">
+              <div key={r.from} className="bg-white rounded-2xl border border-coral/50 px-5 py-4 space-y-2.5">
+                <p className="flex items-center gap-2 text-sm font-bold text-coral-deep">
                   <AlertTriangle size={16} />{s.uncoveredTitle(rangeText(r), list.length)}
                 </p>
                 <ul className="space-y-1.5 text-[13px]">
@@ -545,13 +546,13 @@ function DayView({ board, day, today, locale, s, onTimeOff, onRemoveOff }: {
         </div>
         <div className="bg-white rounded-2xl border border-surface-border px-5 py-4 space-y-2 text-[13px] text-ink-soft">
           <p className="text-sm font-bold text-ink">{s.legendTitle}</p>
-          <Legend swatch="bg-teal-700">{s.legendBlock}</Legend>
-          <Legend swatch="bg-red-700">{s.legendGap}</Legend>
-          <Legend swatch="bg-amber-200">{s.legendStrain}</Legend>
-          <Legend swatch="bg-indigo-50 border border-indigo-200">{s.legendArrivals}</Legend>
+          <Legend swatch="bg-accent">{s.legendBlock}</Legend>
+          <Legend swatch="bg-coral">{s.legendGap}</Legend>
+          <Legend swatch="bg-sand-soft">{s.legendStrain}</Legend>
+          <Legend swatch="bg-[#EFEAE0] border border-[#E0D9CC]">{s.legendArrivals}</Legend>
           <Legend
-            swatch="bg-indigo-50 border border-indigo-200"
-            style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(99,102,241,0.35) 0 3px, transparent 3px 6px)' }}
+            swatch="bg-[#EFEAE0] border border-[#E0D9CC]"
+            style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(214,154,45,0.45) 0 3px, transparent 3px 6px)' }}
           >
             {s.legendAssumed}
           </Legend>
@@ -612,7 +613,7 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
               type="button"
               onClick={() => onOpenDay(d)}
               title={s.clickDay}
-              className={cn('text-left px-2 py-1 rounded-lg hover:bg-surface-sunken transition', d === today && 'bg-emerald-50')}
+              className={cn('text-left px-2 py-1 rounded-lg hover:bg-surface-sunken transition', d === today && 'bg-accent-soft')}
             >
               <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted">{p.dow}{d === today ? ` · ${s.todayPrefix}` : ''}</span>
               <span className="block text-[15px] font-bold text-ink leading-tight">{p.num}</span>
@@ -625,9 +626,9 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
         const mine = board.blocks.filter(b => b.userId === agent.id);
         const total = mine.reduce((acc, b) => acc + b.endMinute - b.startMinute, 0);
         return (
-          <div key={agent.id} className={cn(grid, 'min-h-14 items-center border-b border-stone-100')}>
+          <div key={agent.id} className={cn(grid, 'min-h-14 items-center border-b border-[#F3EFE7]')}>
             <div className="flex items-center gap-2.5 min-w-0 py-2">
-              <span className="w-8 h-8 rounded-full bg-ink text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{initials(agent.name)}</span>
+              <span className="w-8 h-8 rounded-full bg-accent text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">{initials(agent.name)}</span>
               <div className="min-w-0 flex-1">
                 <p className="text-[13.5px] font-semibold text-ink truncate">{agent.name}</p>
                 <p className="text-[11.5px] text-ink-muted">{total ? formatDuration(total) : s.nothingDeclared}</p>
@@ -635,7 +636,7 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
               <button
                 onClick={() => onTimeOff(agent, days[0] < today ? today : days[0])}
                 title={s.deskSetTimeOff}
-                className="p-1.5 rounded-lg text-ink-faint hover:text-violet-800 hover:bg-violet-50 flex-shrink-0"
+                className="p-1.5 rounded-lg text-ink-faint hover:text-[#5E4B75] hover:bg-[#EFEAF3] flex-shrink-0"
               >
                 <CalendarOff size={14} />
               </button>
@@ -646,21 +647,21 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
               const off = board.timeOff.find(o => o.userId === agent.id && o.day === d);
               const late = !past && d <= board.lockedThrough;
               return (
-                <div key={d} className={cn('flex flex-col items-start gap-1 px-2 py-2 h-full justify-center', d === today && 'bg-emerald-50/50')}>
+                <div key={d} className={cn('flex flex-col items-start gap-1 px-2 py-2 h-full justify-center', d === today && 'bg-accent-soft/50')}>
                   {off ? (
                     <span
                       title={[s.reasonLabel[off.reason], off.note, off.via === 'DESK' ? s.timeOffSetByDesk : null].filter(Boolean).join(' · ')}
-                      className="inline-flex items-center gap-1 text-[12px] rounded-lg px-2 py-0.5 bg-violet-50 border border-violet-200 text-violet-900 font-semibold"
+                      className="inline-flex items-center gap-1 text-[12px] rounded-lg px-2 py-0.5 bg-[#EFEAF3] border border-[#D9D0E3] text-[#5E4B75] font-semibold"
                     >
                       {s.deskTimeOff}
                       {!past && (
-                        <button onClick={() => onRemoveOff(off)} title={s.removeTimeOff} className="rounded hover:bg-violet-100"><X size={11} /></button>
+                        <button onClick={() => onRemoveOff(off)} title={s.removeTimeOff} className="rounded hover:bg-[#E4DDEC]"><X size={11} /></button>
                       )}
                     </span>
                   ) : list.length === 0 ? (
                     <span
                       title={late ? s.deskNotDeclaredLate : undefined}
-                      className={cn('text-sm', late ? 'text-red-400 font-bold' : 'text-stone-300')}
+                      className={cn('text-sm', late ? 'text-coral font-bold' : 'text-[#C9C4BA]')}
                     >
                       —
                     </span>
@@ -669,7 +670,7 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
                       key={b.id}
                       className={cn(
                         'text-[12.5px] rounded-lg px-2 py-0.5',
-                        past ? 'bg-surface-sunken text-ink-muted font-semibold' : 'bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold',
+                        past ? 'bg-surface-sunken text-ink-muted font-semibold' : 'bg-accent-soft border border-accent/25 text-accent font-bold',
                       )}
                     >
                       {b.start}–{b.end}
@@ -682,21 +683,21 @@ function WeekView({ board, today, locale, s, onOpenDay, onTimeOff, onRemoveOff }
         );
       })}
 
-      <div className={cn(grid, 'h-9 items-center bg-surface border-b border-stone-100 text-[12.5px]')}>
-        <span className="font-semibold text-emerald-900">{s.agentHours}</span>
-        {totals.map(x => <span key={x.day} className="px-2 font-bold text-emerald-900">{x.hours}</span>)}
+      <div className={cn(grid, 'h-9 items-center bg-surface border-b border-[#F3EFE7] text-[12.5px]')}>
+        <span className="font-semibold text-accent">{s.agentHours}</span>
+        {totals.map(x => <span key={x.day} className="px-2 font-bold text-accent">{x.hours}</span>)}
       </div>
-      <div className={cn(grid, 'h-9 items-center bg-surface border-b border-stone-100 text-[12.5px]')}>
-        <span className="font-semibold text-indigo-800">{s.arrivalsRow}</span>
-        {totals.map(x => <span key={x.day} className="px-2 font-bold text-indigo-800">{x.arrivals}</span>)}
+      <div className={cn(grid, 'h-9 items-center bg-surface border-b border-[#F3EFE7] text-[12.5px]')}>
+        <span className="font-semibold text-[#5B5446]">{s.arrivalsRow}</span>
+        {totals.map(x => <span key={x.day} className="px-2 font-bold text-[#5B5446]">{x.arrivals}</span>)}
       </div>
       <div className={cn(grid, 'h-10 items-center bg-surface text-[12.5px]')}>
-        <span className="font-semibold text-red-800">{s.hoursNoAgent}</span>
+        <span className="font-semibold text-coral-deep">{s.hoursNoAgent}</span>
         {totals.map(x => (
           <span key={x.day} className="px-2">
             {x.gapHours > 0
-              ? <span className="font-bold text-white bg-red-700 rounded-md px-2 py-0.5">{x.gapHours}</span>
-              : <span className="font-semibold text-stone-400">0</span>}
+              ? <span className="font-bold text-white bg-coral rounded-md px-2 py-0.5">{x.gapHours}</span>
+              : <span className="font-semibold text-ink-faint">0</span>}
           </span>
         ))}
       </div>
