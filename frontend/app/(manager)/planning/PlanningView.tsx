@@ -621,7 +621,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         {([
                           [b.accommodationStandard, tp.unitStandard],
                           [b.checkInType, tp.checkInTypeLabel],
-                          [b.checkInMethod, tp.checkInMethodLabel],
+                          // Type and method often carry the same word ("Lockbox"): show it once.
+                          [b.checkInMethod === b.checkInType ? null : b.checkInMethod, tp.checkInMethodLabel],
                         ] as const).map(([val, label]) =>
                           val ? (
                             <span
