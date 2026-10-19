@@ -105,39 +105,39 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
   }
 
   const openWaits = t?.waits.filter((w) => !w.resolvedAt) ?? [];
-  const label = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-[#A1A1AA] mb-1.5';
+  const label = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6A6F69] mb-1.5';
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end" role="dialog" aria-modal="true">
-      <button aria-label="Close" className="absolute inset-0 bg-[#18181B]/20" onClick={onClose} />
+      <button aria-label="Close" className="absolute inset-0 bg-[#1B2420]/20" onClick={onClose} />
       <div className="relative h-full w-full max-w-[940px] bg-white shadow-[-24px_0_64px_-24px_rgba(16,24,40,0.3)] flex flex-col">
         {/* Header */}
         <div className="flex items-center gap-3 px-6 h-14 border-b border-black/[0.06] flex-shrink-0">
-          {t && <span className="text-[12px] font-semibold text-[#A1A1AA] tabular-nums">{t.key}</span>}
+          {t && <span className="text-[12px] font-semibold text-[#6A6F69] tabular-nums">{t.key}</span>}
           {t && (
-            <span className="inline-flex items-center gap-1.5 px-2 h-6 rounded-[6px] bg-[#F4F4F5] text-[12px] font-medium text-[#3F3F46]">
+            <span className="inline-flex items-center gap-1.5 px-2 h-6 rounded-[6px] bg-[#F6F4EF] text-[12px] font-medium text-[#3D433E]">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_DOT[t.status] }} />{s.stage[t.status]}
             </span>
           )}
-          {busy && <Loader2 size={14} className="animate-spin text-[#A1A1AA]" />}
+          {busy && <Loader2 size={14} className="animate-spin text-[#6A6F69]" />}
           <div className="ml-auto flex items-center gap-1.5">
             {t && (
               <button
                 onClick={() => act(() => tasksApi.watch(t.id, !t.watching))}
                 className={cn('h-8 flex items-center gap-1.5 px-2.5 rounded-lg text-[12.5px] font-medium ring-1 transition',
-                  t.watching ? 'ring-[#18181B] text-[#18181B]' : 'ring-black/[0.08] text-[#52525B] hover:text-[#18181B]')}
+                  t.watching ? 'ring-[#1B2420] text-[#1B2420]' : 'ring-black/[0.08] text-[#3D433E] hover:text-[#1B2420]')}
               >
                 {t.watching ? <Eye size={14} /> : <EyeOff size={14} />} {t.watching ? s.watching : s.watch}
-                <span className="text-[#A1A1AA]">· {t.watchers.length}</span>
+                <span className="text-[#6A6F69]">· {t.watchers.length}</span>
               </button>
             )}
-            <button onClick={onClose} className="p-1.5 rounded-lg text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05]"><X size={18} /></button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05]"><X size={18} /></button>
           </div>
         </div>
 
         {error && <p className="mx-6 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</p>}
         {!t ? (
-          <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin text-[#A1A1AA]" /></div>
+          <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin text-[#6A6F69]" /></div>
         ) : (
           <div className="flex-1 min-h-0 flex">
             {/* Main column */}
@@ -152,18 +152,18 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                 <p className={cn(label, 'mt-7')}>{s.thread}</p>
                 <ol className="space-y-3">
                   {thread.map((it) => it.type === 'event' ? (
-                    <li key={`e${it.e.id}`} className="flex items-center gap-2 text-[12px] text-[#A1A1AA] pl-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4D4D8]" />
-                      <span><span className="text-[#52525B] font-medium">{it.e.actor.name}</span> {eventText(it.e)}</span>
+                    <li key={`e${it.e.id}`} className="flex items-center gap-2 text-[12px] text-[#6A6F69] pl-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#DCD6CB]" />
+                      <span><span className="text-[#3D433E] font-medium">{it.e.actor.name}</span> {eventText(it.e)}</span>
                       <span>· {ago(it.e.createdAt, locale)}</span>
                     </li>
                   ) : (
                     <li key={`c${it.c.id}`} className="flex gap-3">
                       <Avatar person={it.c.author} size={28} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12.5px]"><span className="font-semibold text-[#18181B]">{it.c.author.name}</span>
-                          <span className="text-[#A1A1AA]"> · {ago(it.c.createdAt, locale)}</span></p>
-                        <div className="mt-1 rounded-xl rounded-tl-sm bg-[#F4F4F5] px-3 py-2 text-[13.5px] text-[#18181B] whitespace-pre-wrap break-words">
+                        <p className="text-[12.5px]"><span className="font-semibold text-[#1B2420]">{it.c.author.name}</span>
+                          <span className="text-[#6A6F69]"> · {ago(it.c.createdAt, locale)}</span></p>
+                        <div className="mt-1 rounded-xl rounded-tl-sm bg-[#F6F4EF] px-3 py-2 text-[13.5px] text-[#1B2420] whitespace-pre-wrap break-words">
                           <Mentioned body={it.c.body} names={it.c.mentionIds.map(name)} me={byId.get(me)?.name} />
                         </div>
                       </div>
@@ -183,16 +183,16 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                   <p className={label}>{s.nowOn}</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     {t.onWhom.map((uid) => (
-                      <span key={uid} className="inline-flex items-center gap-1.5 text-[13px] text-[#18181B]">
+                      <span key={uid} className="inline-flex items-center gap-1.5 text-[13px] text-[#1B2420]">
                         <Avatar person={{ id: uid, name: name(uid) }} size={22} />{uid === me ? `${name(uid)} (${s.onYou.toLowerCase()})` : name(uid)}
                       </span>
                     ))}
                   </div>
-                  <p className="mt-1 text-[11.5px] text-[#71717A]">{s.reason[t.onWhomReason]}</p>
+                  <p className="mt-1 text-[11.5px] text-[#6A6F69]">{s.reason[t.onWhomReason]}</p>
                   {/* Whose turn it is can move; who answers for the task does not. */}
                   {t.onWhomReason === 'waiting' && t.assignees.length > 0 && (
-                    <p className="mt-2 pt-2 border-t border-black/[0.06] text-[11.5px] text-[#52525B]">
-                      {s.responsible}: <span className="text-[#18181B] font-medium">{t.assignees.map((a) => a.name).join(', ')}</span>
+                    <p className="mt-2 pt-2 border-t border-black/[0.06] text-[11.5px] text-[#3D433E]">
+                      {s.responsible}: <span className="text-[#1B2420] font-medium">{t.assignees.map((a) => a.name).join(', ')}</span>
                     </p>
                   )}
                 </div>
@@ -232,19 +232,19 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                         <CheckCircle2 size={14} /> {s.closeDone}
                       </button>
                       <button onClick={() => act(() => tasksApi.move(t.id, { status: 'DONE', resolution: 'WONT_DO' }))}
-                        className="h-8 flex items-center justify-center gap-1.5 rounded-lg ring-1 ring-black/[0.1] bg-white text-[12.5px] font-semibold text-[#52525B] hover:text-[#18181B]">
+                        className="h-8 flex items-center justify-center gap-1.5 rounded-lg ring-1 ring-black/[0.1] bg-white text-[12.5px] font-semibold text-[#3D433E] hover:text-[#1B2420]">
                         <Ban size={14} /> {s.closeWontDo}
                       </button>
                     </>
                   )}
                   {t.status === 'DONE' && (
-                    <p className="text-[12px] text-[#71717A]">
+                    <p className="text-[12px] text-[#6A6F69]">
                       {s.closedAs(t.resolution === 'WONT_DO' ? s.wontDo : s.stage.DONE.toLowerCase(), t.closedBy?.name ?? '—')}
                     </p>
                   )}
                   {t.status === 'DONE' && t.can.close && (
                     <button onClick={() => (t.assignees.length ? act(() => tasksApi.move(t.id, { status: 'TODO' })) : setError(s.needsAssignee))}
-                      className="h-8 flex items-center justify-center gap-1.5 rounded-lg ring-1 ring-black/[0.1] bg-white text-[12.5px] font-semibold text-[#52525B] hover:text-[#18181B]">
+                      className="h-8 flex items-center justify-center gap-1.5 rounded-lg ring-1 ring-black/[0.1] bg-white text-[12.5px] font-semibold text-[#3D433E] hover:text-[#1B2420]">
                       <RotateCcw size={14} /> {s.reopen}
                     </button>
                   )}
@@ -269,7 +269,7 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                       <Hourglass size={12} className="text-[#B45309] flex-shrink-0" />
                       <Avatar person={w.user} size={20} />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[12.5px] text-[#18181B] truncate">{w.user.name}</span>
+                        <span className="block text-[12.5px] text-[#1B2420] truncate">{w.user.name}</span>
                         <span className="block text-[10.5px] text-[#92400E]">{w.requestedBy.name} · {ago(w.createdAt, locale)}</span>
                       </span>
                       {(w.requestedBy.id === me || t.can.edit) && (
@@ -309,15 +309,15 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                   {t.can.edit ? (
                     <input type="date" value={t.dueDate ?? ''} onChange={(e) => act(() => tasksApi.update(t.id, { dueDate: e.target.value || null }))}
                       className="w-full h-8 px-1.5 rounded-lg ring-1 ring-black/[0.08] bg-white text-[12.5px] outline-none" />
-                  ) : <span className="text-[13px] text-[#18181B]">{t.dueDate ?? '—'}</span>}
+                  ) : <span className="text-[13px] text-[#1B2420]">{t.dueDate ?? '—'}</span>}
                 </div>
               </div>
 
               <div>
                 <p className={label}>{s.fieldCreatedBy}</p>
-                <span className="inline-flex items-center gap-1.5 text-[13px] text-[#18181B]">
+                <span className="inline-flex items-center gap-1.5 text-[13px] text-[#1B2420]">
                   <Avatar person={t.createdBy} size={20} />{t.createdBy.name}
-                  <span className="text-[#A1A1AA] text-[11.5px]">· {ago(t.createdAt, locale)}</span>
+                  <span className="text-[#6A6F69] text-[11.5px]">· {ago(t.createdAt, locale)}</span>
                 </span>
               </div>
 
@@ -325,7 +325,7 @@ export function TaskDrawer({ id, people, me, s, locale, onClose, onChanged }: {
                 <p className={label}>{s.fieldWatchers}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {t.watchers.map((w) => (
-                    <span key={w.id} className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded-full bg-[#F4F4F5] text-[12px] text-[#3F3F46]">
+                    <span key={w.id} className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded-full bg-[#F6F4EF] text-[12px] text-[#3D433E]">
                       <Avatar person={w} size={18} />{w.name}
                     </span>
                   ))}
@@ -350,7 +350,7 @@ function LinkedRecords({ t, me, s, label, act }: {
       <div className="flex items-center justify-between">
         <p className={label}>{s.fieldRecords}</p>
         {t.can.link && !adding && (
-          <button onClick={() => setAdding(true)} className="text-[12px] text-[#52525B] hover:text-[#18181B] mb-1.5">+ {s.linkRecord}</button>
+          <button onClick={() => setAdding(true)} className="text-[12px] text-[#3D433E] hover:text-[#1B2420] mb-1.5">+ {s.linkRecord}</button>
         )}
       </div>
       {t.links.length > 0 && (
@@ -386,12 +386,12 @@ function Mentioned({ body, names, me }: { body: string; names: string[]; me?: st
 function EditableTitle({ value, editable, onSave }: { value: string; editable: boolean; onSave: (v: string) => void }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
-  if (!editable) return <h2 className="text-[22px] font-bold text-[#18181B] leading-tight">{value}</h2>;
+  if (!editable) return <h2 className="text-[22px] font-bold text-[#1B2420] leading-tight">{value}</h2>;
   return (
     <input value={v} onChange={(e) => setV(e.target.value)} maxLength={200}
       onBlur={() => { if (v.trim() && v.trim() !== value) onSave(v.trim()); else setV(value); }}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      className="w-full text-[22px] font-bold text-[#18181B] leading-tight outline-none rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#F4F4F5] focus:bg-[#F4F4F5]" />
+      className="w-full text-[22px] font-bold text-[#1B2420] leading-tight outline-none rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#F6F4EF] focus:bg-[#F6F4EF]" />
   );
 }
 
@@ -405,17 +405,17 @@ function EditableDescription({ value, editable, onSave, s }: { value: string | n
         <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={6}
           className="w-full px-3 py-2 rounded-lg ring-1 ring-black/[0.12] outline-none text-[13.5px] resize-y" />
         <div className="mt-1.5 flex gap-2">
-          <button onClick={() => { onSave(v.trim() || null); setEditing(false); }} className="h-8 px-3 rounded-lg bg-[#18181B] text-white text-[12.5px] font-semibold">{s.save}</button>
-          <button onClick={() => { setV(value ?? ''); setEditing(false); }} className="h-8 px-3 rounded-lg text-[12.5px] text-[#52525B] hover:bg-black/[0.05]">{s.cancel}</button>
+          <button onClick={() => { onSave(v.trim() || null); setEditing(false); }} className="h-8 px-3 rounded-lg bg-[#1B2420] text-white text-[12.5px] font-semibold">{s.save}</button>
+          <button onClick={() => { setV(value ?? ''); setEditing(false); }} className="h-8 px-3 rounded-lg text-[12.5px] text-[#3D433E] hover:bg-black/[0.05]">{s.cancel}</button>
         </div>
       </div>
     );
   }
   return (
-    <div className={cn('mt-3 group rounded-lg -mx-1.5 px-1.5 py-1', editable && 'hover:bg-[#FAFAFA] cursor-text')} onClick={() => editable && setEditing(true)}>
+    <div className={cn('mt-3 group rounded-lg -mx-1.5 px-1.5 py-1', editable && 'hover:bg-[#FBFAF6] cursor-text')} onClick={() => editable && setEditing(true)}>
       {value
-        ? <p className="text-[13.5px] text-[#3F3F46] whitespace-pre-wrap leading-relaxed">{value}</p>
-        : <p className="text-[13px] text-[#A1A1AA]">{editable ? `${s.fieldDescription}…` : '—'}</p>}
+        ? <p className="text-[13.5px] text-[#3D433E] whitespace-pre-wrap leading-relaxed">{value}</p>
+        : <p className="text-[13px] text-[#6A6F69]">{editable ? `${s.fieldDescription}…` : '—'}</p>}
     </div>
   );
 }
@@ -429,7 +429,7 @@ function InlineText({ value, editable, placeholder, onSave, icon }: { value: str
       <input value={v} disabled={!editable} placeholder={placeholder} onChange={(e) => setV(e.target.value)}
         onBlur={() => { if (v !== value) onSave(v.trim()); }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        className="flex-1 min-w-0 outline-none text-[12.5px] bg-transparent placeholder:text-[#C4C4CC]" />
+        className="flex-1 min-w-0 outline-none text-[12.5px] bg-transparent placeholder:text-[#CFC9BD]" />
     </div>
   );
 }
@@ -489,10 +489,10 @@ function Composer({ people, s, disabled, onSend }: {
         <div className="absolute bottom-full left-6 mb-1 w-72 bg-white rounded-xl shadow-[0_12px_32px_-8px_rgba(16,24,40,0.25)] ring-1 ring-black/[0.08] py-1 z-10">
           {matches.map((p, i) => (
             <button key={p.id} onMouseDown={(e) => { e.preventDefault(); pick(p); }} onMouseEnter={() => setSel(i)}
-              className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-left', sel === i ? 'bg-[#F4F4F5]' : '')}>
+              className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-left', sel === i ? 'bg-[#F6F4EF]' : '')}>
               <Avatar person={p} size={22} />
-              <span className="text-[13px] text-[#18181B]">{p.name}</span>
-              <span className="ml-auto text-[11px] text-[#A1A1AA]">{p.role.replace(/_/g, ' ').toLowerCase()}</span>
+              <span className="text-[13px] text-[#1B2420]">{p.name}</span>
+              <span className="ml-auto text-[11px] text-[#6A6F69]">{p.role.replace(/_/g, ' ').toLowerCase()}</span>
             </button>
           ))}
         </div>
@@ -516,14 +516,14 @@ function Composer({ people, s, disabled, onSend }: {
           className="flex-1 px-3 py-2 rounded-xl ring-1 ring-black/[0.1] outline-none focus:ring-black/[0.25] text-[13.5px] resize-none max-h-40"
         />
         <button onClick={() => void send()} disabled={disabled || !body.trim()}
-          className="h-10 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#18181B] text-white text-[13px] font-semibold disabled:opacity-40">
+          className="h-10 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1B2420] text-white text-[13px] font-semibold disabled:opacity-40">
           <Send size={14} /> {s.send}
         </button>
       </div>
       {tagged.some((p) => body.includes(`@${p.name}`)) && (
         <div className="mt-2 flex items-center gap-x-4 gap-y-1 flex-wrap">
           {tagged.filter((p) => body.includes(`@${p.name}`)).map((p) => (
-            <label key={p.id} className="inline-flex items-center gap-1.5 text-[12px] text-[#3F3F46] cursor-pointer select-none">
+            <label key={p.id} className="inline-flex items-center gap-1.5 text-[12px] text-[#3D433E] cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={waitOn.includes(p.id)}
@@ -533,7 +533,7 @@ function Composer({ people, s, disabled, onSend }: {
               <Hourglass size={11} className="text-[#B45309]" /> {s.putOn(p.name)}
             </label>
           ))}
-          <span className="text-[11px] text-[#A1A1AA]">{s.putOnHint}</span>
+          <span className="text-[11px] text-[#6A6F69]">{s.putOnHint}</span>
         </div>
       )}
     </div>

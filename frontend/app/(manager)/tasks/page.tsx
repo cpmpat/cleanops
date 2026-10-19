@@ -167,7 +167,7 @@ function TasksBoard() {
           <div className="relative">
             <button
               onClick={() => { setNotifOpen((o) => !o); }}
-              className="relative h-9 w-9 flex items-center justify-center rounded-xl ring-1 ring-black/[0.08] bg-white text-[#52525B] hover:text-[#18181B]"
+              className="relative h-9 w-9 flex items-center justify-center rounded-xl ring-1 ring-black/[0.08] bg-white text-[#3D433E] hover:text-[#1B2420]"
               title={s.notifications}
             >
               <Bell size={16} />
@@ -199,7 +199,7 @@ function TasksBoard() {
             <button
               onClick={() => setShowNew(true)}
               title={s.shortcutHint}
-              className="h-9 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#18181B] text-white text-sm font-semibold hover:bg-black"
+              className="h-9 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1B2420] text-white text-sm font-semibold hover:bg-black"
             >
               <Plus size={15} /> {s.newTask}
             </button>
@@ -213,20 +213,20 @@ function TasksBoard() {
           {([['all', s.filterAll], ['onMe', `${s.filterOnMe}${onMeCount ? ` · ${onMeCount}` : ''}`], ['watching', s.filterWatching]] as [Filter, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setFilter(k)}
               className={cn('h-8 px-3 rounded-[10px] text-[12.5px] font-semibold transition',
-                filter === k ? 'bg-white text-[#18181B] shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'text-[#71717A] hover:text-[#18181B]')}>
+                filter === k ? 'bg-white text-[#1B2420] shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'text-[#6A6F69] hover:text-[#1B2420]')}>
               {label}
             </button>
           ))}
         </div>
         <select value={who} onChange={(e) => setWho(e.target.value)}
-          className="h-9 px-2.5 rounded-xl ring-1 ring-black/[0.08] bg-white text-[13px] text-[#3F3F46] outline-none">
+          className="h-9 px-2.5 rounded-xl ring-1 ring-black/[0.08] bg-white text-[13px] text-[#3D433E] outline-none">
           <option value="">{s.everyone}</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <div className="h-9 flex items-center gap-2 px-3 rounded-xl ring-1 ring-black/[0.08] bg-white">
-          <Search size={14} className="text-[#A1A1AA]" />
+          <Search size={14} className="text-[#6A6F69]" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={s.search}
-            className="w-44 outline-none text-[13px] placeholder:text-[#A1A1AA]" />
+            className="w-44 outline-none text-[13px] placeholder:text-[#6A6F69]" />
         </div>
       </div>
 
@@ -241,17 +241,17 @@ function TasksBoard() {
           return (
             <div
               key={stage}
-              className={cn('min-w-0 rounded-2xl bg-[#F4F4F5] p-2 transition-colors', isOver && 'bg-[#E9E9EC]')}
+              className={cn('min-w-0 rounded-2xl bg-[#F6F4EF] p-2 transition-colors', isOver && 'bg-[#E9E9EC]')}
               onDragOver={(e) => { if (dragId) { e.preventDefault(); if (!isOver || over?.beforeId !== null) setOver({ stage, beforeId: null }); } }}
               onDrop={(e) => { e.preventDefault(); void drop(stage, over?.stage === stage ? over.beforeId : null); }}
             >
               <div className="px-2 pt-1 pb-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{ background: STAGE_DOT[stage] }} />
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#3F3F46]">{s.stage[stage]}</span>
-                  <span className="text-[12px] text-[#A1A1AA] tabular-nums">{col.length}</span>
+                  <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#3D433E]">{s.stage[stage]}</span>
+                  <span className="text-[12px] text-[#6A6F69] tabular-nums">{col.length}</span>
                 </div>
-                <p className="mt-0.5 text-[11px] text-[#A1A1AA]">{s.stageHint[stage]}</p>
+                <p className="mt-0.5 text-[11px] text-[#6A6F69]">{s.stageHint[stage]}</p>
               </div>
               <div className="space-y-2 min-h-[48px]">
                 {col.map((c) => (
@@ -273,11 +273,11 @@ function TasksBoard() {
                 ))}
                 {isOver && over?.beforeId === null && dragId && <div className="h-1 rounded-full bg-[#3B82F6]" />}
                 {!loading && col.length === 0 && !isOver && (
-                  <p className="py-6 text-center text-[12px] text-[#C4C4CC]">{s.noTasks}</p>
+                  <p className="py-6 text-center text-[12px] text-[#CFC9BD]">{s.noTasks}</p>
                 )}
               </div>
               {stage === 'DONE' && !allDone && (
-                <button onClick={() => setAllDone(true)} className="mt-2 w-full text-center text-[11.5px] text-[#71717A] hover:text-[#18181B]">
+                <button onClick={() => setAllDone(true)} className="mt-2 w-full text-center text-[11.5px] text-[#6A6F69] hover:text-[#1B2420]">
                   {s.showOlderDone(doneDays)}
                 </button>
               )}
@@ -307,7 +307,7 @@ function TasksBoard() {
         />
       )}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] px-4 py-2.5 rounded-xl bg-[#18181B] text-white text-sm shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] px-4 py-2.5 rounded-xl bg-[#1B2420] text-white text-sm shadow-lg">{toast}</div>
       )}
     </div>
   );
@@ -333,13 +333,13 @@ function Card({ card: c, s, locale, dragging, onDragStart, onDragEnd, onOpen }: 
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-[11px] font-semibold text-[#A1A1AA] tabular-nums">{c.key}</span>
+        <span className="text-[11px] font-semibold text-[#6A6F69] tabular-nums">{c.key}</span>
         <PriorityFlag p={c.priority} />
         {c.onMe && c.status !== 'DONE' && (
           <span className="ml-auto px-1.5 h-[18px] leading-[18px] rounded-[5px] bg-[#FEE2E2] text-[#B91C1C] text-[10.5px] font-semibold">{s.onYou}</span>
         )}
       </div>
-      <p className={cn('text-[13.5px] leading-snug text-[#18181B] line-clamp-3', c.status === 'DONE' && 'text-[#71717A]', c.resolution === 'WONT_DO' && 'line-through')}>
+      <p className={cn('text-[13.5px] leading-snug text-[#1B2420] line-clamp-3', c.status === 'DONE' && 'text-[#6A6F69]', c.resolution === 'WONT_DO' && 'line-through')}>
         {c.title}
       </p>
       {c.status === 'ON_HOLD' && c.holdReason && (
@@ -348,7 +348,7 @@ function Card({ card: c, s, locale, dragging, onDragStart, onDragEnd, onOpen }: 
       {c.links.length > 0 && (
         <div className="mt-1.5 flex items-center gap-1 min-w-0">
           <LinkChip link={c.links[0]} s={s} compact />
-          {c.links.length > 1 && <span className="text-[11px] text-[#A1A1AA] flex-shrink-0">+{c.links.length - 1}</span>}
+          {c.links.length > 1 && <span className="text-[11px] text-[#6A6F69] flex-shrink-0">+{c.links.length - 1}</span>}
         </div>
       )}
       {waiting.length > 0 && (
@@ -356,7 +356,7 @@ function Card({ card: c, s, locale, dragging, onDragStart, onDragEnd, onOpen }: 
           <Hourglass size={11} /> {s.waitingOn} {waiting.join(', ')}
         </p>
       )}
-      <div className="mt-2.5 flex items-center gap-2.5 text-[11.5px] text-[#A1A1AA]">
+      <div className="mt-2.5 flex items-center gap-2.5 text-[11.5px] text-[#6A6F69]">
         {c.dueDate && (
           <span className={cn('inline-flex items-center gap-1', overdue && 'text-[#DC2626] font-semibold')} title={overdue ? s.overdue : s.fieldDue}>
             <CalendarClock size={12} /> {new Date(`${c.dueDate}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
@@ -383,22 +383,22 @@ function NotificationsPanel({ items, locale, onClose, onOpen, onAllRead }: {
   return (
     <div ref={ref} className="absolute right-0 mt-2 z-50 w-[380px] bg-white rounded-2xl shadow-[0_16px_40px_-12px_rgba(16,24,40,0.28)] ring-1 ring-black/[0.08] overflow-hidden">
       <div className="flex items-center justify-between px-4 h-11 border-b border-black/[0.06]">
-        <span className="text-[13px] font-semibold text-[#18181B]">{s.notifications}</span>
-        <button onClick={onAllRead} className="text-[12px] text-[#71717A] hover:text-[#18181B]">{s.markAllRead}</button>
+        <span className="text-[13px] font-semibold text-[#1B2420]">{s.notifications}</span>
+        <button onClick={onAllRead} className="text-[12px] text-[#6A6F69] hover:text-[#1B2420]">{s.markAllRead}</button>
       </div>
       <div className="max-h-[60vh] overflow-y-auto">
-        {items.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-[#A1A1AA]">{s.noNotifications}</p>}
+        {items.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-[#6A6F69]">{s.noNotifications}</p>}
         {items.map((n) => {
           const fmt = s.notif[n.kind] ?? s.notif.comment;
           const text = n.kind === 'status' ? (s.stage[n.text as TaskStatus] ?? n.text ?? '') : (n.text ?? '');
           return (
             <button key={n.id} onClick={() => onOpen(n)}
-              className={cn('w-full text-left px-4 py-2.5 border-b border-black/[0.04] hover:bg-[#FAFAFA] flex gap-2.5', !n.readAt && 'bg-[#F8FAFF]')}>
+              className={cn('w-full text-left px-4 py-2.5 border-b border-black/[0.04] hover:bg-[#FBFAF6] flex gap-2.5', !n.readAt && 'bg-[#F8FAFF]')}>
               <span className={cn('mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0', n.readAt ? 'bg-transparent' : 'bg-[#3B82F6]')} />
               <span className="min-w-0">
-                <span className="block text-[11.5px] text-[#A1A1AA]">{n.task.key} · <span className="text-[#52525B]">{n.task.title}</span></span>
-                <span className="block text-[13px] text-[#18181B] leading-snug line-clamp-2">{fmt(n.actor?.name ?? '—', text)}</span>
-                <span className="block text-[11px] text-[#A1A1AA] mt-0.5">{ago(n.createdAt, locale)}</span>
+                <span className="block text-[11.5px] text-[#6A6F69]">{n.task.key} · <span className="text-[#3D433E]">{n.task.title}</span></span>
+                <span className="block text-[13px] text-[#1B2420] leading-snug line-clamp-2">{fmt(n.actor?.name ?? '—', text)}</span>
+                <span className="block text-[11px] text-[#6A6F69] mt-0.5">{ago(n.createdAt, locale)}</span>
               </span>
             </button>
           );

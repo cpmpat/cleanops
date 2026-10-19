@@ -95,7 +95,7 @@ const LOCALES: { code: Locale; label: string }[] = [
 ];
 
 /** Grey of the tree connector lines. */
-const LINE = 'border-[#CDCDD3]';
+const LINE = 'border-[#D6D0C4]';
 
 /**
  * The unread count: a red rounded rectangle, not a circle (15 Oct 2026).
@@ -137,11 +137,11 @@ function SubLink({ href, icon: Icon, label, on }: { href: string; icon: React.El
       className={cn(
         'flex items-center gap-2 h-[30px] px-2 rounded-lg text-[13px] transition-colors',
         on
-          ? 'bg-white text-[#18181B] font-medium shadow-[0_1px_2px_rgba(16,24,40,0.06)] ring-1 ring-black/[0.04]'
-          : 'text-[#71717A] hover:text-[#18181B] hover:bg-black/[0.04]',
+          ? 'bg-accent-soft text-accent font-semibold'
+          : 'text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.04]',
       )}
     >
-      <Icon size={14} strokeWidth={1.75} className={cn('flex-shrink-0', on ? 'text-[#18181B]' : 'text-[#A1A1AA]')} />
+      <Icon size={14} strokeWidth={1.75} className={cn('flex-shrink-0', on ? 'text-accent' : 'text-[#6A6F69]')} />
       <span className="truncate">{label}</span>
     </Link>
   );
@@ -319,25 +319,25 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-[#F4F4F5] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F6F4EF] flex items-center justify-center">
         <div className="w-10 h-10 rounded-2xl bg-ink animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F4F5] flex">
+    <div className="min-h-screen bg-[#F6F4EF] flex">
       <NewVersionPrompt locale={locale} />
       <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} locale={locale} />
 
-      <aside className="w-60 flex-shrink-0 flex flex-col fixed h-full z-30 bg-[#F4F4F5]">
+      <aside className="w-60 flex-shrink-0 flex flex-col fixed h-full z-30 bg-[#F6F4EF]">
 
         <div className="px-5 pt-5 pb-3">
           <div className="flex items-center gap-3">
             <img src="/airstay-logo.svg" alt="Airstay" className="w-8 h-8 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="font-bold text-[#18181B] text-[15px] leading-tight tracking-tight">Airstay</p>
-              <p className="text-[#A1A1AA] text-[11px] leading-tight">Portal App</p>
+              <p className="font-bold text-[#1B2420] text-[15px] leading-tight tracking-tight">Airstay</p>
+              <p className="text-[#6A6F69] text-[11px] leading-tight">Portal App</p>
             </div>
           </div>
         </div>
@@ -345,7 +345,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 px-3 pb-4 overflow-y-auto scrollbar-hide">
           {sections.map((section) => (
             <div key={section.key} className="mt-2.5 first:mt-0">
-              <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[#A1A1AA]">
+              <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[#6A6F69]">
                 {sectionLabels[section.key]}
               </p>
               <div className="space-y-0.5">
@@ -367,15 +367,15 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                         className={cn(
                           'group flex items-center gap-2.5 h-[34px] px-2.5 rounded-xl text-[13.5px] transition-colors',
                           active
-                            ? 'bg-white text-[#18181B] font-semibold shadow-[0_1px_2px_rgba(16,24,40,0.06)] ring-1 ring-black/[0.04]'
-                            : 'text-[#52525B] hover:bg-black/[0.04] hover:text-[#18181B]',
+                            ? 'bg-accent-soft text-accent font-semibold'
+                            : 'text-[#3D433E] hover:bg-black/[0.04] hover:text-[#1B2420]',
                         )}
                       >
                         <Link href={href} className="flex items-center gap-2.5 flex-1 min-w-0 h-full">
                           <Icon
                             size={18}
                             strokeWidth={1.75}
-                            className={cn('flex-shrink-0', active ? 'text-[#18181B]' : 'text-[#A1A1AA] group-hover:text-[#52525B]')}
+                            className={cn('flex-shrink-0', active ? 'text-accent' : 'text-[#6A6F69] group-hover:text-[#3D433E]')}
                           />
                           <span className="truncate">{label}</span>
                         </Link>
@@ -385,7 +385,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                             type="button"
                             onClick={toggle}
                             aria-expanded={open}
-                            className="-mr-1 p-1 rounded-md text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05] transition"
+                            className="-mr-1 p-1 rounded-md text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05] transition"
                           >
                             <ChevronDown size={14} className={cn('transition-transform', open ? 'rotate-180' : '')} />
                           </button>
@@ -431,8 +431,8 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                   'flex-1 h-7 rounded-[10px] text-[11.5px] font-semibold transition',
                   locale === code
-                    ? 'bg-white text-[#18181B] shadow-[0_1px_2px_rgba(16,24,40,0.08)]'
-                    : 'text-[#71717A] hover:text-[#18181B]',
+                    ? 'bg-white text-[#1B2420] shadow-[0_1px_2px_rgba(16,24,40,0.08)]'
+                    : 'text-[#6A6F69] hover:text-[#1B2420]',
                 )}
               >
                 {label}
@@ -443,18 +443,18 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
         <div className="px-3 pb-4">
           <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white ring-1 ring-black/[0.05] shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-            <div className="w-8 h-8 rounded-full bg-[#18181B] flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-[#1B2420] flex items-center justify-center flex-shrink-0">
               <span className="text-white text-xs font-semibold">{user.name?.[0] ?? '?'}</span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[#18181B] text-[12.5px] font-semibold truncate leading-tight">{user.name}</p>
-              <p className="text-[#A1A1AA] text-[11px] truncate leading-tight">{user.email}</p>
+              <p className="text-[#1B2420] text-[12.5px] font-semibold truncate leading-tight">{user.name}</p>
+              <p className="text-[#6A6F69] text-[11px] truncate leading-tight">{user.email}</p>
             </div>
             <button
               onClick={logout}
               title={t.general.logout}
               aria-label={t.general.logout}
-              className="p-1.5 rounded-lg text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05] transition"
+              className="p-1.5 rounded-lg text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05] transition"
             >
               <LogOut size={15} />
             </button>
@@ -463,10 +463,11 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 ml-60 min-h-screen p-2 pl-0 min-w-0">
-        <div className="min-h-[calc(100vh-16px)] bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-[0_1px_3px_rgba(16,24,40,0.04)] flex flex-col min-w-0">
+        {/* Oct 2026 redesign: content sits on the warm ground; pages bring their own white cards. */}
+        <div className="min-h-[calc(100vh-16px)] bg-surface rounded-2xl flex flex-col min-w-0">
           {/* Search on its own row at the top; the breadcrumb sits under it in
               small type, as in the reference (16 Oct 2026). */}
-          <header className="sticky top-0 z-20 h-14 flex items-center px-6 border-b border-black/[0.05] bg-white/90 backdrop-blur rounded-t-2xl">
+          <header className="sticky top-0 z-20 h-14 flex items-center px-6 border-b border-surface-border bg-surface/90 backdrop-blur rounded-t-2xl">
             {canSearch && (
               <button
                 type="button"
@@ -474,8 +475,8 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                 className="w-full max-w-md h-9 flex items-center gap-2.5 pl-3 pr-1.5 rounded-full bg-white ring-1 ring-black/[0.08] shadow-[0_1px_2px_rgba(16,24,40,0.05)] text-left hover:ring-black/[0.14] transition"
                 title={`${searchStrings.hint} (Shift+S)`}
               >
-                <Search size={15} className="text-[#A1A1AA] flex-shrink-0" />
-                <span className="flex-1 min-w-0 truncate text-[13px] text-[#A1A1AA]">{searchStrings.placeholder}</span>
+                <Search size={15} className="text-[#6A6F69] flex-shrink-0" />
+                <span className="flex-1 min-w-0 truncate text-[13px] text-[#6A6F69]">{searchStrings.placeholder}</span>
                 <ShortcutCue />
               </button>
             )}
@@ -510,15 +511,15 @@ function Breadcrumb({ section, item, itemHref, tab, lists, onData }: {
   const last = tab || list;
   return (
     <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 text-[12px] leading-none">
-      {section && <span className="text-[#A1A1AA] truncate">{section}</span>}
-      {section && item && <span className="text-[#D4D4D8]">/</span>}
+      {section && <span className="text-[#6A6F69] truncate">{section}</span>}
+      {section && item && <span className="text-[#DCD6CB]">/</span>}
       {item && (
         last
-          ? <Link href={itemHref} className="text-[#A1A1AA] hover:text-[#52525B] truncate">{item}</Link>
-          : <span className="text-[#52525B] font-medium truncate">{item}</span>
+          ? <Link href={itemHref} className="text-[#6A6F69] hover:text-[#3D433E] truncate">{item}</Link>
+          : <span className="text-[#3D433E] font-medium truncate">{item}</span>
       )}
-      {last && <span className="text-[#D4D4D8]">/</span>}
-      {last && <span className="text-[#52525B] font-medium truncate">{last}</span>}
+      {last && <span className="text-[#DCD6CB]">/</span>}
+      {last && <span className="text-[#3D433E] font-medium truncate">{last}</span>}
     </nav>
   );
 }
@@ -536,7 +537,7 @@ function DataSubnav({ lists, onData }: { lists: DatasetSummary[]; onData: boolea
   return (
     <TreeBranch>
       <TreeLeaf last>
-        <div className="flex items-center gap-2 h-[30px] px-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-[#A1A1AA]">
+        <div className="flex items-center gap-2 h-[30px] px-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-[#6A6F69]">
           <Layers size={14} strokeWidth={1.75} className="flex-shrink-0" />
           CDM
         </div>

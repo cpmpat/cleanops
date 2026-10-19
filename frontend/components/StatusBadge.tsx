@@ -3,21 +3,21 @@ import type { EventStatus, CleaningType } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
 
 const STATUS_STYLES: Record<EventStatus, string> = {
-  PENDING:    'bg-amber-50 text-amber-800 border-amber-200',
-  ASSIGNED:   'bg-blue-50 text-blue-800 border-blue-200',
-  IN_PROGRESS:'bg-violet-50 text-violet-800 border-violet-200',
-  COMPLETED:  'bg-emerald-50 text-emerald-800 border-emerald-200',
-  CANCELLED:  'bg-stone-100 text-stone-500 border-stone-200',
-  FLAGGED:    'bg-red-50 text-red-800 border-red-200',
+  PENDING:    'bg-sand-soft text-sand-deep border-transparent',
+  ASSIGNED:   'bg-surface-sunken text-ink-soft border-transparent',
+  IN_PROGRESS:'bg-accent text-white border-transparent',
+  COMPLETED:  'bg-accent-soft text-accent border-transparent',
+  CANCELLED:  'bg-surface-sunken text-ink-muted border-transparent',
+  FLAGGED:    'bg-coral-soft text-coral-deep border-transparent',
 };
 
 const STATUS_DOT: Record<EventStatus, string> = {
-  PENDING:    'bg-amber-400',
-  ASSIGNED:   'bg-blue-500',
-  IN_PROGRESS:'bg-violet-500',
-  COMPLETED:  'bg-emerald-500',
-  CANCELLED:  'bg-stone-400',
-  FLAGGED:    'bg-red-500',
+  PENDING:    'bg-sand',
+  ASSIGNED:   'bg-ink-muted',
+  IN_PROGRESS:'bg-white',
+  COMPLETED:  'bg-accent',
+  CANCELLED:  'bg-ink-faint',
+  FLAGGED:    'bg-coral',
 };
 
 interface StatusBadgeProps {
@@ -29,7 +29,7 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, t, size = 'md' }: StatusBadgeProps) {
   return (
     <span className={cn(
-      'inline-flex items-center gap-1.5 rounded-full border font-medium',
+      'inline-flex items-center gap-1.5 rounded-md border font-semibold',
       size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs',
       STATUS_STYLES[status] ?? STATUS_STYLES.PENDING,
     )}>
