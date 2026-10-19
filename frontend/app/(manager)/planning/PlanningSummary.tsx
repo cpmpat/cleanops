@@ -86,13 +86,11 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
     const maxBucket = Math.max(1, ...buckets.map(b => b.total));
 
     // Each agent's day in this list.
-    const byAgent = new Map<string, { name: string; count: number; red: number; amber: number; first: string }>();
+    const byAgent = new Map<string, { name: string; count: number; first: string }>();
     for (const b of guests) {
       if (!b.checkInAgentId) continue;
-      const cur = byAgent.get(b.checkInAgentId) ?? { name: b.checkInAgentName ?? '—', count: 0, red: 0, amber: 0, first: b.checkInTime };
+      const cur = byAgent.get(b.checkInAgentId) ?? { name: b.checkInAgentName ?? '—', count: 0, first: b.checkInTime };
       cur.count++;
-      if (b.legIn?.state === 'IMPOSSIBLE') cur.red++;
-      if (b.legIn?.state === 'TIGHT') cur.amber++;
       if (b.checkInTime < cur.first) cur.first = b.checkInTime;
       byAgent.set(b.checkInAgentId, cur);
     }
@@ -183,15 +181,8 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
                 <span className="text-[11.5px] text-ink-muted font-mono">{a.count} check-in{a.count === 1 ? '' : 's'}</span>
               </div>
               <div className="h-1.5 bg-surface-sunken rounded-full overflow-hidden">
-                <div className={cn('h-full', a.red ? 'bg-coral' : a.amber ? 'bg-sand' : 'bg-accent')} style={{ width: `${(a.count / s.maxAgent) * 100}%` }} />
+                <div className="h-full bg-accent" style={{ width: `${(a.count / s.maxAgent) * 100}%` }} />
               </div>
-              {(a.red > 0 || a.amber > 0) && (
-                <span className="text-[11px] text-ink-muted">
-                  {a.red > 0 && <span className="text-coral-deep font-semibold">{a.red} leg{a.red === 1 ? '' : 's'} too far</span>}
-                  {a.red > 0 && a.amber > 0 && ' · '}
-                  {a.amber > 0 && <span className="text-sand-deep font-semibold">{a.amber} tight</span>}
-                </span>
-              )}
             </div>
           ))}
         </section>

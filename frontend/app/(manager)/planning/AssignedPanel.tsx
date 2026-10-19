@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { integrations, type CheckInRoute } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, ArrowDown, Phone, X } from 'lucide-react';
-import { legLabel, legTone, street } from './legText';
+import { AlertTriangle, Phone, X } from 'lucide-react';
+import { street } from './unitName';
 
 const dayLabel = (day: string) => {
   const [y, m, d] = day.split('-').map(Number);
@@ -13,8 +13,8 @@ const dayLabel = (day: string) => {
 };
 
 /**
- * Split view "Assigned": the chosen agents' check-ins in time order, with the
- * leg between consecutive ones and a footer per day. Available at any time —
+ * Split view "Assigned": the chosen agents' check-ins in time order, with a
+ * footer per day. (Travel legs between check-ins were dropped, 20 Oct 2026.) Available at any time —
  * the desk wants to inspect a route halfway through planning too; the
  * unassigned count says how complete the picture is.
  */
@@ -60,7 +60,6 @@ export function AssignedPanel({
           <p className="text-sm font-bold text-ink">Assigned</p>
           <p className="text-[11px] text-ink-muted">
             {from === to ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(to)}`}
-            {data && ` · ${data.serviceMinutes} min per check-in, ${data.bufferMinutes} min buffer`}
           </p>
         </div>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-sunken text-ink-muted"><X size={16} /></button>
@@ -115,12 +114,6 @@ export function AssignedPanel({
                 <div className="px-3 py-2">
                   {d.items.map(i => (
                     <div key={i.bookingId}>
-                      {i.legIn && (
-                        <p className={cn('flex items-center gap-1.5 pl-1 py-1 text-[11px]', legTone[i.legIn.state])}>
-                          <ArrowDown size={11} className="flex-shrink-0" />
-                          {legLabel(i.legIn)}
-                        </p>
-                      )}
                       <button
                         onClick={() => onPick(i.bookingId)}
                         className={cn(
@@ -147,10 +140,6 @@ export function AssignedPanel({
                 <p className="px-3 py-1.5 border-t border-surface-border text-[11px] text-ink-muted flex flex-wrap gap-x-2">
                   <span><strong className="text-ink-soft">{d.footer.count}</strong> check-in{d.footer.count === 1 ? '' : 's'}</span>
                   {d.footer.first && <span>{d.footer.first}–{d.footer.last}</span>}
-                  {d.footer.travelMinutes > 0 && <span>{d.footer.travelMinutes} min travel</span>}
-                  {d.footer.red > 0 && <span className="text-coral-deep font-semibold">{d.footer.red} won’t make it</span>}
-                  {d.footer.amber > 0 && <span className="text-sand-deep font-semibold">{d.footer.amber} tight</span>}
-                  {d.footer.unknownLegs > 0 && <span className="text-ink-faint">{d.footer.unknownLegs} leg{d.footer.unknownLegs === 1 ? '' : 's'} unknown</span>}
                 </p>
               </div>
             ))}

@@ -237,8 +237,6 @@ export interface PlanningBooking {
   checkInAgentNotified?: boolean;
   /** When they answered it; null while unseen. */
   checkInAgentSeenAt?: string | null;
-  /** The leg from the same agent's previous check-in that day (Check-In tab only). */
-  legIn?: CheckInLeg | null;
   /** The agent's report after the check-in, summarised. */
   checkInReport?: { submittedAt: string; hasComment: boolean; scores: Partial<Record<RatingAspect, number>> } | null;
   timeSlot?: string;
@@ -670,24 +668,6 @@ export interface TurnoverBookingRef {
   pmsCreatedAt?: string | null;
 }
 
-/** Can the agent get from the previous check-in to this one? */
-export interface CheckInLeg {
-  fromBookingId: string;
-  toBookingId: string;
-  fromName: string;
-  fromTime: string;
-  sameBuilding: boolean;
-  distanceKm: number | null;
-  travelMinutes: number | null;
-  mode: 'SAME_BUILDING' | 'WALK' | 'TRANSIT' | null;
-  /** Minutes left after service, travel and buffer; negative = short. */
-  slackMinutes: number | null;
-  /** Minutes between getting there and the guest's arrival; negative = late. */
-  gapMinutes: number | null;
-  state: 'OK' | 'TIGHT' | 'IMPOSSIBLE' | 'UNKNOWN';
-  unknownReason: 'NO_COORDINATES' | 'TIME_UNCONFIRMED' | null;
-}
-
 export interface CheckInRouteItem {
   bookingId: string;
   bookingRef: string;
@@ -697,14 +677,11 @@ export interface CheckInRouteItem {
   guests: string;
   consent: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' | 'PHONE';
   seen: boolean;
-  legIn: CheckInLeg | null;
 }
 
 export interface CheckInRoute {
   from: string;
   to: string;
-  serviceMinutes: number;
-  bufferMinutes: number;
   unassignedCount: number;
   agents: { id: string; name: string; count: number }[];
   columns: {
@@ -714,7 +691,7 @@ export interface CheckInRoute {
     days: {
       day: string;
       items: CheckInRouteItem[];
-      footer: { count: number; first: string | null; last: string | null; travelMinutes: number; unknownLegs: number; red: number; amber: number };
+      footer: { count: number; first: string | null; last: string | null };
     }[];
   }[];
 }
