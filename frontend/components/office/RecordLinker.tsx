@@ -111,12 +111,12 @@ export function RecordPicker({ s, onAdd, exclude = [] }: {
             {pick.fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
           <button type="button" onClick={() => void add()} disabled={taken(row.rowId)}
-            className="h-8 flex items-center gap-1 px-3 rounded-lg bg-[#1B2420] text-white text-[12.5px] font-semibold disabled:opacity-40">
+            className="h-8 flex items-center gap-1 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-[12.5px] font-semibold disabled:opacity-40">
             <Plus size={13} /> {s.addLink}
           </button>
         </div>
       )}
-      {error && <p className="text-[12px] text-red-600">{error}</p>}
+      {error && <p className="text-[12px] text-coral-deep">{error}</p>}
     </div>
   );
 }

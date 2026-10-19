@@ -105,13 +105,13 @@ export function NewTaskDialog({ people, s, onClose, onCreated }: {
               </select>
             </div>
           </div>
-          {status === 'TODO' && assigneeIds.length === 0 && <p className="text-[12px] text-[#B45309]">{s.needsAssignee}</p>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {status === 'TODO' && assigneeIds.length === 0 && <p className="text-[12px] text-[#8A5A12]">{s.needsAssignee}</p>}
+          {error && <p className="text-sm text-coral-deep">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-black/[0.06]">
           <button type="button" onClick={onClose} className="h-9 px-3.5 rounded-xl text-sm font-semibold text-[#3D433E] hover:bg-black/[0.05]">{s.cancel}</button>
           <button type="submit" disabled={busy || !title.trim() || (status === 'TODO' && assigneeIds.length === 0)}
-            className="h-9 px-4 rounded-xl bg-[#1B2420] text-white text-sm font-semibold disabled:opacity-40">{s.create}</button>
+            className="h-9 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white text-sm font-semibold disabled:opacity-40">{s.create}</button>
         </div>
       </form>
     </div>
