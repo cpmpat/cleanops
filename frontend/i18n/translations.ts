@@ -301,6 +301,10 @@ const _translationsBase = {
       inProgress: 'Active',
       overdue: 'Overdue',
       noEvents: 'No cleanings scheduled today.',
+      subtitle: 'Cleanings live from the cleaners\' app', today: 'Today', tomorrow: 'Tomorrow',
+      inPool: 'In pool', assigned: 'Assigned', poolLane: 'In pool · nobody took it', assignedLane: 'Assigned · not started',
+      startedAt: 'started', doneAt: 'done', lastMinute: 'Last minute · booked', ownerStay: 'Owner stay',
+      noArrival: 'No arrival yet', cleaning: 'Cleaning', done: 'Done', issue: 'Issue',
     },
     staff: {
       title: 'Staff',
@@ -614,6 +618,10 @@ const _translationsBase = {
       title: 'Přehled dne', total: 'Celkem', completed: 'Hotovo',
       pending: 'Čeká', inProgress: 'Probíhá', overdue: 'Po termínu',
       noEvents: 'Dnes žádné úklidy.',
+      subtitle: 'Úklidy živě z aplikace uklízeček', today: 'Dnes', tomorrow: 'Zítra',
+      inPool: 'V poolu', assigned: 'Přiděleno', poolLane: 'V poolu · nikdo si nevzal', assignedLane: 'Přiděleno · nezačato',
+      startedAt: 'začátek', doneAt: 'hotovo', lastMinute: 'Last minute · rezervace', ownerStay: 'Pobyt majitele',
+      noArrival: 'Zatím bez příjezdu', cleaning: 'Uklízí se', done: 'Hotovo', issue: 'Problém',
     },
     staff: {
       title: 'Personál', workload: 'Dnešní vytížení', assignments: 'úkolů',
@@ -893,6 +901,10 @@ const _translationsBase = {
       title: 'Обзор дня', total: 'Всего', completed: 'Готово',
       pending: 'Ожидает', inProgress: 'Активно', overdue: 'Просрочено',
       noEvents: 'Уборок на сегодня нет.',
+      subtitle: 'Уборки в реальном времени из приложения', today: 'Сегодня', tomorrow: 'Завтра',
+      inPool: 'В пуле', assigned: 'Назначено', poolLane: 'В пуле · никто не взял', assignedLane: 'Назначено · не начато',
+      startedAt: 'начало', doneAt: 'готово', lastMinute: 'Последняя минута · бронь', ownerStay: 'Проживание владельца',
+      noArrival: 'Заезда пока нет', cleaning: 'Уборка', done: 'Готово', issue: 'Проблема',
     },
     staff: {
       title: 'Персонал', workload: 'Нагрузка сегодня', assignments: 'задания',
@@ -1172,6 +1184,10 @@ const _translationsBase = {
       title: 'Огляд дня', total: 'Всього', completed: 'Готово',
       pending: 'Очікує', inProgress: 'Активно', overdue: 'Прострочено',
       noEvents: 'Прибирань на сьогодні немає.',
+      subtitle: 'Прибирання в реальному часі з додатка', today: 'Сьогодні', tomorrow: 'Завтра',
+      inPool: 'У пулі', assigned: 'Призначено', poolLane: 'У пулі · ніхто не взяв', assignedLane: 'Призначено · не розпочато',
+      startedAt: 'початок', doneAt: 'готово', lastMinute: 'Остання хвилина · бронь', ownerStay: 'Проживання власника',
+      noArrival: 'Заїзду поки немає', cleaning: 'Прибирання', done: 'Готово', issue: 'Проблема',
     },
     staff: {
       title: 'Персонал', workload: 'Навантаження сьогодні', assignments: 'завдань',
