@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard, Roles, RolesGuard } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
-import { CheckInAgentService } from './checkin-agent.service';
+import { CheckInAgentService, ReportDto } from './checkin-agent.service';
 
 /**
  * The check-in agent's own view. Every route reads only the signed-in agent's
@@ -26,6 +26,22 @@ export class CheckInsController {
   @ApiOperation({ summary: 'How many changes are waiting for my answer (tab badge)' })
   count(@Req() req: TenantRequest) {
     return this.checkIns.pendingCount(req.tenantId!, req.userId!);
+  }
+
+  @Get(':bookingId')
+  @ApiOperation({ summary: 'One of my check-ins: guest name and phone, time, Chekin link, my report' })
+  detail(@Req() req: TenantRequest, @Param('bookingId') bookingId: string) {
+    return this.checkIns.detail(req.tenantId!, req.userId!, bookingId);
+  }
+
+  @Put(':bookingId/report')
+  @ApiOperation({
+    summary: 'Write or correct my report on a check-in',
+    description: 'Body: { comment?, ratings: [{ aspect: "CLEANLINESS", score: 1–5, comment? }] }. ' +
+      'A score below 3 needs its own comment. From the arrival day for 14 days.',
+  })
+  report(@Req() req: TenantRequest, @Param('bookingId') bookingId: string, @Body() body: ReportDto) {
+    return this.checkIns.saveReport(req.tenantId!, req.userId!, bookingId, body ?? {});
   }
 
   @Post('changes/:recipientId/respond')

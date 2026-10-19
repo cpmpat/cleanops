@@ -134,12 +134,18 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [agentError, setAgentError] = useState('');
   // An agent who has not declared the arrival: picked once, confirmed on the second click.
   const [agentOverride, setAgentOverride] = useState<AgentOption | null>(null);
+  // The agent's report on that check-in, when there is one.
+  const [agentReport, setAgentReport] = useState<Awaited<ReturnType<typeof integrations.planning.report>>>(null);
 
   function openAgentPicker(b: PlanningBooking) {
     setAgentFor(b);
     setAgentData(null);
     setAgentError('');
     setAgentOverride(null);
+    setAgentReport(null);
+    if (b.checkInReport) {
+      integrations.planning.report(b.id).then(setAgentReport).catch(() => {});
+    }
     setAgentLoading(true);
     integrations.planning.agentOptions(b.id)
       .then(setAgentData)
@@ -924,6 +930,23 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       </button>
                     );
                   })()}
+                  {/* The agent's report: cleanliness at a glance, red below 3. */}
+                  {!byCheckOut && b.checkInReport && (() => {
+                    const c = b.checkInReport.scores.CLEANLINESS;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => openAgentPicker(b)}
+                        title="Agent's report — open"
+                        className={cn(
+                          'text-[10.5px] leading-tight rounded-full px-1.5 py-px border',
+                          c !== undefined && c < 3 ? 'border-red-300 bg-red-50 text-red-700 font-semibold' : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                        )}
+                      >
+                        ✓ report{c !== undefined ? ` · clean ${c}/5` : ''}{b.checkInReport.hasComment ? ' · 💬' : ''}
+                      </button>
+                    );
+                  })()}
                   {/* The leg from this agent's previous check-in that day. */}
                   {!byCheckOut && b.checkInAgentId && b.legIn && (
                     <span
@@ -1075,6 +1098,27 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                 <X size={16} />
               </button>
             </div>
+
+            {agentReport && (
+              <div className={cn(
+                'mb-3 rounded-xl border px-3 py-2.5 text-xs space-y-1',
+                agentReport.ratings.some(r => r.score < 3) ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50',
+              )}>
+                <p className="font-semibold text-ink">
+                  Report by {agentReport.agentName ?? 'agent'} · {formatTime(agentReport.updatedAt)}
+                </p>
+                {agentReport.ratings.map(r => (
+                  <p key={r.aspect} className={r.score < 3 ? 'text-red-800' : 'text-ink-soft'}>
+                    {r.aspect === 'CLEANLINESS' ? 'Cleanliness' : r.aspect}: <strong>{r.score}/5</strong>
+                    {r.comment && <> — {r.comment}</>}
+                  </p>
+                ))}
+                {agentReport.comment && <p className="text-ink-soft whitespace-pre-line">{agentReport.comment}</p>}
+                {agentReport.cleanerNames.length > 0 && (
+                  <p className="text-ink-muted">Cleaned by {agentReport.cleanerNames.join(', ')}</p>
+                )}
+              </div>
+            )}
 
             {agentFor.checkInAgentId && agentFor.checkInAgentConsent === 'PENDING' && (
               <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">

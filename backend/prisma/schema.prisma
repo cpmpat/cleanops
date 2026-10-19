@@ -377,6 +377,7 @@ model Booking {
   cleaning          Cleaning?      // 1:1 (a booking has at most one cleaning)
   turnoversAsFrom   Turnover[]            @relation("TurnoverFromBooking")
   checkInChanges    CheckInAssignmentChange[]
+  checkInReport     CheckInReport?
   turnoversAsTo     Turnover[]            @relation("TurnoverToBooking")
   incidents         Incident[]
 
@@ -2289,4 +2290,44 @@ model AgentTimeOff {
   @@unique([userId, day])
   @@index([tenantId, day])
   @@map("agent_time_off")
+}
+
+// ─── CHECK-IN REPORT (filled by the agent after meeting the guest) ───────────
+
+/// How a check-in went, written by the agent who did it. One per booking;
+/// the agent may correct it for a while after arrival.
+model CheckInReport {
+  id          String   @id @default(uuid())
+  tenantId    String
+  bookingId   String   @unique
+  agentId     String
+  /// "How did the check-in go" — free text, optional.
+  comment     String?
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  /// The arrival turnover and its cleaners when the report was written, so a
+  /// low cleanliness score can be followed up with the right people.
+  turnoverId  String?
+  cleanerIds  String[] @default([])
+
+  booking Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ratings CheckInRating[]
+
+  @@index([tenantId, submittedAt])
+  @@map("checkin_reports")
+}
+
+/// One rated aspect of the apartment's readiness (1–5). Below 3 needs a comment.
+model CheckInRating {
+  id       String  @id @default(uuid())
+  reportId String
+  /// CLEANLINESS (more aspects can be added without a migration)
+  aspect   String
+  score    Int
+  comment  String?
+
+  report CheckInReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, aspect])
+  @@map("checkin_ratings")
 }
