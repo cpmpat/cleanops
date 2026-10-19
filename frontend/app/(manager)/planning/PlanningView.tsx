@@ -57,7 +57,16 @@ function quickRange(w: QuickWindow): { from: string; to: string } {
  * client never builds an instant, because the last time it did it labelled
  * Prague wall-clock as UTC and 15:10 became 17:10 everywhere.
  */
-type Draft = { checkIn: string; checkOut: string };
+type Draft = {
+  checkIn: string;
+  checkOut: string;
+  /**
+   * The desk picked this tab's time on a row whose time was only assumed
+   * (FALLBACK). Picking 15:00 over an assumed 15:00 is still a decision:
+   * it is pushed, and from then on the time counts as set by a person.
+   */
+  confirm?: boolean;
+};
 type RowState = 'pushing' | 'ok' | 'error';
 
 /** How many rows are pushed to Avantio at once. Small: Avantio rate-limits, and one PUT is ~1 s. */
@@ -137,6 +146,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [pushingAll, setPushingAll] = useState(false);
+  // An assumed time shows empty while its field has focus, so that picking the
+  // same time (15:00 over an assumed 15:00) is a change the browser reports.
+  // Leaving the field without picking restores the assumed time untouched.
+  const [blankFor, setBlankFor] = useState<string | null>(null);
   // Setup-request toggles save on click; this holds the ids mid-flight / failed.
   const [flagBusy, setFlagBusy] = useState<Record<string, 'saving' | 'error'>>({});
 
@@ -313,7 +326,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     const d = drafts[b.id];
     if (!d) return false;
     const s = stored(b);
-    return d.checkIn !== s.checkIn || d.checkOut !== s.checkOut;
+    return d.checkIn !== s.checkIn || d.checkOut !== s.checkOut || (!!d.confirm && ownSource(b) === 'FALLBACK');
   }
 
   function setDraft(b: PlanningBooking, patch: Partial<Draft>) {
@@ -334,15 +347,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
   /** Push one row. Sends only the fields that changed; HH:mm, Prague. */
   /**
-   * `confirm`: push this tab's time even though it did not change. An assumed
-   * time (FALLBACK, e.g. 15:00) that really is the arrival time could not be
-   * confirmed before — picking 15:00 over 15:00 is no edit, so nothing was
-   * dirty. Confirming sends it to Avantio and marks it as set by a person,
-   * which is what turns it bold on the cleaner's card.
+   * A confirmed draft (see Draft.confirm) pushes this tab's time even when it
+   * equals the assumed one: Avantio gets it and the row is marked as set by a
+   * person, which is what turns it bold on the cleaner's card.
    */
-  async function pushRow(b: PlanningBooking, confirm = false): Promise<boolean> {
-    const d = drafts[b.id] ?? (confirm ? stored(b) : undefined);
+  async function pushRow(b: PlanningBooking): Promise<boolean> {
+    const d = drafts[b.id];
     if (!d || !b.pmsBookingId) return false;
+    const confirm = !!d.confirm && ownSource(b) === 'FALLBACK';
     const s = stored(b);
     const body: { checkInTime?: string; checkOutTime?: string } = {};
     // Each tab pushes only the time it owns; the other input is locked anyway.
@@ -828,10 +840,12 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? tp.lockedHint : undefined}>
                       <input
                         type="time"
-                        value={d.checkIn}
+                        value={blankFor === b.id && !drafts[b.id] ? '' : d.checkIn}
+                        onFocus={() => { if (!byCheckOut && b.checkInSource === 'FALLBACK' && !drafts[b.id]) setBlankFor(b.id); }}
+                        onBlur={() => setBlankFor(prev => (prev === b.id ? null : prev))}
                         disabled={byCheckOut || !editable || state === 'pushing'}
                         readOnly={byCheckOut}
-                        onChange={e => setDraft(b, { checkIn: e.target.value })}
+                        onChange={e => { if (e.target.value) setDraft(b, { checkIn: e.target.value, confirm: b.checkInSource === 'FALLBACK' }); }}
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkInTime}
                         className={cn(
@@ -855,10 +869,12 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <label className="flex items-center gap-1 text-xs text-ink-muted" title={byCheckOut ? undefined : tp.lockedHint}>
                       <input
                         type="time"
-                        value={d.checkOut}
+                        value={blankFor === b.id && !drafts[b.id] ? '' : d.checkOut}
+                        onFocus={() => { if (byCheckOut && b.checkOutSource === 'FALLBACK' && !drafts[b.id]) setBlankFor(b.id); }}
+                        onBlur={() => setBlankFor(prev => (prev === b.id ? null : prev))}
                         disabled={!byCheckOut || !editable || state === 'pushing'}
                         readOnly={!byCheckOut}
-                        onChange={e => setDraft(b, { checkOut: e.target.value })}
+                        onChange={e => { if (e.target.value) setDraft(b, { checkOut: e.target.value, confirm: b.checkOutSource === 'FALLBACK' }); }}
                         onKeyDown={e => { if (e.key === 'Enter' && dirty) void pushRow(b); }}
                         aria-label={tp.checkOutTime}
                         className={cn(
@@ -876,19 +892,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   {/* Row action: push / undo / result */}
                   <div className="flex items-center justify-end gap-1">
-                      {/* An assumed time that is the real one: confirm it as is. */}
-                      {!dirty && editable && state !== 'pushing' && state !== 'ok' && ownSource(b) === 'FALLBACK' && (
-                        <button
-                          type="button"
-                          onClick={() => void pushRow(b, true)}
-                          title={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
-                          aria-label={`${tp.confirmTime} ${byCheckOut ? d.checkOut : d.checkIn}`}
-                          className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-semibold hover:bg-amber-100 transition"
-                        >
-                          <Check size={12} />
-                          {tp.confirmShort}
-                        </button>
-                      )}
                       {state === 'pushing' && <span className="text-[11px] text-ink-faint">{tp.pushing}</span>}
                       {state === 'ok' && <Check size={15} className="text-emerald-600" />}
                       {state === 'error' && <span className="text-[11px] text-red-600 font-medium" title={tp.pushFailed}>!</span>}
