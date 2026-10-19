@@ -42,6 +42,21 @@ export interface AvailabilityStrings {
   todayLocked: string;
   saveFailed: string;
   loading: string;
+  // ── Time off & deadline ──
+  timeOff: string;
+  markTimeOff: string;
+  reasonLabel: Record<'VACATION' | 'SICK' | 'OTHER', string>;
+  timeOffNote: string;
+  saveTimeOff: (days: number) => string;
+  removeTimeOff: string;
+  timeOffSetByDesk: string;
+  lockedHint: (when: string) => string;
+  deadlineNote: string;
+  deskTimeOff: string;
+  deskNotDeclaredLate: string;
+  deskSetTimeOff: string;
+  deskTimeOffFor: (name: string) => string;
+  deskByPhone: string;
   // ── Desk ──
   tabLabel: string;
   deskTitle: string;
@@ -114,6 +129,20 @@ const en: AvailabilityStrings = {
   todayLocked: "Today's hours are fixed. If something changes, call the front desk.",
   saveFailed: 'Could not save — try again',
   loading: 'Loading…',
+  timeOff: 'Time off',
+  markTimeOff: 'Mark time off',
+  reasonLabel: { VACATION: 'Vacation', SICK: 'Sick', OTHER: 'Other' },
+  timeOffNote: 'Note (optional)',
+  saveTimeOff: (n) => `Save · ${n} ${n === 1 ? 'day' : 'days'}`,
+  removeTimeOff: 'Remove time off',
+  timeOffSetByDesk: 'Recorded by the front desk',
+  lockedHint: (w) => `Fixed since ${w} — you can add hours; to change them, call the front desk`,
+  deadlineNote: 'Hours are due by 18:00 two days before.',
+  deskTimeOff: 'Time off',
+  deskNotDeclaredLate: 'Nothing declared — deadline passed',
+  deskSetTimeOff: 'Record time off',
+  deskTimeOffFor: (n) => `Time off for ${n}`,
+  deskByPhone: 'Recorded after a call — logged under your name.',
   tabLabel: 'Agents',
   deskTitle: 'Agents',
   deskSubtitle: 'Who can meet guests, hour by hour — set by the agents themselves · Europe/Prague',
@@ -185,6 +214,20 @@ const cs: AvailabilityStrings = {
   todayLocked: 'Dnešní hodiny už nejdou změnit. Když se něco změní, zavolejte na front desk.',
   saveFailed: 'Nepodařilo se uložit — zkuste to znovu',
   loading: 'Načítám…',
+  timeOff: 'Volno',
+  markTimeOff: 'Zadat volno',
+  reasonLabel: { VACATION: 'Dovolená', SICK: 'Nemoc', OTHER: 'Jiné' },
+  timeOffNote: 'Poznámka (nepovinné)',
+  saveTimeOff: (n) => `Uložit · ${n} ${n === 1 ? 'den' : n < 5 ? 'dny' : 'dní'}`,
+  removeTimeOff: 'Zrušit volno',
+  timeOffSetByDesk: 'Zadala recepce',
+  lockedHint: (w) => `Pevné od ${w} — hodiny můžeš přidat, pro změnu volej recepci`,
+  deadlineNote: 'Hodiny zadávej nejpozději do 18:00 dva dny předem.',
+  deskTimeOff: 'Volno',
+  deskNotDeclaredLate: 'Nic nezadáno — po termínu',
+  deskSetTimeOff: 'Zadat volno',
+  deskTimeOffFor: (n) => `Volno pro ${n}`,
+  deskByPhone: 'Zadáno po telefonu — zapíše se pod tvým jménem.',
   tabLabel: 'Agenti',
   deskTitle: 'Agenti',
   deskSubtitle: 'Kdo může vítat hosty, hodinu po hodině — zadávají sami agenti · Europe/Prague',
@@ -256,6 +299,20 @@ const ru: AvailabilityStrings = {
   todayLocked: 'Сегодняшние часы изменить нельзя. Если что-то изменилось, позвоните на ресепшн.',
   saveFailed: 'Не удалось сохранить — попробуйте ещё раз',
   loading: 'Загрузка…',
+  timeOff: 'Выходной',
+  markTimeOff: 'Отметить выходной',
+  reasonLabel: { VACATION: 'Отпуск', SICK: 'Болезнь', OTHER: 'Другое' },
+  timeOffNote: 'Заметка (необязательно)',
+  saveTimeOff: (n) => `Сохранить · дней: ${n}`,
+  removeTimeOff: 'Отменить выходной',
+  timeOffSetByDesk: 'Внесено ресепшеном',
+  lockedHint: (w) => `Зафиксировано с ${w} — часы можно добавить, для изменения звоните на ресепшен`,
+  deadlineNote: 'Часы нужно указать до 18:00 за два дня.',
+  deskTimeOff: 'Выходной',
+  deskNotDeclaredLate: 'Ничего не указано — срок прошёл',
+  deskSetTimeOff: 'Отметить выходной',
+  deskTimeOffFor: (n) => `Выходной для ${n}`,
+  deskByPhone: 'Внесено после звонка — записывается на ваше имя.',
   tabLabel: 'Агенты',
   deskTitle: 'Агенты',
   deskSubtitle: 'Кто может встречать гостей, по часам — отмечают сами агенты · Europe/Prague',
@@ -327,6 +384,20 @@ const uk: AvailabilityStrings = {
   todayLocked: 'Сьогоднішні години змінити не можна. Якщо щось змінилося, зателефонуйте на ресепшн.',
   saveFailed: 'Не вдалося зберегти — спробуйте ще раз',
   loading: 'Завантаження…',
+  timeOff: 'Вихідний',
+  markTimeOff: 'Позначити вихідний',
+  reasonLabel: { VACATION: 'Відпустка', SICK: 'Хвороба', OTHER: 'Інше' },
+  timeOffNote: 'Нотатка (необовʼязково)',
+  saveTimeOff: (n) => `Зберегти · днів: ${n}`,
+  removeTimeOff: 'Скасувати вихідний',
+  timeOffSetByDesk: 'Внесено рецепцією',
+  lockedHint: (w) => `Зафіксовано з ${w} — години можна додати, для зміни телефонуйте на рецепцію`,
+  deadlineNote: 'Години потрібно вказати до 18:00 за два дні.',
+  deskTimeOff: 'Вихідний',
+  deskNotDeclaredLate: 'Нічого не вказано — термін минув',
+  deskSetTimeOff: 'Позначити вихідний',
+  deskTimeOffFor: (n) => `Вихідний для ${n}`,
+  deskByPhone: 'Внесено після дзвінка — записується на ваше імʼя.',
   tabLabel: 'Агенти',
   deskTitle: 'Агенти',
   deskSubtitle: 'Хто може зустрічати гостей, по годинах — позначають самі агенти · Europe/Prague',

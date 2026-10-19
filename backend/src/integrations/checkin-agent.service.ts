@@ -8,7 +8,8 @@ import { AuditCategory, BookingStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { CleanOpsGateway } from '../websocket/websocket.module';
 import { startOfDayInAppZone, timeInAppZone, todayInAppZone } from '../common/time';
-import { addDays } from '../availability/availability.service';
+import { addDays, isLocked } from '../availability/availability.service';
+import { BUFFER_MINUTES, Leg, SERVICE_MINUTES, legsInto, loadCoordinates } from './checkin-legs';
 
 /**
  * Why an agent is, or is not, a fit for one arrival.
@@ -18,8 +19,9 @@ import { addDays } from '../availability/availability.service';
  *                     declared something that day; we cannot say more yet
  *   OUTSIDE_HOURS     declared that day, but not around the arrival time
  *   NOT_DECLARED      nothing declared for that day
+ *   TIME_OFF          the agent (or the desk) marked the day off
  */
-export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED';
+export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF';
 
 export const ELIGIBLE_FITS: readonly AgentFit[] = ['AVAILABLE', 'TIME_UNCONFIRMED'];
 
@@ -45,7 +47,9 @@ export function classifyAgent(
   day: string,
   arrivalMinute: number,
   arrivalAssumed: boolean,
+  timeOff = false,
 ): AgentFit {
+  if (timeOff) return 'TIME_OFF';
   const base = dayNumber(day) * 1440;
   const arrival = base + arrivalMinute;
   const onTheDay = blocks.filter((b) => b.day === day);
@@ -70,6 +74,7 @@ const FIT_ORDER: Record<AgentFit, number> = {
   TIME_UNCONFIRMED: 1,
   OUTSIDE_HOURS: 2,
   NOT_DECLARED: 3,
+  TIME_OFF: 4,
 };
 
 export interface AgentOption {
@@ -79,6 +84,8 @@ export interface AgentOption {
   eligible: boolean;
   /** "HH:mm–HH:mm" blocks the agent declared for the arrival day, for the dropdown hint. */
   declared: string[];
+  /** VACATION | SICK | OTHER when fit is TIME_OFF. */
+  timeOffReason: string | null;
 }
 
 function hhmm(minute: number): string {
@@ -124,11 +131,18 @@ export class CheckInAgentService {
       },
       select: { userId: true, day: true, startMinute: true, endMinute: true },
     });
+    const off = await this.prisma.agentTimeOff.findMany({
+      where: { tenantId, day, userId: { in: agents.map((a) => a.id) } },
+      select: { userId: true, reason: true },
+    });
+    const offBy = new Map<string, string>(
+      off.map((o: { userId: string; reason: unknown }) => [o.userId, String(o.reason)] as [string, string]),
+    );
 
     const options: AgentOption[] = agents
       .map((a) => {
         const mine = blocks.filter((b) => b.userId === a.id);
-        const fit = classifyAgent(mine, day, arrivalMinute, assumed);
+        const fit = classifyAgent(mine, day, arrivalMinute, assumed, offBy.has(a.id));
         return {
           id: a.id,
           name: a.name,
@@ -137,6 +151,7 @@ export class CheckInAgentService {
           declared: mine
             .filter((b) => b.day === day)
             .map((b) => `${hhmm(b.startMinute)}–${hhmm(b.endMinute)}`),
+          timeOffReason: offBy.get(a.id) ?? null,
         };
       })
       .sort((x, y) => FIT_ORDER[x.fit] - FIT_ORDER[y.fit] || x.name.localeCompare(y.name, 'cs'));
@@ -146,6 +161,8 @@ export class CheckInAgentService {
       day,
       arrival: hhmm(arrivalMinute),
       arrivalAssumed: assumed,
+      /** Hours for this day were due by 18:00 two days before; "nothing declared" is now late, not pending. */
+      deadlinePassed: isLocked(day),
       currentAgentId: booking.checkInAgentId,
       options,
     };
@@ -192,7 +209,11 @@ export class CheckInAgentService {
         where: { tenantId, userId: agentId, day: { gte: addDays(day, -1), lte: day } },
         select: { day: true, startMinute: true, endMinute: true },
       });
-      fit = classifyAgent(blocks, day, arrivalMinute, assumed);
+      const off = await this.prisma.agentTimeOff.findFirst({
+        where: { tenantId, userId: agentId, day },
+        select: { id: true },
+      });
+      fit = classifyAgent(blocks, day, arrivalMinute, assumed, !!off);
       if (!ELIGIBLE_FITS.includes(fit)) {
         if (dto.override !== true) {
           throw new ConflictException({
@@ -489,6 +510,123 @@ export class CheckInAgentService {
 
     this.nudge(tenantId, rec.change.bookingId, []);
     return { ok: true };
+  }
+
+  /**
+   * The split "Assigned" view: chosen agents' check-ins over [from, to]
+   * (Prague days, ≤ 7), ordered by time and grouped by day, each with the leg
+   * from the previous one and a day footer. Without `agentIds`, every agent
+   * who has something in the range.
+   */
+  async route(tenantId: string, from: string, to: string, agentIds?: string[]) {
+    const DAY = /^\d{4}-\d{2}-\d{2}$/;
+    if (!DAY.test(from) || !DAY.test(to) || to < from) throw new BadRequestException('from/to must be YYYY-MM-DD');
+    if (Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1 > 7) {
+      throw new BadRequestException('At most 7 days at once');
+    }
+    const range = { gte: startOfDayInAppZone(from), lt: startOfDayInAppZone(addDays(to, 1)) };
+
+    const [agents, bookings, unassigned] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { tenantId, role: 'AGENT' as any, isActive: true },
+        select: { id: true, name: true, mobileNumber: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          tenantId, status: BookingStatus.CONFIRMED, isOwnerStay: false, checkInTime: range,
+          checkInAgentId: agentIds?.length ? { in: agentIds } : { not: null },
+        },
+        orderBy: { checkInTime: 'asc' },
+        select: {
+          id: true, bookingRef: true, accommodationName: true, checkInTime: true, checkInSource: true,
+          checkInAgentId: true, checkInAgentConsent: true, numAdults: true, numChildren: true,
+          property: { select: { pmsPropertyId: true } },
+        },
+      }),
+      this.prisma.booking.count({
+        where: { tenantId, status: BookingStatus.CONFIRMED, isOwnerStay: false, checkInTime: range, checkInAgentId: null },
+      }),
+    ]);
+
+    const coords = await loadCoordinates(
+      this.prisma,
+      tenantId,
+      [...new Set(bookings.map((b: any) => b.property?.pmsPropertyId).filter(Boolean))] as string[],
+    );
+    const legs = legsInto(
+      bookings.map((b: any) => ({
+        bookingId: b.id,
+        agentId: b.checkInAgentId!,
+        arrival: b.checkInTime,
+        assumed: b.checkInSource === 'FALLBACK',
+        accommodationName: b.accommodationName,
+        coord: coords.get(b.property?.pmsPropertyId) ?? null,
+      })),
+    );
+    const acks = await this.ackStateFor(tenantId, bookings.map((b: any) => b.id));
+
+    const byAgent = new Map<string, any[]>();
+    for (const b of bookings as any[]) {
+      byAgent.set(b.checkInAgentId, [...(byAgent.get(b.checkInAgentId) ?? []), b]);
+    }
+    const wanted = agentIds?.length ? agentIds : [...byAgent.keys()];
+
+    return {
+      from,
+      to,
+      serviceMinutes: SERVICE_MINUTES,
+      bufferMinutes: BUFFER_MINUTES,
+      unassignedCount: unassigned,
+      agents: agents.map((a) => ({ id: a.id, name: a.name, count: byAgent.get(a.id)?.length ?? 0 })),
+      columns: wanted
+        .map((id) => agents.find((a) => a.id === id))
+        .filter((a): a is { id: string; name: string; mobileNumber: string | null } => !!a)
+        .map((a) => {
+          const mine = byAgent.get(a.id) ?? [];
+          const days = new Map<string, any[]>();
+          for (const b of mine) {
+            const d = todayInAppZone(b.checkInTime);
+            days.set(d, [...(days.get(d) ?? []), b]);
+          }
+          return {
+            agentId: a.id,
+            name: a.name,
+            mobileNumber: a.mobileNumber,
+            days: [...days.entries()].map(([day, list]) => {
+              const items = list.map((b) => {
+                const ack = acks.get(b.id);
+                const leg: Leg | null = legs.get(b.id) ?? null;
+                return {
+                  bookingId: b.id,
+                  bookingRef: b.bookingRef,
+                  accommodationName: b.accommodationName,
+                  time: timeInAppZone(b.checkInTime),
+                  arrivalAssumed: b.checkInSource === 'FALLBACK',
+                  guests: `${b.numAdults}${b.numChildren ? `+${b.numChildren}` : ''}`,
+                  consent: b.checkInAgentConsent,
+                  seen: ack ? (ack.userId === a.id ? !!ack.ackedAt : true) : true,
+                  legIn: leg,
+                };
+              });
+              const legList = items.map((i) => i.legIn).filter((l): l is Leg => !!l);
+              return {
+                day,
+                items,
+                footer: {
+                  count: items.length,
+                  first: items[0]?.time ?? null,
+                  last: items[items.length - 1]?.time ?? null,
+                  travelMinutes: legList.reduce((acc, l) => acc + (l.travelMinutes ?? 0), 0),
+                  unknownLegs: legList.filter((l) => l.state === 'UNKNOWN').length,
+                  red: legList.filter((l) => l.state === 'IMPOSSIBLE').length,
+                  amber: legList.filter((l) => l.state === 'TIGHT').length,
+                },
+              };
+            }),
+          };
+        }),
+    };
   }
 
   /** Planning rows: for each booking, the state of the current agent's answer. */

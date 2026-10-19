@@ -4,10 +4,11 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard, Roles, RolesGuard } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
-import { OFFICE_ROLES } from '../common/roles';
+import { OFFICE_ROLES, PLANNING_ROLES } from '../common/roles';
 import {
   AvailabilityService,
   CreateAvailabilityDto,
+  TimeOffDto,
   UpdateAvailabilityDto,
 } from './availability.service';
 
@@ -50,6 +51,28 @@ export class AvailabilityController {
     return this.service.copyWeek(req.tenantId!, req.userId!, body?.weekStart);
   }
 
+  @Post('mine/time-off')
+  @Roles('AGENT')
+  @ApiOperation({
+    summary: 'Mark days as time off',
+    description: 'Body: { from: "YYYY-MM-DD", to: "YYYY-MM-DD", reason: "VACATION" | "SICK" | "OTHER", note? }. ' +
+      'Removes hours declared on those days. Refused (409 HOLDS_CHECKINS) while you hold check-ins on them.',
+  })
+  setMyTimeOff(@Req() req: TenantRequest, @Body() dto: TimeOffDto) {
+    return this.service
+      .setTimeOff(req.tenantId!, req.userId!, { id: req.userId!, via: 'APP' }, dto)
+      .then(() => this.service.listMine(req.tenantId!, req.userId!));
+  }
+
+  @Delete('mine/time-off')
+  @Roles('AGENT')
+  @ApiOperation({ summary: 'Remove time off (?from=YYYY-MM-DD&to=YYYY-MM-DD, today onwards)' })
+  removeMyTimeOff(@Req() req: TenantRequest, @Query('from') from: string, @Query('to') to?: string) {
+    return this.service
+      .removeTimeOff(req.tenantId!, req.userId!, { id: req.userId!, via: 'APP' }, { from, to })
+      .then(() => this.service.listMine(req.tenantId!, req.userId!));
+  }
+
   @Patch('mine/:id')
   @Roles('AGENT')
   @ApiOperation({ summary: 'Change one block (tomorrow onwards; today is fixed)' })
@@ -65,6 +88,28 @@ export class AvailabilityController {
   }
 
   // ─── Desk ──────────────────────────────────────────────────────────────────
+
+  @Post('agents/:userId/time-off')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({
+    summary: 'Record time off for an agent (after a phone call)',
+    description: 'Same body and rules as the agent\'s own; logged as the desk user\'s act.',
+  })
+  setAgentTimeOff(@Req() req: TenantRequest, @Param('userId') userId: string, @Body() dto: TimeOffDto) {
+    return this.service.setTimeOff(req.tenantId!, userId, { id: req.userId!, via: 'DESK' }, dto);
+  }
+
+  @Delete('agents/:userId/time-off')
+  @Roles(...PLANNING_ROLES)
+  @ApiOperation({ summary: 'Remove an agent\'s time off (?from=&to=)' })
+  removeAgentTimeOff(
+    @Req() req: TenantRequest,
+    @Param('userId') userId: string,
+    @Query('from') from: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.removeTimeOff(req.tenantId!, userId, { id: req.userId!, via: 'DESK' }, { from, to });
+  }
 
   @Get('board')
   @Roles(...OFFICE_ROLES)

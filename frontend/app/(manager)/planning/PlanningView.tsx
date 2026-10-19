@@ -6,8 +6,10 @@ import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
 import { useSocket } from '@/lib/socket';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2 } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
+import { AssignedPanel } from './AssignedPanel';
+import { legLabel, legTone, street } from './legText';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
 const STATUSES: TurnoverStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'FLAGGED'];
@@ -94,6 +96,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [refSearch, setRefSearch] = useState('');
   // Bookings whose check-in time we assumed (15:00) because the PMS sent 00:00 / nothing.
   const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
+  // Check-In tab: plan state filter, and the split "Assigned" view.
+  const [planFilter, setPlanFilter] = useState<'ALL' | PlanState>('ALL');
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [highlight, setHighlight] = useState<string | null>(null);
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>(24);
   // Default: by unit name, so the desk reads the list the way the building is laid out.
@@ -233,13 +239,37 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     const matchRef = !refSearch || b.bookingRef.toLowerCase().includes(refSearch.toLowerCase())
       || (b.guestName ?? '').toLowerCase().includes(refSearch.toLowerCase());
     const matchUnconfirmed = !onlyUnconfirmed || ownSource(b) === 'FALLBACK';
-    return matchUnit && matchRef && matchUnconfirmed;
+    const matchPlan = byCheckOut || planFilter === 'ALL' || planState(b) === planFilter;
+    return matchUnit && matchRef && matchUnconfirmed && matchPlan;
   }).sort((a, b) => {
     const cmp = sortKey === 'unit'
       ? a.accommodationName.localeCompare(b.accommodationName, 'cs', { numeric: true, sensitivity: 'base' })
       : ownTime(a).localeCompare(ownTime(b));
     return sortDir === 'asc' ? cmp : -cmp;
   });
+
+  const planCounts = useMemo(() => {
+    const c = { UNASSIGNED: 0, ASSIGNED: 0, PLANNED: 0 };
+    for (const b of bookings) {
+      const st = planState(b);
+      if (st) c[st]++;
+    }
+    return c;
+  }, [bookings]);
+
+  // The panel shows the days the main list covers (at most a week).
+  const panelRange = useMemo(() => {
+    const days = bookings.map(b => pragueDay(b.checkInTime)).sort();
+    const from = days[0] ?? pragueDay(new Date().toISOString());
+    const last = days[days.length - 1] ?? from;
+    const cap = new Date(Date.parse(`${from}T12:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+    return { from, to: last < cap ? last : cap };
+  }, [bookings]);
+
+  function pickFromPanel(id: string) {
+    setHighlight(id);
+    document.getElementById(`row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   function toggleSort(key: 'unit' | 'time') {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -518,7 +548,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         </div>
       </div>
 
-      {/* Results */}
+      {/* Results — with the split "Assigned" view beside them when on. */}
+      <div className={cn(splitOpen && !byCheckOut && loaded && 'flex gap-4 items-start')}>
+      <div className="flex-1 min-w-0">
       {!loaded ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
           <Filter size={32} className="mx-auto text-ink-faint mb-3" />
@@ -530,9 +562,52 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
-          <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
-            <p className="text-[11px] text-ink-faint">Europe/Prague</p>
+          <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
+              {!byCheckOut && (
+                <div className="flex items-center gap-1 text-[11.5px] font-semibold">
+                  {([
+                    ['ALL', 'All', bookings.length, 'text-ink-soft'],
+                    ['UNASSIGNED', 'Unassigned', planCounts.UNASSIGNED, 'text-red-600'],
+                    ['ASSIGNED', 'Assigned', planCounts.ASSIGNED, 'text-amber-700'],
+                    ['PLANNED', 'Planned', planCounts.PLANNED, 'text-emerald-700'],
+                  ] as const).map(([key, label, n, tone]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setPlanFilter(key)}
+                      title={PLAN_HINT[key]}
+                      className={cn(
+                        'rounded-full px-2.5 py-1 border transition',
+                        planFilter === key ? 'bg-ink text-white border-ink' : 'border-surface-border hover:border-ink-muted',
+                      )}
+                    >
+                      {label} <span className={planFilter === key ? 'text-white/70' : tone}>{n}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {!byCheckOut && (
+                <button
+                  type="button"
+                  onClick={() => setSplitOpen(o => !o)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold border transition',
+                    splitOpen ? 'bg-ink text-white border-ink' : 'border-surface-border text-ink-soft hover:border-ink-muted',
+                  )}
+                >
+                  <Columns2 size={13} />
+                  Assigned view
+                  {planCounts.UNASSIGNED > 0 && (
+                    <span className="rounded-full bg-red-100 text-red-700 px-1.5 leading-4">{planCounts.UNASSIGNED} unassigned</span>
+                  )}
+                </button>
+              )}
+              <p className="text-[11px] text-ink-faint">Europe/Prague</p>
+            </div>
           </div>
           {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
           <div className={cn(GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
@@ -581,8 +656,11 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
               return (
                 <div
                   key={b.id}
+                  id={`row-${b.id}`}
+                  onClick={() => { if (splitOpen) setHighlight(b.id); }}
                   className={cn(
                     GRID, 'px-4 py-2.5 transition group',
+                    highlight === b.id && 'ring-2 ring-inset ring-accent',
                     dirty ? 'bg-amber-50/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-red-50',
                     lastMinute && !dirty && 'border-l-4 border-l-red-400',
@@ -846,6 +924,15 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       </button>
                     );
                   })()}
+                  {/* The leg from this agent's previous check-in that day. */}
+                  {!byCheckOut && b.checkInAgentId && b.legIn && (
+                    <span
+                      className={cn('text-[10.5px] leading-tight text-right max-w-full truncate', legTone[b.legIn.state])}
+                      title={`From ${b.legIn.fromName} (${b.legIn.fromTime}): ${legLabel(b.legIn)}`}
+                    >
+                      ← {b.legIn.fromTime} {street(b.legIn.fromName)} · {legLabel(b.legIn)}
+                    </span>
+                  )}
                   </div>
                 </div>
               );
@@ -853,6 +940,18 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           </div>
         </div>
       )}
+      </div>
+      {splitOpen && !byCheckOut && loaded && (
+        <AssignedPanel
+          from={panelRange.from}
+          to={panelRange.to}
+          refreshKey={bookings}
+          highlight={highlight}
+          onPick={pickFromPanel}
+          onClose={() => setSplitOpen(false)}
+        />
+      )}
+      </div>
 
       {/* ── Sticky push bar ── */}
       {dirtyRows.length > 0 && (
@@ -1018,7 +1117,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     o.fit === 'AVAILABLE' ? (o.declared.join(', ') || 'Available')
                     : o.fit === 'TIME_UNCONFIRMED' ? `Time not confirmed${o.declared.length ? ` · ${o.declared.join(', ')}` : ''}`
                     : o.fit === 'OUTSIDE_HOURS' ? `Not available · declared ${o.declared.join(', ') || 'other hours'}`
-                    : 'Not available · nothing declared';
+                    : o.fit === 'TIME_OFF' ? `Time off${o.timeOffReason ? ` · ${o.timeOffReason === 'VACATION' ? 'vacation' : o.timeOffReason === 'SICK' ? 'sick' : 'other'}` : ''}`
+                    : agentData.deadlinePassed ? 'Not available · nothing declared (deadline passed)'
+                    : 'Not available · nothing declared yet';
                   return (
                     <button
                       key={o.id}
@@ -1083,6 +1184,34 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     </div>
   );
 }
+
+/**
+ * Where a check-in stands in planning (Check-In tab). Owner stays need no
+ * agent and are not counted.
+ *   UNASSIGNED  no agent
+ *   ASSIGNED    an agent, but something is still open: the arrival time is
+ *               our 15:00 guess, the agent has not accepted an override, or
+ *               has not seen the change yet
+ *   PLANNED     agent, confirmed time, agent has seen and (if needed) agreed
+ */
+type PlanState = 'UNASSIGNED' | 'ASSIGNED' | 'PLANNED';
+
+function planState(b: PlanningBooking): PlanState | null {
+  if (b.isOwnerStay) return null;
+  if (!b.checkInAgentId) return 'UNASSIGNED';
+  const open =
+    b.checkInSource === 'FALLBACK' ||
+    b.checkInAgentConsent === 'PENDING' ||
+    (!!b.checkInAgentNotified && !b.checkInAgentSeenAt);
+  return open ? 'ASSIGNED' : 'PLANNED';
+}
+
+const PLAN_HINT: Record<'ALL' | PlanState, string> = {
+  ALL: 'Every check-in in the list',
+  UNASSIGNED: 'No agent yet',
+  ASSIGNED: 'Agent set, but the time is unconfirmed or the agent has not seen / accepted it',
+  PLANNED: 'Agent set, time confirmed, agent has seen it',
+};
 
 /**
  * What the check-in agent chip says. An unseen change gets an amber dot; one

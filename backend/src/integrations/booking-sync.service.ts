@@ -7,6 +7,7 @@ import {
 } from '../common/interfaces/pms-adapter.interface';
 import { AvantioAdapter } from './avantio/avantio.adapter';
 import { TurnoverSyncService } from './turnover-sync.service';
+import { legsInto, loadCoordinates } from './checkin-legs';
 import { CleanOpsGateway } from '../websocket/websocket.module';
 import { Prisma, BookingChannel, BookingStatus, CleaningStatus, AssignmentStatus, TurnoverStatus } from '@prisma/client';
 import { GcsService } from '../storage/gcs.service';
@@ -469,6 +470,28 @@ export class BookingSyncService {
       })),
       };
     });
+
+    // The leg into each check-in from the same agent's previous one that day.
+    // Check-In view only: on Check-Out the agent is not the point.
+    if (!byCheckOut) {
+      const assigned = bookings.filter((b: any) => b.checkInAgentId && !b.isOwnerStay);
+      const coords = await loadCoordinates(
+        this.prisma,
+        tenantId,
+        [...new Set(assigned.map((b: any) => b.property?.pmsPropertyId).filter(Boolean))] as string[],
+      );
+      const legs = legsInto(
+        assigned.map((b: any) => ({
+          bookingId: b.id,
+          agentId: b.checkInAgentId,
+          arrival: b.checkInTime,
+          assumed: b.checkInSource === 'FALLBACK',
+          accommodationName: b.accommodationName,
+          coord: coords.get(b.property?.pmsPropertyId) ?? null,
+        })),
+      );
+      for (const r of rows as any[]) r.legIn = legs.get(r.id) ?? null;
+    }
 
     return filters.status ? rows.filter((r) => r.status === filters.status) : rows;
   }

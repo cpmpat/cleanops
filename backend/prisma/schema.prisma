@@ -178,6 +178,7 @@ model User {
   noteAcks                   NoteAck[]
   agentAvailability          AgentAvailability[]
   checkInBookings            Booking[]           @relation("BookingCheckInAgent")
+  timeOff                    AgentTimeOff[]
   newsfeedDismissals         NewsfeedDismissal[]
 
   // Tasks (16 Oct 2026)
@@ -582,6 +583,8 @@ enum AuditCategory {
   SYSTEM
   /// Someone changed a row in a CDM dataset through the app.
   DATA_EDIT
+  /// Agent time off set or removed (by the agent or by the desk).
+  AVAILABILITY_LIFECYCLE
 }
 
 model AuditEvent {
@@ -2255,4 +2258,35 @@ model CheckInChangeRecipient {
   @@unique([changeId, userId])
   @@index([userId, ackedAt])
   @@map("checkin_change_recipients")
+}
+
+// ─── AGENT TIME OFF ───────────────────────────────────────────────────────────
+
+enum TimeOffReason {
+  VACATION
+  SICK
+  OTHER
+}
+
+/// A day an agent cannot work, so the desk knows "no hours" is not
+/// "forgot to declare". One row per day; a range is many rows.
+model AgentTimeOff {
+  id        String        @id @default(uuid())
+  tenantId  String
+  userId    String
+  /// YYYY-MM-DD, Europe/Prague.
+  day       String
+  reason    TimeOffReason
+  note      String?
+  /// The agent themself, or the desk user who recorded it after a call.
+  setById   String
+  /// APP | DESK
+  via       String
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([tenantId, day])
+  @@map("agent_time_off")
 }

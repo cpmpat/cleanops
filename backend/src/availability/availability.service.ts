@@ -1,12 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { AuditCategory, BookingStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import {
+  atTimeInAppZone,
   startOfDayInAppZone,
   timeInAppZone,
   todayInAppZone,
@@ -20,6 +22,53 @@ export const MAX_END_MINUTE = 1440 + 6 * 60;
 export const HORIZON_DAYS = 28;
 /** Widest window the desk board reads in one call. */
 const MAX_BOARD_DAYS = 14;
+/** Hours for day D are due by this time on D minus DEADLINE_DAYS_BEFORE (Prague). */
+export const DEADLINE_TIME = '18:00';
+export const DEADLINE_DAYS_BEFORE = 2;
+/** Time off may be recorded this far ahead (vacations are planned early). */
+const TIME_OFF_HORIZON_DAYS = 120;
+/** Longest single time-off range. */
+const MAX_TIME_OFF_SPAN = 60;
+
+export const TIME_OFF_REASONS = ['VACATION', 'SICK', 'OTHER'] as const;
+export type TimeOffReasonValue = (typeof TIME_OFF_REASONS)[number];
+
+/**
+ * The instant hours for `day` are due: 18:00 Prague two days before. A
+ * Wednesday arrival is planned from Monday 18:00 on, so the agent's
+ * Wednesday must be in by then.
+ */
+export function deadlineFor(day: string): Date {
+  return atTimeInAppZone(addDays(day, -DEADLINE_DAYS_BEFORE), DEADLINE_TIME);
+}
+
+/** Past the deadline: hours can still be added, not changed or removed. */
+export function isLocked(day: string, now: Date = new Date()): boolean {
+  return now.getTime() >= deadlineFor(day).getTime();
+}
+
+/** The last day already past its deadline. Every day up to it is locked. */
+export function lockedThrough(now: Date = new Date()): string {
+  const today = todayInAppZone(now);
+  const inTwo = addDays(today, DEADLINE_DAYS_BEFORE);
+  return isLocked(inTwo, now) ? inTwo : addDays(inTwo, -1);
+}
+
+export interface TimeOffDto {
+  from: string;
+  to: string;
+  reason: string;
+  note?: string;
+}
+
+export interface TimeOffDay {
+  userId: string;
+  day: string;
+  reason: TimeOffReasonValue;
+  note: string | null;
+  via: string;
+  setById: string;
+}
 
 export interface AvailabilityBlock {
   id: string;
@@ -108,6 +157,19 @@ function toBlock(r: {
   };
 }
 
+function toTimeOff(r: {
+  userId: string; day: string; reason: any; note: string | null; via: string; setById: string;
+}): TimeOffDay {
+  return { userId: r.userId, day: r.day, reason: r.reason, note: r.note, via: r.via, setById: r.setById };
+}
+
+/** YYYY-MM-DD days from `from` to `to`, inclusive. */
+export function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
 @Injectable()
 export class AvailabilityService {
   constructor(private prisma: PrismaService) {}
@@ -120,11 +182,24 @@ export class AvailabilityService {
     const hi = to ?? addDays(today, HORIZON_DAYS);
     assertDay(lo);
     assertDay(hi);
-    const rows = await this.prisma.agentAvailability.findMany({
-      where: { tenantId, userId, day: { gte: lo, lte: hi } },
-      orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
-    });
-    return { today, horizon: addDays(today, HORIZON_DAYS - 1), blocks: rows.map(toBlock) };
+    const [rows, off] = await Promise.all([
+      this.prisma.agentAvailability.findMany({
+        where: { tenantId, userId, day: { gte: lo, lte: hi } },
+        orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
+      }),
+      this.prisma.agentTimeOff.findMany({
+        where: { tenantId, userId, day: { gte: lo, lte: addDays(today, TIME_OFF_HORIZON_DAYS) } },
+        orderBy: { day: 'asc' },
+      }),
+    ]);
+    return {
+      today,
+      horizon: addDays(today, HORIZON_DAYS - 1),
+      lockedThrough: lockedThrough(),
+      deadline: { time: DEADLINE_TIME, daysBefore: DEADLINE_DAYS_BEFORE },
+      blocks: rows.map(toBlock),
+      timeOff: off.map(toTimeOff),
+    };
   }
 
   /**
@@ -149,6 +224,15 @@ export class AvailabilityService {
     for (const day of days) {
       if (day < today) throw new BadRequestException(`${day} is in the past`);
       if (day > last) throw new BadRequestException(`You can plan up to ${HORIZON_DAYS} days ahead`);
+    }
+    const off = await this.prisma.agentTimeOff.findMany({
+      where: { tenantId, userId, day: { in: days } },
+      select: { day: true },
+    });
+    if (off.length) {
+      throw new BadRequestException(
+        `You marked ${off.map((o) => o.day).sort().join(', ')} as time off — remove the time off first`,
+      );
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -195,16 +279,175 @@ export class AvailabilityService {
       where: { tenantId, userId, day: { gte: weekStart, lte: addDays(weekStart, 6) } },
       orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
     });
+    const offDays = new Set(
+      (await this.prisma.agentTimeOff.findMany({
+        where: { tenantId, userId, day: { gte: addDays(weekStart, 7), lte: addDays(weekStart, 13) } },
+        select: { day: true },
+      })).map((o) => o.day),
+    );
     let copied = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const b of source) {
         const target = addDays(b.day, 7);
         if (target < today || target > last) continue;
+        if (offDays.has(target)) continue;
         await this.mergeInto(tx, tenantId, userId, target, b.startMinute, b.endMinute, null);
         copied++;
       }
     });
     return { copied, ...(await this.listMine(tenantId, userId)) };
+  }
+
+  // ─── Time off (agent for themself, or the desk after a phone call) ────────
+
+  /**
+   * Mark `from..to` as time off. Hours already declared on those days are
+   * removed — time off wins, even past the deadline, because being ill does
+   * not wait for 18:00. Refused while the agent still holds check-ins on any
+   * of those days: the desk reassigns them first, so nobody is left without
+   * an agent by a tap on a phone.
+   */
+  async setTimeOff(
+    tenantId: string,
+    agentId: string,
+    actor: { id: string; via: 'APP' | 'DESK' },
+    dto: TimeOffDto,
+  ) {
+    const { days, reason } = this.validateTimeOff(dto, true);
+    const note = (dto.note ?? '').trim().slice(0, 300) || null;
+    const agent = await this.activeAgent(tenantId, agentId);
+
+    const held = await this.prisma.booking.findMany({
+      where: {
+        tenantId,
+        checkInAgentId: agentId,
+        status: BookingStatus.CONFIRMED,
+        checkInTime: {
+          gte: startOfDayInAppZone(days[0]),
+          lt: startOfDayInAppZone(addDays(days[days.length - 1], 1)),
+        },
+      },
+      select: { bookingRef: true, accommodationName: true, checkInTime: true },
+      orderBy: { checkInTime: 'asc' },
+    });
+    if (held.length) {
+      const list = held
+        .slice(0, 3)
+        .map((b) => `${b.accommodationName} ${todayInAppZone(b.checkInTime)} ${timeInAppZone(b.checkInTime)}`)
+        .join('; ');
+      const who = actor.via === 'APP' ? 'You have' : `${agent.name} has`;
+      throw new ConflictException({
+        code: 'HOLDS_CHECKINS',
+        count: held.length,
+        message:
+          `${who} ${held.length} check-in${held.length === 1 ? '' : 's'} on these days (${list}` +
+          `${held.length > 3 ? '; …' : ''}). ` +
+          (actor.via === 'APP' ? 'Call the front desk to reassign them first.' : 'Reassign them first.'),
+      });
+    }
+
+    let removedBlocks = 0;
+    await this.prisma.$transaction(async (tx) => {
+      const del = await tx.agentAvailability.deleteMany({
+        where: { tenantId, userId: agentId, day: { in: days } },
+      });
+      removedBlocks = del.count;
+      for (const day of days) {
+        await tx.agentTimeOff.upsert({
+          where: { userId_day: { userId: agentId, day } },
+          create: { tenantId, userId: agentId, day, reason: reason as any, note, setById: actor.id, via: actor.via },
+          update: { reason: reason as any, note, setById: actor.id, via: actor.via },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: 'AVAILABILITY_LIFECYCLE' as AuditCategory,
+          action: 'availability.time_off_set',
+          actorId: actor.id,
+          targetType: 'User',
+          targetId: agentId,
+          metadata: {
+            agentId,
+            agentName: agent.name,
+            from: days[0],
+            to: days[days.length - 1],
+            days: days.length,
+            reason,
+            via: actor.via,
+            removedBlocks,
+          } as any,
+        },
+      });
+    });
+    return { ok: true, days: days.length, removedBlocks };
+  }
+
+  /** Remove time off on `from..to` (today onwards). The days go back to "nothing declared". */
+  async removeTimeOff(
+    tenantId: string,
+    agentId: string,
+    actor: { id: string; via: 'APP' | 'DESK' },
+    dto: { from: string; to?: string },
+  ) {
+    const { days } = this.validateTimeOff({ from: dto.from, to: dto.to ?? dto.from, reason: 'OTHER' }, false);
+    const agent = await this.activeAgent(tenantId, agentId);
+    let removed = 0;
+    await this.prisma.$transaction(async (tx) => {
+      const del = await tx.agentTimeOff.deleteMany({
+        where: { tenantId, userId: agentId, day: { in: days } },
+      });
+      removed = del.count;
+      if (!removed) return;
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          category: 'AVAILABILITY_LIFECYCLE' as AuditCategory,
+          action: 'availability.time_off_removed',
+          actorId: actor.id,
+          targetType: 'User',
+          targetId: agentId,
+          metadata: {
+            agentId,
+            agentName: agent.name,
+            from: days[0],
+            to: days[days.length - 1],
+            days: removed,
+            via: actor.via,
+          } as any,
+        },
+      });
+    });
+    return { ok: true, removed };
+  }
+
+  private validateTimeOff(dto: TimeOffDto, needReason: boolean) {
+    assertDay(dto?.from);
+    assertDay(dto?.to);
+    if (dto.to < dto.from) throw new BadRequestException('The end is before the start');
+    const today = todayInAppZone();
+    if (dto.from < today) throw new BadRequestException('Time off cannot start in the past');
+    if (dto.to > addDays(today, TIME_OFF_HORIZON_DAYS)) {
+      throw new BadRequestException(`Time off can be set up to ${TIME_OFF_HORIZON_DAYS} days ahead`);
+    }
+    const days = daysBetween(dto.from, dto.to);
+    if (days.length > MAX_TIME_OFF_SPAN) {
+      throw new BadRequestException(`At most ${MAX_TIME_OFF_SPAN} days at once`);
+    }
+    const reason = String(dto.reason ?? '').toUpperCase();
+    if (needReason && !(TIME_OFF_REASONS as readonly string[]).includes(reason)) {
+      throw new BadRequestException(`Reason must be one of ${TIME_OFF_REASONS.join(', ')}`);
+    }
+    return { days, reason };
+  }
+
+  private async activeAgent(tenantId: string, userId: string) {
+    const agent = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId, role: 'AGENT' as any, isActive: true },
+      select: { id: true, name: true },
+    });
+    if (!agent) throw new NotFoundException('Agent not found');
+    return agent;
   }
 
   // ─── Desk: board ───────────────────────────────────────────────────────────
@@ -254,11 +497,18 @@ export class AvailabilityService {
     ]);
 
     const agentIds = new Set(agents.map((a: { id: string }) => a.id));
+    const off = await this.prisma.agentTimeOff.findMany({
+      where: { tenantId, day: { gte: from, lte: to }, userId: { in: [...agentIds] } },
+      orderBy: { day: 'asc' },
+    });
     return {
       from,
       to,
       today: todayInAppZone(),
+      /** Every day up to this one is past its deadline; "nothing declared" there is late, not pending. */
+      lockedThrough: lockedThrough(),
       agents,
+      timeOff: off.map(toTimeOff),
       // A block of someone who is no longer an active agent is not supply.
       blocks: rows.filter((r: { userId: string }) => agentIds.has(r.userId)).map((r: any) => toBlock(r)),
       arrivals: bookings.map((b: any) => {
@@ -284,12 +534,21 @@ export class AvailabilityService {
     return block;
   }
 
-  /** Today and the past are fixed: the desk has already planned around them. */
+  /**
+   * Past the deadline (18:00 two days before) the desk is planning around
+   * these hours: they can be added to, not changed or removed.
+   */
   private assertEditable(day: string): void {
     const today = todayInAppZone();
     if (day < today) throw new ForbiddenException('This day is over');
     if (day === today) {
       throw new ForbiddenException("Today's availability can't be changed or removed — call the front desk");
+    }
+    if (isLocked(day)) {
+      throw new ForbiddenException(
+        `Hours for ${day} are fixed since ${addDays(day, -DEADLINE_DAYS_BEFORE)} ${DEADLINE_TIME}. ` +
+        'You can still add hours; to change or remove them, call the front desk.',
+      );
     }
   }
 

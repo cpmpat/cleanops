@@ -23,6 +23,41 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — Check-in agents: assignment, consent, deadline, time off, route
+
+**Planning → Check-In** gets an Agent chip on every row (who meets the guest),
+next to the cleaner. The picker lists agents whose declared hours cover the
+arrival first; anyone else can be picked as an *override*, which the agent must
+accept in their app (or the desk taps *Agreed by phone*). Rows count as
+Unassigned / Assigned / Planned, and an *Assigned view* panel shows chosen
+agents' check-ins in order with the leg between each (minutes, km, spare or
+late) and a day footer. Without coordinates a leg between buildings reads
+"no coordinates"; same building is always zero.
+
+**Agents** get a *Check-ins* tab (first): changes from the desk to answer
+(Got it / I'll take it / I can't), their upcoming check-ins and the guest's
+Chekin link. *Availability* now locks day D at 18:00 on D−2 (add-only after
+that) and has *Mark time off* (vacation / sick / other). The desk can record
+time off on Planning → Agents after a call; time off is refused while the agent
+still holds check-ins on those days.
+
+Every assignment, answer, phone agreement and time-off change writes an audit
+row in the same transaction. The Chekin link is never logged or sent over the
+socket.
+
+**Coordinates:** when `cdm_accommodations` gains `latitude`/`longitude` (or
+`lat`/`lon`) columns, legs start showing travel times within ten minutes — no
+deploy.
+
+**Migrations:** `20261019020000_booking_checkin_link`,
+`20261019030000_booking_checkin_agent`,
+`20261019040000_checkin_agent_consent_and_log`,
+`20261019050000_agent_time_off` (adds the `AVAILABILITY_LIFECYCLE` audit
+category).
+**Env:** None.
+
+---
+
 ## Unreleased — TERENAK merged into AGENT
 
 **One role, one name.** The TERENAK role is gone; AGENT is the only name. Every
