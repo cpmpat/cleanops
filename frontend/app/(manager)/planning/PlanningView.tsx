@@ -606,73 +606,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           </div>
         </div>
 
-        <StatusLegend t={t} byCheckOut={byCheckOut} />
-
-        {/* Additional attributes on the left; Unconfirmed + Apply on the right — the text search lives in the list header now. */}
+        {/* Apply. Unconfirmed, the plan chips, Additional attributes and the search live in the list header now. */}
         <div className="flex gap-2 justify-end">
-          {!byCheckOut && (
-            <div className="relative mr-auto">
-              <button
-                type="button"
-                onClick={() => setExtrasOpen(o => !o)}
-                aria-expanded={extrasOpen}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition',
-                  extras.length ? 'bg-accent-soft border-transparent text-accent' : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
-                )}
-              >
-                <SlidersHorizontal size={14} />
-                Additional attributes
-                {extras.length > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none bg-white text-accent">{extras.length}</span>}
-              </button>
-              {extrasOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setExtrasOpen(false)} />
-                  <div className="absolute left-0 z-40 mt-2 w-80 bg-white border border-surface-border rounded-2xl shadow-lg p-2">
-                    <p className="px-2 pt-1 pb-2 text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Show in the list, per reservation</p>
-                    {EXTRA_ATTRS.map(a => {
-                      const on = extras.includes(a.key);
-                      return (
-                        <button key={a.key} type="button" onClick={() => toggleExtra(a.key)}
-                          className="w-full flex items-start gap-2.5 text-left px-2 py-2 rounded-lg hover:bg-surface-sunken">
-                          <span className={cn('mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
-                            on ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white')}>
-                            {on && <Check size={11} />}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-[13px] font-semibold text-ink">{a.label}</span>
-                            <span className="block text-[11.5px] text-ink-muted leading-snug">{a.hint}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => setOnlyUnconfirmed(v => !v)}
-            title={byCheckOut ? tp.unconfirmedOutHint : tp.unconfirmedHint}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition',
-              onlyUnconfirmed
-                ? 'bg-sand-soft border-sand text-sand-deep'
-                : 'bg-surface border-surface-border text-ink-muted hover:text-ink'
-            )}
-          >
-            <AlertCircle size={14} />
-            {tp.unconfirmedFilter}
-            {unconfirmedCount > 0 && (
-              <span className={cn(
-                'text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none',
-                onlyUnconfirmed ? 'bg-sand text-sand-deep' : 'bg-sand-soft text-sand-deep'
-              )}>
-                {unconfirmedCount}
-              </span>
-            )}
-          </button>
           <button
             onClick={() => void load(null)}
             disabled={loading}
@@ -691,6 +626,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         </div>
       )}
 
+      {loaded && bookings.length > 0 && <StatusLegend t={t} byCheckOut={byCheckOut} />}
+
       {/* Results — with the split "Assigned" view beside them when on. */}
       <div className={cn(splitOpen && !byCheckOut && loaded && 'flex gap-4 items-start')}>
       <div ref={listRef} className="flex-1 min-w-0">
@@ -707,13 +644,12 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
           <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
-              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
+              <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Bookings</p>
               <label className="relative flex items-center">
                 <Search size={13} className="absolute left-2.5 text-ink-muted pointer-events-none" />
                 <input
                   type="search"
                   aria-label="Search check-ins"
-                  placeholder={`Search all ${bookings.length} · unit, guest, ref`}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="w-60 pl-8 pr-2.5 py-1.5 text-[12.5px] rounded-[10px] border border-surface-border bg-white focus:outline-none focus:ring-2 focus:ring-accent/40"
@@ -742,8 +678,66 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   ))}
                 </div>
               )}
+              {/* Combines with the plan chips and the search: e.g. Unassigned + Unconfirmed time. */}
+              <button
+                type="button"
+                onClick={() => setOnlyUnconfirmed(v => !v)}
+                title={byCheckOut ? tp.unconfirmedOutHint : tp.unconfirmedHint}
+                aria-pressed={onlyUnconfirmed}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold border transition',
+                  onlyUnconfirmed ? 'bg-sand-soft border-sand text-sand-deep' : 'border-surface-border text-ink-soft hover:border-ink-muted',
+                )}
+              >
+                <AlertCircle size={12} />
+                {tp.unconfirmedFilter}
+                {unconfirmedCount > 0 && (
+                  <span className={onlyUnconfirmed ? 'text-sand-deep' : 'text-sand-deep/80'}>{unconfirmedCount}</span>
+                )}
+              </button>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {!byCheckOut && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExtrasOpen(o => !o)}
+                    aria-expanded={extrasOpen}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold border transition',
+                      extras.length ? 'bg-accent-soft border-transparent text-accent' : 'border-surface-border text-ink-soft hover:border-ink-muted',
+                    )}
+                  >
+                    <SlidersHorizontal size={13} />
+                    Additional attributes
+                    {extras.length > 0 && <span className="rounded-full bg-white text-accent px-1.5 leading-4">{extras.length}</span>}
+                  </button>
+                  {extrasOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setExtrasOpen(false)} />
+                      <div className="absolute right-0 z-40 mt-2 w-80 bg-white border border-surface-border rounded-2xl shadow-lg p-2">
+                        <p className="px-2 pt-1 pb-2 text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Show in the list, per reservation</p>
+                        {EXTRA_ATTRS.map(a => {
+                          const on = extras.includes(a.key);
+                          return (
+                            <button key={a.key} type="button" onClick={() => toggleExtra(a.key)}
+                              className="w-full flex items-start gap-2.5 text-left px-2 py-2 rounded-lg hover:bg-surface-sunken">
+                              <span className={cn('mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                                on ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white')}>
+                                {on && <Check size={11} />}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-[13px] font-semibold text-ink">{a.label}</span>
+                                <span className="block text-[11.5px] text-ink-muted leading-snug">{a.hint}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {!byCheckOut && (
                 <button
                   type="button"
@@ -760,7 +754,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   )}
                 </button>
               )}
-              <p className="text-[11px] text-ink-faint">Europe/Prague</p>
             </div>
           </div>
           {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
@@ -1529,11 +1522,10 @@ const LEGEND_STATUSES: Array<[TurnoverStatus | 'CANCELLED', string]> = [
   ['FLAGGED', 'done, but the cleaner reported a problem'],
 ];
 
-/** One low line under the date filters: what each status and mark in the list means. */
+/** A low white box above the list: what each status and mark in it means. */
 function StatusLegend({ t, byCheckOut }: { t: any; byCheckOut: boolean }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl bg-surface px-3 py-1.5 text-[11px] text-ink-muted">
-      <span className="font-semibold uppercase tracking-[0.08em] text-[10px]">Status</span>
+    <div className="mb-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 rounded-2xl border border-surface-border bg-white px-4 py-2.5 text-[11px] text-ink-muted">
       {LEGEND_STATUSES.map(([st, meaning]) => (
         <span key={st} className="flex items-center gap-1.5">
           <StatusBadge status={st as any} t={t} size="sm" />
