@@ -9,7 +9,6 @@ import { PrismaService } from '../common/prisma.service';
 import { CleanOpsGateway } from '../websocket/websocket.module';
 import { startOfDayInAppZone, timeInAppZone, todayInAppZone } from '../common/time';
 import { addDays, isLocked } from '../availability/availability.service';
-import { BUFFER_MINUTES, Leg, SERVICE_MINUTES, legsInto, loadCoordinates } from './checkin-legs';
 import { guestNameFromRaw, guestPhoneFromRaw } from './booking-sync.service';
 
 /** Aspects of the apartment's readiness the agent rates, 1–5. */
@@ -744,21 +743,6 @@ export class CheckInAgentService {
       }),
     ]);
 
-    const coords = await loadCoordinates(
-      this.prisma,
-      tenantId,
-      [...new Set(bookings.map((b: any) => b.property?.pmsPropertyId).filter(Boolean))] as string[],
-    );
-    const legs = legsInto(
-      bookings.map((b: any) => ({
-        bookingId: b.id,
-        agentId: b.checkInAgentId!,
-        arrival: b.checkInTime,
-        assumed: b.checkInSource === 'FALLBACK',
-        accommodationName: b.accommodationName,
-        coord: coords.get(b.property?.pmsPropertyId) ?? null,
-      })),
-    );
     const acks = await this.ackStateFor(tenantId, bookings.map((b: any) => b.id));
 
     const byAgent = new Map<string, any[]>();
@@ -770,8 +754,6 @@ export class CheckInAgentService {
     return {
       from,
       to,
-      serviceMinutes: SERVICE_MINUTES,
-      bufferMinutes: BUFFER_MINUTES,
       unassignedCount: unassigned,
       agents: agents.map((a) => ({ id: a.id, name: a.name, count: byAgent.get(a.id)?.length ?? 0 })),
       columns: wanted
@@ -791,7 +773,6 @@ export class CheckInAgentService {
             days: [...days.entries()].map(([day, list]) => {
               const items = list.map((b) => {
                 const ack = acks.get(b.id);
-                const leg: Leg | null = legs.get(b.id) ?? null;
                 return {
                   bookingId: b.id,
                   bookingRef: b.bookingRef,
@@ -801,10 +782,8 @@ export class CheckInAgentService {
                   guests: `${b.numAdults}${b.numChildren ? `+${b.numChildren}` : ''}`,
                   consent: b.checkInAgentConsent,
                   seen: ack ? (ack.userId === a.id ? !!ack.ackedAt : true) : true,
-                  legIn: leg,
                 };
               });
-              const legList = items.map((i) => i.legIn).filter((l): l is Leg => !!l);
               return {
                 day,
                 items,
@@ -812,10 +791,6 @@ export class CheckInAgentService {
                   count: items.length,
                   first: items[0]?.time ?? null,
                   last: items[items.length - 1]?.time ?? null,
-                  travelMinutes: legList.reduce((acc, l) => acc + (l.travelMinutes ?? 0), 0),
-                  unknownLegs: legList.filter((l) => l.state === 'UNKNOWN').length,
-                  red: legList.filter((l) => l.state === 'IMPOSSIBLE').length,
-                  amber: legList.filter((l) => l.state === 'TIGHT').length,
                 },
               };
             }),

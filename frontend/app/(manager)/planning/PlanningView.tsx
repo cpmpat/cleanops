@@ -10,7 +10,6 @@ import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCi
 import type { TurnoverStatus } from '@/lib/api';
 import { AssignedPanel } from './AssignedPanel';
 import { PlanningSummary } from './PlanningSummary';
-import { legLabel, legTone, street } from './legText';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
 const STATUSES: TurnoverStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'FLAGGED'];
@@ -1097,15 +1096,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       </button>
                     );
                   })()}
-                  {/* The leg from this agent's previous check-in that day. */}
-                  {!byCheckOut && b.checkInAgentId && b.legIn && (
-                    <span
-                      className={cn('text-[10.5px] leading-tight text-right max-w-full truncate', legTone[b.legIn.state])}
-                      title={`From ${b.legIn.fromName} (${b.legIn.fromTime}): ${legLabel(b.legIn)}`}
-                    >
-                      ← {b.legIn.fromTime} {street(b.legIn.fromName)} · {legLabel(b.legIn)}
-                    </span>
-                  )}
                   </div>
                 </div>
               );
