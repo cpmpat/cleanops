@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Database, RefreshCw, Search, Columns3, Filter, Snowflake, Loader2, Palette, Pencil, PanelRightOpen,
+  RefreshCw, Search, Columns3, Filter, Snowflake, Loader2, Palette, Pencil, PanelRightOpen,
   Folder, FileText, ExternalLink, Download,
   X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
@@ -36,17 +36,18 @@ import { SaveBar, RecordDrawer, ValueInput, isEditable, type RowDraft } from './
  * being the thing you read.
  */
 const GROUP_TINT: Record<string, string> = {
-  identity:    '#F4F6FA',
-  location:    '#F0F7F3',
-  property:    '#F3F5FF',
-  pricing:     '#FFF7ED',
-  ota:         '#EFF6FF',
-  credentials: '#FEF2F2',
-  citytax:     '#F6F3FF',
-  contract:    '#F0FDFA',
-  folders:     '#FAFAF9',
-  ops:         '#FEFCE8',
-  tech:        '#F6F9FC',
+  // Oct 2026 palette: warm paper tones, still opaque (see above).
+  identity:    '#F3F0E9',
+  location:    '#EAF0EB',
+  property:    '#EEEEF2',
+  pricing:     '#F7EEE0',
+  ota:         '#F5ECDD',
+  credentials: '#F8E9E4',
+  citytax:     '#EFEAF3',
+  contract:    '#E7EFEA',
+  folders:     '#F4F2EE',
+  ops:         '#F6F0DC',
+  tech:        '#ECEFEF',
 };
 
 const GROUP_LABEL: Record<string, string> = {
@@ -164,7 +165,7 @@ function DatasetsPageInner() {
   }, [data, columnSearch]);
 
   // `?d=<key>` is the address of a list — the sidebar links to it, and the
-  // footer tabs write it, so a reload or a shared link lands on the same list.
+  // list tabs write it, so a reload or a shared link lands on the same list.
   const router = useRouter();
   const searchParams = useSearchParams();
   const wanted = searchParams?.get('d') ?? '';
@@ -585,13 +586,11 @@ function DatasetsPageInner() {
 
   return (
     <div className="p-6 max-w-full">
-      <div className="mb-5 flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-            <Database size={22} className="text-ink-muted" />
-            Datasets
-          </h1>
-          <p className="text-sm text-ink-muted mt-0.5">
+      <div className="mb-4 flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Records</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Data</h1>
+          <p className="text-sm text-ink-muted">
             {!data?.rowIds
               ? 'Read-only view of the CDM spreadsheet. Changes made in the sheet appear here.'
               : data.canEdit
@@ -599,11 +598,29 @@ function DatasetsPageInner() {
                 : 'Read-only for your role. Open a record from the icon on its first cell to see its change history.'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {tabs.length > 1 && (
+            <div role="tablist" aria-label="List" className="flex flex-wrap gap-1 bg-white border border-surface-border rounded-[10px] p-[3px]">
+              {tabs.map(t => (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={active === t.key}
+                  onClick={() => selectList(t.key)}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-[13px] transition',
+                    active === t.key ? 'bg-accent text-white font-semibold' : 'text-ink-soft hover:bg-surface-sunken',
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => load(active, true)}
             disabled={loading || !active}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-border bg-surface text-sm font-semibold text-ink-muted hover:text-ink transition disabled:opacity-50"
+            className="h-9 flex items-center gap-2 px-3 rounded-[10px] border border-surface-border bg-white text-[13px] font-semibold text-ink-soft hover:text-ink transition disabled:opacity-50"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
@@ -615,7 +632,7 @@ function DatasetsPageInner() {
             <button
               onClick={() => setExportOpen(v => !v)}
               disabled={!data || Boolean(exporting)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-surface-border bg-surface text-sm font-semibold text-ink-muted hover:text-ink transition disabled:opacity-50"
+              className="h-9 flex items-center gap-2 px-3 rounded-[10px] border border-surface-border bg-white text-[13px] font-semibold text-ink-soft hover:text-ink transition disabled:opacity-50"
             >
               {exporting
                 ? <Loader2 size={14} className="animate-spin" />
@@ -650,14 +667,25 @@ function DatasetsPageInner() {
         </div>
       </div>
 
+      {data && (
+        <div className="mb-4 grid gap-3 grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
+          <Figure label={(tabs.find(t => t.key === active)?.label ?? 'Rows')} value={data.rows.length.toLocaleString()} unit="rows" />
+          <Figure label="Shown" value={rows.length.toLocaleString()} unit={rows.length === data.rows.length ? 'all of them' : 'after search and filters'} />
+          <Figure label="Columns you see" value={String(visible.length)} unit={`of ${data.columns.length}`} />
+          {data.rowIds && data.canEdit
+            ? <Figure label="You can edit" value={String(data.columns.filter(c => isEditable(data, c)).length)} unit="columns" />
+            : <Figure label="Access" value="Read" unit="only for your role" />}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search all columns…"
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-surface-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+            placeholder="Search all rows · any column…"
+            className="w-full h-9 pl-9 pr-3 rounded-[10px] border border-surface-border bg-white text-[13px] focus:outline-none focus:ring-2 focus:ring-accent/30"
           />
         </div>
 
@@ -728,7 +756,7 @@ function DatasetsPageInner() {
       )}
 
       {panel === 'freeze' && (
-        <div className="mb-3 p-3 rounded-xl border border-surface-border bg-surface">
+        <div className="mb-3 p-3.5 rounded-2xl border border-surface-border bg-white">
           <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Freeze panes</p>
           <p className="text-[11px] text-ink-faint mb-3">
             Counted from the top-left corner, like a spreadsheet. Frozen columns stay
@@ -742,7 +770,7 @@ function DatasetsPageInner() {
       )}
 
       {panel === 'columns' && data && (
-        <div className="mb-3 p-3 rounded-xl border border-surface-border bg-surface">
+        <div className="mb-3 p-3.5 rounded-2xl border border-surface-border bg-white">
           <div className="flex items-center gap-2 mb-2">
             <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Show columns</p>
             <input
@@ -802,7 +830,7 @@ function DatasetsPageInner() {
       )}
 
       {panel === 'rows' && data && (
-        <div className="mb-3 p-3 rounded-xl border border-surface-border bg-surface">
+        <div className="mb-3 p-3.5 rounded-2xl border border-surface-border bg-white">
           <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">Filter rows</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -824,7 +852,7 @@ function DatasetsPageInner() {
                       onClick={() => { setFilterColumn(c.key); setValueSearch(''); }}
                       className={cn(
                         'flex items-center justify-between text-left px-2 py-1 rounded-lg text-[11px] transition',
-                        filterColumn === c.key ? 'bg-ink text-white' : 'hover:bg-surface-sunken text-ink',
+                        filterColumn === c.key ? 'bg-accent text-white' : 'hover:bg-surface-sunken text-ink',
                       )}
                     >
                       <span className="truncate">{c.label}</span>
@@ -893,7 +921,7 @@ function DatasetsPageInner() {
       )}
 
       {error && (
-        <div className="flex items-start gap-2 p-4 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900">
+        <div className="flex items-start gap-2 p-4 rounded-xl bg-sand-soft text-sm text-sand-deep">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
@@ -921,7 +949,7 @@ function DatasetsPageInner() {
       )}
 
       {!error && data && (
-        <div className="border border-surface-border rounded-xl overflow-auto h-[65vh] bg-white">
+        <div className="border border-surface-border rounded-2xl overflow-auto h-[65vh] bg-white">
           {/* border-separate, not border-collapse: with collapsed borders the
               table paints the cell borders itself, so a sticky cell scrolls
               away from its own border and leaves a hairline the rows below
@@ -948,7 +976,7 @@ function DatasetsPageInner() {
                         ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                       }}
                       className={cn(
-                        'sticky top-0 z-40 text-left font-semibold whitespace-nowrap px-3 bg-surface-sunken',
+                        'sticky top-0 z-40 text-left font-semibold whitespace-nowrap px-3 bg-[#FBFAF6]',
                         'border-b border-surface-border cursor-pointer select-none hover:text-ink',
                         sorted ? 'text-ink' : 'text-ink-muted',
                         frozen && 'z-50 border-r',
@@ -956,7 +984,7 @@ function DatasetsPageInner() {
                       )}
                     >
                       <span className="flex items-center gap-1">
-                        {isEditable(data, c) && <Pencil size={10} className="flex-shrink-0 text-amber-600" aria-label="Editable" />}
+                        {isEditable(data, c) && <Pencil size={10} className="flex-shrink-0 text-sand-deep" aria-label="Editable" />}
                         <span className="truncate">{c.label}</span>
                         {sorted
                           ? (sort!.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
@@ -1000,19 +1028,19 @@ function DatasetsPageInner() {
                             ...(tintOf(c) ? { backgroundColor: tintOf(c) } : {}),
                             // An unsaved value outranks the family tint — it is
                             // the one thing on the row that needs attention.
-                            ...(drafted !== undefined ? { backgroundColor: '#FFFBEB' } : {}),
+                            ...(drafted !== undefined ? { backgroundColor: '#FBF1DE' } : {}),
                           }}
                           className={cn(
-                            'px-3 border-b border-surface-border truncate',
+                            'px-3 border-b border-[#F3EFE7] truncate',
                             stick && 'sticky bg-white',
                             rowFrozen && colFrozen ? 'z-30' : rowFrozen ? 'z-20' : colFrozen ? 'z-10' : '',
-                            colFrozen ? 'font-medium text-ink border-r' : 'text-ink-muted',
+                            colFrozen ? 'font-semibold text-ink border-r border-r-surface-border' : 'text-ink-soft',
                             rowFrozen && 'border-b-ink/10',
                             !stick && 'group-hover:bg-surface-sunken/0',
                             colFrozen && !rowFrozen && 'group-hover:bg-surface-sunken',
                             colFrozen && pos === frozenCols - 1 && 'shadow-[2px_0_4px_rgba(0,0,0,0.05)]',
                             c.type === 'url' && 'text-center',
-                            editable && 'cursor-text hover:outline hover:outline-1 hover:outline-amber-300 hover:-outline-offset-1',
+                            editable && 'cursor-text hover:outline hover:outline-1 hover:outline-sand hover:-outline-offset-1',
                             drafted !== undefined && 'text-ink font-semibold',
                             isEditing && 'px-0.5',
                           )}
@@ -1090,33 +1118,17 @@ function DatasetsPageInner() {
       )}
 
       {!error && !data && (
-        <div className="border border-surface-border rounded-xl h-[65vh] bg-white flex items-center justify-center">
+        <div className="border border-surface-border rounded-2xl h-[65vh] bg-white flex items-center justify-center">
           <p className="text-sm text-ink-muted">
             {loading ? 'Loading…' : listsLoaded && tabs.length === 0 ? 'No lists are shared with your role yet.' : ''}
           </p>
         </div>
       )}
 
-      {/* Below the table rather than above the controls: switching dataset is
-          navigation and reads better as a footer. Deliberately NOT fixed to the
-          viewport — a fixed bar spans the whole window and slides under the
-          sidebar, which is its own kind of wrong. */}
-      <div className="mt-4 pt-3 border-t border-surface-border">
+      {/* The list switch moved to the header (Oct 2026 redesign); the footer
+          keeps the mapping note. */}
+      <div className="mt-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => selectList(t.key)}
-              className={cn(
-                'px-4 py-2 rounded-xl text-sm font-semibold border transition',
-                active === t.key
-                  ? 'bg-ink text-white border-ink'
-                  : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
           {data && (
             <span className="ml-auto text-[11px] text-ink-faint">
               {data.mapped
@@ -1156,6 +1168,18 @@ function Stepper({
   );
 }
 
+function Figure({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="bg-white border border-surface-border rounded-2xl px-4 py-3 flex flex-col gap-1.5">
+      <span className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted truncate">{label}</span>
+      <span className="flex items-baseline gap-1.5">
+        <span className="text-[22px] font-semibold tracking-tight text-ink leading-none">{value}</span>
+        <span className="text-[13px] text-ink-muted truncate">{unit}</span>
+      </span>
+    </div>
+  );
+}
+
 function PanelButton({
   icon, label, badge, open, onClick,
 }: {
@@ -1165,9 +1189,9 @@ function PanelButton({
     <button
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition',
-        open ? 'bg-ink text-white border-ink'
-             : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
+        'h-9 flex items-center gap-2 px-3 rounded-[10px] border text-[13px] font-semibold transition',
+        open ? 'bg-accent-soft text-accent border-transparent'
+             : 'bg-white border-surface-border text-ink-soft hover:text-ink',
       )}
     >
       {icon}
@@ -1175,7 +1199,7 @@ function PanelButton({
       {badge && (
         <span className={cn(
           'text-[10px] rounded-full px-1.5 py-0.5 leading-none',
-          open ? 'bg-white/20' : 'bg-surface-sunken text-ink-muted',
+          open ? 'bg-white text-accent' : 'bg-surface-sunken text-ink-muted',
         )}>
           {badge}
         </span>
