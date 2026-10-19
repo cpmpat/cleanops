@@ -1,6 +1,6 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { integrations, turnovers as turnoversApi, type PlanningBooking, type User, type AgentOptionsResponse, type AgentOption } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
@@ -84,6 +84,12 @@ const GRID = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75r
  * (Check-In tab only — the panel never opens on Check-Out).
  */
 const GRID_COMPACT = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_8.75rem_4rem_11.5rem] items-center gap-x-3';
+/**
+ * Below this list width (px) the full grid leaves the unit name too little
+ * room — a laptop with the menu open, or a zoomed browser — and the list goes
+ * compact on its own, whatever the panel does.
+ */
+const COMPACT_BELOW_PX = 1340;
 
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
@@ -128,8 +134,19 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [planFilter, setPlanFilter] = useState<'ALL' | PlanState>('ALL');
   const [splitOpen, setSplitOpen] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
-  // Assigned view open: the list drops guests, setup and check-out to make room.
-  const compact = splitOpen && !byCheckOut;
+  // The list's own width, so a narrow window (menu open, zoom) goes compact too.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < COMPACT_BELOW_PX));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Compact: guests, setup and the time this tab does not edit step aside so
+  // the unit name has room. On with the Assigned view, or when space is short.
+  const compact = (splitOpen && !byCheckOut) || narrow;
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>(24);
   // Default: by unit name, so the desk reads the list the way the building is laid out.
@@ -596,7 +613,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
       {/* Results — with the split "Assigned" view beside them when on. */}
       <div className={cn(splitOpen && !byCheckOut && loaded && 'flex gap-4 items-start')}>
-      <div className="flex-1 min-w-0">
+      <div ref={listRef} className="flex-1 min-w-0">
       {!loaded ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
           <Filter size={32} className="mx-auto text-ink-faint mb-3" />
@@ -668,7 +685,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
             {!compact && <span className="text-center">{tp.setup}</span>}
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
-            <span className="flex items-center gap-1.5">
+            {!(compact && byCheckOut) && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkInTime}</span>
@@ -677,8 +694,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   ↓ {tp.checkInTime}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
                 </button>
               )}
-            </span>
-            {!compact && <span className="flex items-center gap-1.5">
+            </span>}
+            {!(compact && !byCheckOut) && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
@@ -831,6 +848,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   </>)}
 
+                  {!(compact && byCheckOut) && (<>
                   {/* Check-in — editable on the Check-In tab, locked on Check-Out. The amber dot means we assumed the time. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -859,7 +877,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     </label>
                   </div>
 
-                  {!compact && (<>
+                  </>)}
+
+                  {!(compact && !byCheckOut) && (<>
                   {/* Check-out — editable on the Check-Out tab, locked on Check-In. */}
                   <div className="flex items-center gap-1.5">
                     <span
