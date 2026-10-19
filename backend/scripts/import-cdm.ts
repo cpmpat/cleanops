@@ -206,7 +206,7 @@ const LISTS: Record<string, {
       otaExpedia: 'bool',
       otaVrbo: 'bool',
       parking: 'bool',
-      ownerVatPayer: 'bool',
+      // ownerVatPayer: text since 20 Oct 2026 — the sheet names the VAT status.
       chekin: 'bool',
       cityTaxConsolidateReport: 'bool',
       finalCleaningProvided: 'bool',
@@ -243,6 +243,7 @@ const LISTS: Record<string, {
       /^ubyport/i,
       /lockbox/i,
       /^oxpointAccesscode$/,
+      /^entranceCode$/,
       /^accountIdAirbnb$/,
       /^ownerAvantioPortalUser$/,
       /WifiName$/,
@@ -258,15 +259,15 @@ const LISTS: Record<string, {
     // First match wins, so order matters: credentials before ota, because
     // `emailAirbnb` is a credential before it is a channel column.
     groups: [
-      ['credentials', /^(password|email|ubyport|accountIdAirbnb|lockboxCode|ownerAvantioPortalUser)|WifiPassword|WifiName/],
+      ['credentials', /^(password|email|ubyport|accountIdAirbnb|lockboxCode|ownerAvantioPortalUser|entranceCode)|WifiPassword|WifiName/],
       ['citytax',     /^cityTax|countOccuranceOfcityTax|feeTransactionCityTax|urlFolderCityTax|urlSharedFolderCityTax|folderUnitPropertiesCityTax/],
       ['ota',         /^(ota|listing|link|roomIdBooking|propertyIdBooking|urlListingBooking|airbnbUrl|cancelationPolicy|stornoConditions|salesRentalDivision|apaPropertyId)/],
       ['pricing',     /^(fee|cost|pricing|petsFee|sumUp|invoicingProcess|additionalInvoicing|allowedSpendingForRepairs|maxWithoutSupplement)/],
       ['folders',     /^url|^folderUnitProperties/],
       ['contract',    /^(contract|cotractType|validFrom|validUntil|dateOffboard|ownerVatPayer|mlos|maximumRelease|maximumTimeRelease)/],
       ['tech',        /^(routerModel|intercom|bellLabel|vitejEspId|vitejBoxGateUrl|tvModel|buildingUnderConstruction|propertyFactWifi)/],
-      ['ops',         /^(supplierFinalCleaning|finalCleaningProvided|checkIn|chekin|rajonUserId|hostsName|contactBuildingManagement|notes|keysQuantity)/],
-      ['location',    /^(address|city|unit|floor|parkingNumber|parking|parkingType|parkingLimits)$/],
+      ['ops',         /^(supplierFinalCleaning|finalCleaningProvided|checkIn|chekin|rajonUserId|hostsName|contactBuildingManagement|notes|keysQuantity|lockPreparationCleaning)/],
+      ['location',    /^(address|city|unit|floor|parkingNumber|parking|parkingType|parkingLimits|latitude|longitude)$/],
       ['identity',    /^(source|status|id|idBh|idAvantio|titleAvantio|nickname)$/],
       ['property',    /.*/],
     ],

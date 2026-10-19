@@ -1600,7 +1600,9 @@ model CdmAccommodation {
   maxWithoutSupplement                           String?
   notes                                          String?
   otaVrboSalesStarted                            DateTime?
-  ownerVatPayer                                  Boolean?
+  /// Text since 20 Oct 2026: the sheet now says which VAT status, not just yes/no
+  /// ("PLÁTCE DPH", "IDENTIFIKOVANA / NEPLATCE", "NEPLATCE DPH/Není ani identifikovaná").
+  ownerVatPayer                                  String?
   cityTaxDistrictReportedTo                      String?
   cityTaxEntityRegistered                        String?
   costChekin                                     String?
@@ -1687,6 +1689,15 @@ model CdmAccommodation {
   oxpointLockboxnumber                           String?
   oxpointLockboxcode                             String?
   oxpointAccessibilitysummary                    String?
+  /// Added 20 Oct 2026 (new sheet columns). Coordinates stay text: the sheet may
+  /// use a decimal comma, and checkin-legs.ts parses either.
+  contractType                                   String?
+  latitude                                       String?
+  longitude                                      String?
+  operatingEntity                                String?
+  /// An access code — sensitive (import-cdm sensitiveMatch).
+  entranceCode                                   String?
+  lockPreparationCleaning                        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
