@@ -9,6 +9,7 @@ import { useSocket } from '@/lib/socket';
 import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2 } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 import { AssignedPanel } from './AssignedPanel';
+import { PlanningSummary } from './PlanningSummary';
 import { legLabel, legTone, street } from './legText';
 
 /** Arrival-turnover statuses the desk can filter on. CANCELLED/SKIPPED rows are never listed. */
@@ -35,19 +36,28 @@ function isLastMinute(b: PlanningBooking): boolean {
 }
 
 /**
- * Quick windows in whole Prague days, starting at today's midnight: 24 = today,
- * 48 = today + tomorrow, 72 = three days. They used to run from *now*, so every
- * arrival already past — and every unconfirmed one sitting at the assumed
- * 15:00 — vanished from "today" in the afternoon (19 Oct 2026).
+ * Quick windows in whole Prague days: today, tomorrow, today + tomorrow, three
+ * days from today. They used to run from *now*, so every arrival already past —
+ * and every unconfirmed one sitting at the assumed 15:00 — vanished from
+ * "today" in the afternoon (19 Oct 2026).
  */
-type QuickWindow = 24 | 48 | 72;
+type QuickWindow = 'today' | 'tomorrow' | 'today2' | 'days3';
+
+/** Offsets from today (first and last day, inclusive). */
+const QUICK_DAYS: Record<QuickWindow, [number, number]> = {
+  today: [0, 0],
+  tomorrow: [1, 1],
+  today2: [0, 1],
+  days3: [0, 2],
+};
 
 /** First and last Prague day of a quick window, as YYYY-MM-DD (the API reads a bare date as that whole day). */
 function quickRange(w: QuickWindow): { from: string; to: string } {
-  const from = pragueDay(new Date().toISOString());
-  const [y, m, d] = from.split('-').map(Number);
-  const to = new Date(Date.UTC(y, m - 1, d + w / 24 - 1)).toISOString().slice(0, 10);
-  return { from, to };
+  const today = pragueDay(new Date().toISOString());
+  const [y, m, d] = today.split('-').map(Number);
+  const at = (n: number) => new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  const [a, b] = QUICK_DAYS[w];
+  return { from: at(a), to: at(b) };
 }
 
 /**
@@ -126,8 +136,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const [arrivalTo, setArrivalTo] = useState('');
   const [creationFrom, setCreationFrom] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [unitSearch, setUnitSearch] = useState('');
-  const [refSearch, setRefSearch] = useState('');
+  // One search over every loaded row: unit, guest or booking ref.
+  const [search, setSearch] = useState('');
   // Bookings whose check-in time we assumed (15:00) because the PMS sent 00:00 / nothing.
   const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
   // Check-In tab: plan state filter, and the split "Assigned" view.
@@ -148,7 +158,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   // the unit name has room. On with the Assigned view, or when space is short.
   const compact = (splitOpen && !byCheckOut) || narrow;
   // A quick window overrides the date inputs while it is active.
-  const [quick, setQuick] = useState<QuickWindow | null>(24);
+  const [quick, setQuick] = useState<QuickWindow | null>('today');
   // Default: by unit name, so the desk reads the list the way the building is laid out.
   const [sortKey, setSortKey] = useState<'unit' | 'time'>('unit');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -271,7 +281,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
   // Each tab opens on the next 24 h — the desk's working window — so the
   // list is there before anyone touches a filter.
-  useEffect(() => { void load(24); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load('today'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleaners claiming, starting and finishing jobs broadcast event:updated;
   // so does the PMS sync and a push from the other planning tab. Refresh in
@@ -292,12 +302,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   const unconfirmedCount = bookings.filter(b => ownSource(b) === 'FALLBACK').length;
 
   const filtered = bookings.filter(b => {
-    const matchUnit = !unitSearch || b.accommodationName.toLowerCase().includes(unitSearch.toLowerCase());
-    const matchRef = !refSearch || b.bookingRef.toLowerCase().includes(refSearch.toLowerCase())
-      || (b.guestName ?? '').toLowerCase().includes(refSearch.toLowerCase());
+    const q = search.trim().toLowerCase();
+    const matchSearch = !q || b.accommodationName.toLowerCase().includes(q)
+      || b.bookingRef.toLowerCase().includes(q)
+      || (b.guestName ?? '').toLowerCase().includes(q);
     const matchUnconfirmed = !onlyUnconfirmed || ownSource(b) === 'FALLBACK';
     const matchPlan = byCheckOut || planFilter === 'ALL' || planState(b) === planFilter;
-    return matchUnit && matchRef && matchUnconfirmed && matchPlan;
+    return matchSearch && matchUnconfirmed && matchPlan;
   }).sort((a, b) => {
     const cmp = sortKey === 'unit'
       ? a.accommodationName.localeCompare(b.accommodationName, 'cs', { numeric: true, sensitivity: 'base' })
@@ -525,9 +536,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         {/* Quick windows */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider mr-1">{byCheckOut ? tp.filterDeparture : tp.filterArrival}</span>
-          {quickBtn(24, tp.next24)}
-          {quickBtn(48, tp.next48)}
-          {quickBtn(72, tp.next72)}
+          {quickBtn('today', tp.next24)}
+          {quickBtn('tomorrow', tp.quickTomorrow)}
+          {quickBtn('today2', tp.next48)}
+          {quickBtn('days3', tp.next72)}
         </div>
 
         <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 transition', quick && 'opacity-50')}>
@@ -556,28 +568,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           </div>
         </div>
 
-        {/* Search row */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <input
-              type="text"
-              placeholder="Filter by unit name (e.g. Skořepka 4, unit 2)"
-              value={unitSearch}
-              onChange={e => setUnitSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <input
-              type="text"
-              placeholder="Filter by booking ref or guest"
-              value={refSearch}
-              onChange={e => setRefSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-surface-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </div>
+        {/* Unconfirmed + Apply — the text search lives in the list header now. */}
+        <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={() => setOnlyUnconfirmed(v => !v)}
@@ -611,6 +603,15 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         </div>
       </div>
 
+      {loaded && !byCheckOut && bookings.length > 0 && (
+        <div className="mb-4">
+          <PlanningSummary bookings={bookings} onPick={id => {
+            const b = bookings.find(x => x.id === id);
+            if (b) { setPlanFilter('ALL'); setOnlyUnconfirmed(false); setSearch(b.bookingRef); }
+          }} />
+        </div>
+      )}
+
       {/* Results — with the split "Assigned" view beside them when on. */}
       <div className={cn(splitOpen && !byCheckOut && loaded && 'flex gap-4 items-start')}>
       <div ref={listRef} className="flex-1 min-w-0">
@@ -619,7 +620,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           <Filter size={32} className="mx-auto text-ink-faint mb-3" />
           <p className="text-sm text-ink-muted">{loading ? t.general.loading : 'Set filters and click Apply to load bookings'}</p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : bookings.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-surface-border">
           <p className="text-sm text-ink-muted">{tp.noBookings}</p>
         </div>
@@ -628,6 +629,17 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
               <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{filtered.length} bookings</p>
+              <label className="relative flex items-center">
+                <Search size={13} className="absolute left-2.5 text-ink-muted pointer-events-none" />
+                <input
+                  type="search"
+                  aria-label="Search check-ins"
+                  placeholder={`Search all ${bookings.length} · unit, guest, ref`}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-60 pl-8 pr-2.5 py-1.5 text-[12.5px] rounded-[10px] border border-surface-border bg-white focus:outline-none focus:ring-2 focus:ring-accent/40"
+                />
+              </label>
               {!byCheckOut && (
                 <div className="flex items-center gap-1 text-[11.5px] font-semibold">
                   {([
@@ -709,6 +721,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             <span className="text-right">{tp.cleaner}</span>
           </div>
           <div className="divide-y divide-surface-border">
+            {filtered.length === 0 && (
+              <p className="px-4 py-10 text-center text-sm text-ink-muted">{tp.noBookings}</p>
+            )}
             {filtered.map(b => {
               const d = drafts[b.id] ?? stored(b);
               const dirty = isDirty(b);

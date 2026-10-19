@@ -40,15 +40,15 @@ export function NewTaskDialog({ people, s, onClose, onCreated }: {
     }
   }
 
-  const label = 'block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[#A1A1AA] mb-1.5';
+  const label = 'block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[#6A6F69] mb-1.5';
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[8vh] px-4" role="dialog" aria-modal="true"
       onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
-      <button aria-label={s.cancel} className="absolute inset-0 bg-[#18181B]/25 backdrop-blur-[2px]" onClick={onClose} />
+      <button aria-label={s.cancel} className="absolute inset-0 bg-[#1B2420]/25 backdrop-blur-[2px]" onClick={onClose} />
       <form onSubmit={submit} className="relative w-full max-w-xl max-h-[88vh] overflow-y-auto bg-white rounded-2xl shadow-[0_24px_64px_-12px_rgba(16,24,40,0.28)] ring-1 ring-black/[0.06]">
         <div className="flex items-center justify-between px-5 h-14 border-b border-black/[0.06]">
-          <h2 className="text-[15px] font-semibold text-[#18181B]">{s.newTask}</h2>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-[#A1A1AA] hover:text-[#18181B] hover:bg-black/[0.05]"><X size={16} /></button>
+          <h2 className="text-[15px] font-semibold text-[#1B2420]">{s.newTask}</h2>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05]"><X size={16} /></button>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -83,12 +83,12 @@ export function NewTaskDialog({ people, s, onClose, onCreated }: {
                 {PRIORITIES.map((p) => (
                   <button key={p} type="button" onClick={() => setPriority(p)} title={s.priority[p]}
                     className={cn('h-8 w-8 flex items-center justify-center rounded-lg ring-1 transition',
-                      priority === p ? 'ring-[#18181B] bg-[#F4F4F5]' : 'ring-black/[0.08] hover:ring-black/[0.2]')}>
+                      priority === p ? 'ring-[#1B2420] bg-[#F6F4EF]' : 'ring-black/[0.08] hover:ring-black/[0.2]')}>
                     <PriorityFlag p={p} />
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-[11.5px] text-[#71717A]">{s.priority[priority]}</p>
+              <p className="mt-1 text-[11.5px] text-[#6A6F69]">{s.priority[priority]}</p>
             </div>
             <div>
               <label className={label}>{s.fieldDue}</label>
@@ -109,9 +109,9 @@ export function NewTaskDialog({ people, s, onClose, onCreated }: {
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-black/[0.06]">
-          <button type="button" onClick={onClose} className="h-9 px-3.5 rounded-xl text-sm font-semibold text-[#52525B] hover:bg-black/[0.05]">{s.cancel}</button>
+          <button type="button" onClick={onClose} className="h-9 px-3.5 rounded-xl text-sm font-semibold text-[#3D433E] hover:bg-black/[0.05]">{s.cancel}</button>
           <button type="submit" disabled={busy || !title.trim() || (status === 'TODO' && assigneeIds.length === 0)}
-            className="h-9 px-4 rounded-xl bg-[#18181B] text-white text-sm font-semibold disabled:opacity-40">{s.create}</button>
+            className="h-9 px-4 rounded-xl bg-[#1B2420] text-white text-sm font-semibold disabled:opacity-40">{s.create}</button>
         </div>
       </form>
     </div>

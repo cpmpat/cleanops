@@ -41,8 +41,8 @@ export function isTyping(target: EventTarget | null): boolean {
 export function ShortcutCue({ className }: { className?: string }) {
   return (
     <span className={cn('flex items-center gap-0.5', className)} aria-hidden>
-      <kbd className="min-w-[20px] h-5 px-1 rounded-[5px] border border-black/10 bg-[#F4F4F5] text-[11px] font-medium text-[#71717A] flex items-center justify-center font-sans">⇧</kbd>
-      <kbd className="min-w-[20px] h-5 px-1 rounded-[5px] border border-black/10 bg-[#F4F4F5] text-[11px] font-medium text-[#71717A] flex items-center justify-center font-sans">S</kbd>
+      <kbd className="min-w-[20px] h-5 px-1 rounded-[5px] border border-black/10 bg-[#F6F4EF] text-[11px] font-medium text-[#6A6F69] flex items-center justify-center font-sans">⇧</kbd>
+      <kbd className="min-w-[20px] h-5 px-1 rounded-[5px] border border-black/10 bg-[#F6F4EF] text-[11px] font-medium text-[#6A6F69] flex items-center justify-center font-sans">S</kbd>
     </span>
   );
 }
@@ -108,32 +108,32 @@ export function CommandSearch({ open, onClose, locale }: { open: boolean; onClos
 
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[12vh] px-4" role="dialog" aria-modal="true">
-      <button aria-label={s.close} className="absolute inset-0 bg-[#18181B]/25 backdrop-blur-[2px]" onClick={onClose} />
+      <button aria-label={s.close} className="absolute inset-0 bg-[#1B2420]/25 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-[0_24px_64px_-12px_rgba(16,24,40,0.28)] ring-1 ring-black/[0.06] overflow-hidden">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-black/[0.06]">
-          {busy ? <Loader2 size={18} className="text-[#A1A1AA] animate-spin" /> : <Search size={18} className="text-[#A1A1AA]" />}
+          {busy ? <Loader2 size={18} className="text-[#6A6F69] animate-spin" /> : <Search size={18} className="text-[#6A6F69]" />}
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKey}
             placeholder={s.placeholder}
-            className="flex-1 bg-transparent outline-none text-[15px] text-[#18181B] placeholder:text-[#A1A1AA]"
+            className="flex-1 bg-transparent outline-none text-[15px] text-[#1B2420] placeholder:text-[#6A6F69]"
           />
-          <kbd className="h-5 px-1.5 rounded-[5px] border border-black/10 bg-[#F4F4F5] text-[11px] text-[#71717A] font-sans">Esc</kbd>
+          <kbd className="h-5 px-1.5 rounded-[5px] border border-black/10 bg-[#F6F4EF] text-[11px] text-[#6A6F69] font-sans">Esc</kbd>
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto py-2">
           {term.length < 2 ? (
-            <p className="px-4 py-6 text-center text-sm text-[#A1A1AA]">{s.tooShort}</p>
+            <p className="px-4 py-6 text-center text-sm text-[#6A6F69]">{s.tooShort}</p>
           ) : !busy && hits.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-[#A1A1AA]">{s.empty}</p>
+            <p className="px-4 py-6 text-center text-sm text-[#6A6F69]">{s.empty}</p>
           ) : (
             groups.map((g) => {
               const Icon = ICONS[g.dataset] ?? Search;
               return (
                 <div key={g.dataset} className="px-2 pb-1">
-                  <p className="px-2 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#A1A1AA]">{g.label}</p>
+                  <p className="px-2 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#6A6F69]">{g.label}</p>
                   {g.items.map(({ hit, index }) => (
                     <button
                       key={`${hit.dataset}:${hit.rowId}`}
@@ -141,14 +141,14 @@ export function CommandSearch({ open, onClose, locale }: { open: boolean; onClos
                       onClick={() => go(hit)}
                       className={cn(
                         'w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition-colors',
-                        sel === index ? 'bg-[#F4F4F5]' : 'hover:bg-[#FAFAFA]',
+                        sel === index ? 'bg-[#F6F4EF]' : 'hover:bg-[#FBFAF6]',
                       )}
                     >
-                      <span className="w-7 h-7 rounded-lg bg-[#F4F4F5] ring-1 ring-black/[0.04] flex items-center justify-center flex-shrink-0">
-                        <Icon size={14} className="text-[#52525B]" />
+                      <span className="w-7 h-7 rounded-lg bg-[#F6F4EF] ring-1 ring-black/[0.04] flex items-center justify-center flex-shrink-0">
+                        <Icon size={14} className="text-[#3D433E]" />
                       </span>
-                      <span className="flex-1 min-w-0 truncate text-[13.5px] text-[#18181B]">{hit.title}</span>
-                      {sel === index && <CornerDownLeft size={14} className="text-[#A1A1AA] flex-shrink-0" />}
+                      <span className="flex-1 min-w-0 truncate text-[13.5px] text-[#1B2420]">{hit.title}</span>
+                      {sel === index && <CornerDownLeft size={14} className="text-[#6A6F69] flex-shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -157,10 +157,10 @@ export function CommandSearch({ open, onClose, locale }: { open: boolean; onClos
           )}
         </div>
 
-        <div className="flex items-center gap-4 px-4 h-10 border-t border-black/[0.06] text-[11px] text-[#A1A1AA]">
-          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F4F4F5] font-sans">↑</kbd><kbd className="px-1 rounded border border-black/10 bg-[#F4F4F5] font-sans">↓</kbd></span>
-          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F4F4F5] font-sans">↵</kbd> {s.open}</span>
-          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F4F4F5] font-sans">Esc</kbd> {s.close}</span>
+        <div className="flex items-center gap-4 px-4 h-10 border-t border-black/[0.06] text-[11px] text-[#6A6F69]">
+          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F6F4EF] font-sans">↑</kbd><kbd className="px-1 rounded border border-black/10 bg-[#F6F4EF] font-sans">↓</kbd></span>
+          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F6F4EF] font-sans">↵</kbd> {s.open}</span>
+          <span className="flex items-center gap-1"><kbd className="px-1 rounded border border-black/10 bg-[#F6F4EF] font-sans">Esc</kbd> {s.close}</span>
         </div>
       </div>
     </div>

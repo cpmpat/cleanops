@@ -73,32 +73,32 @@ export function RecordPicker({ s, onAdd, exclude = [] }: {
   if (!lists.length) return null;
 
   return (
-    <div className="rounded-xl ring-1 ring-black/[0.08] bg-[#FAFAFA] p-2.5 space-y-2">
+    <div className="rounded-xl ring-1 ring-black/[0.08] bg-[#FBFAF6] p-2.5 space-y-2">
       <div className="flex gap-2">
         <select value={dataset} onChange={(e) => { setDataset(e.target.value); reset(); }} title={s.pickTable}
           className="h-8 px-2 rounded-lg ring-1 ring-black/[0.08] bg-white text-[12.5px] outline-none">
           {lists.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
         </select>
         {row ? (
-          <span className="flex-1 min-w-0 h-8 flex items-center gap-1.5 px-2 rounded-lg bg-white ring-1 ring-black/[0.12] text-[12.5px] text-[#18181B]">
+          <span className="flex-1 min-w-0 h-8 flex items-center gap-1.5 px-2 rounded-lg bg-white ring-1 ring-black/[0.12] text-[12.5px] text-[#1B2420]">
             <span className="truncate">{row.title}</span>
-            <button type="button" onClick={reset} className="ml-auto text-[#A1A1AA] hover:text-[#18181B]"><X size={12} /></button>
+            <button type="button" onClick={reset} className="ml-auto text-[#6A6F69] hover:text-[#1B2420]"><X size={12} /></button>
           </span>
         ) : (
           <span className="flex-1 min-w-0 h-8 flex items-center gap-1.5 px-2 rounded-lg bg-white ring-1 ring-black/[0.08]">
-            <Search size={12} className="text-[#A1A1AA]" />
+            <Search size={12} className="text-[#6A6F69]" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={s.pickRecord}
-              className="flex-1 min-w-0 outline-none text-[12.5px] bg-transparent placeholder:text-[#A1A1AA]" />
+              className="flex-1 min-w-0 outline-none text-[12.5px] bg-transparent placeholder:text-[#6A6F69]" />
           </span>
         )}
       </div>
 
       {!row && pick && (
         <div className="max-h-40 overflow-y-auto rounded-lg bg-white ring-1 ring-black/[0.06] py-1">
-          {pick.rows.length === 0 && <p className="px-3 py-2 text-[12px] text-[#A1A1AA]">{s.noRecords}</p>}
+          {pick.rows.length === 0 && <p className="px-3 py-2 text-[12px] text-[#6A6F69]">{s.noRecords}</p>}
           {pick.rows.map((r) => (
             <button key={r.rowId} type="button" onClick={() => setRow(r)}
-              className="w-full text-left px-3 py-1.5 text-[12.5px] text-[#18181B] hover:bg-[#F4F4F5] truncate">{r.title}</button>
+              className="w-full text-left px-3 py-1.5 text-[12.5px] text-[#1B2420] hover:bg-[#F6F4EF] truncate">{r.title}</button>
           ))}
         </div>
       )}
@@ -111,7 +111,7 @@ export function RecordPicker({ s, onAdd, exclude = [] }: {
             {pick.fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
           <button type="button" onClick={() => void add()} disabled={taken(row.rowId)}
-            className="h-8 flex items-center gap-1 px-3 rounded-lg bg-[#18181B] text-white text-[12.5px] font-semibold disabled:opacity-40">
+            className="h-8 flex items-center gap-1 px-3 rounded-lg bg-[#1B2420] text-white text-[12.5px] font-semibold disabled:opacity-40">
             <Plus size={13} /> {s.addLink}
           </button>
         </div>
@@ -132,19 +132,19 @@ export function LinkChip({ link, s, onRemove, compact }: {
   const visible = link.visible !== false;
   const body = (
     <>
-      {visible ? <Icon size={compact ? 11 : 13} className="flex-shrink-0 text-[#71717A]" /> : <Lock size={compact ? 11 : 13} className="flex-shrink-0 text-[#A1A1AA]" />}
+      {visible ? <Icon size={compact ? 11 : 13} className="flex-shrink-0 text-[#6A6F69]" /> : <Lock size={compact ? 11 : 13} className="flex-shrink-0 text-[#6A6F69]" />}
       <span className="truncate">
         {visible ? (
           <>
-            {!compact && <span className="text-[#A1A1AA]">{link.datasetLabel} · </span>}
-            <span className="text-[#18181B]">{link.title}</span>
-            {link.fieldLabel && <span className="text-[#71717A]"> · {link.fieldLabel}</span>}
+            {!compact && <span className="text-[#6A6F69]">{link.datasetLabel} · </span>}
+            <span className="text-[#1B2420]">{link.title}</span>
+            {link.fieldLabel && <span className="text-[#6A6F69]"> · {link.fieldLabel}</span>}
           </>
-        ) : <span className="text-[#A1A1AA]">{s.restricted}</span>}
+        ) : <span className="text-[#6A6F69]">{s.restricted}</span>}
       </span>
     </>
   );
-  const cls = cn('inline-flex items-center gap-1.5 max-w-full rounded-lg bg-[#F4F4F5]', compact ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-[12.5px]');
+  const cls = cn('inline-flex items-center gap-1.5 max-w-full rounded-lg bg-[#F6F4EF]', compact ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-[12.5px]');
   return (
     <span className={cn(cls, 'group')}>
       {visible ? (
@@ -152,7 +152,7 @@ export function LinkChip({ link, s, onRemove, compact }: {
           onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1.5 min-w-0 hover:underline">{body}</Link>
       ) : <span className="inline-flex items-center gap-1.5 min-w-0">{body}</span>}
       {onRemove && (
-        <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} className="text-[#A1A1AA] hover:text-[#18181B] flex-shrink-0"><X size={12} /></button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} className="text-[#6A6F69] hover:text-[#1B2420] flex-shrink-0"><X size={12} /></button>
       )}
     </span>
   );

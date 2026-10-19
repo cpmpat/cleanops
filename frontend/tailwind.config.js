@@ -8,9 +8,14 @@ module.exports = {
         mono: ['var(--font-mono)', 'monospace'],
       },
       colors: {
-        ink: { DEFAULT: '#1a1714', soft: '#3d3935', muted: '#6b6560', faint: '#b5b0ab' },
-        surface: { DEFAULT: '#faf9f7', raised: '#ffffff', sunken: '#f0ede9', border: '#e5e1db' },
-        accent: { DEFAULT: '#2563eb', hover: '#1d4ed8', soft: '#eff6ff' },
+        // Palette of the Oct 2026 redesign: warm off-white ground, white cards,
+        // forest green for action and "on track", coral for urgent, sand for
+        // waiting / assumed. One place: every token class follows it.
+        ink: { DEFAULT: '#1B2420', soft: '#3D433E', muted: '#6A6F69', faint: '#A9AEA8' },
+        surface: { DEFAULT: '#F6F4EF', raised: '#FFFFFF', sunken: '#EFEBE3', border: '#E8E3D9' },
+        accent: { DEFAULT: '#1F4D3A', hover: '#163828', soft: '#E3ECE5' },
+        coral: { DEFAULT: '#E2553F', deep: '#B23A26', soft: '#FBE3DD' },
+        sand: { DEFAULT: '#D69A2D', deep: '#8A5A12', soft: '#F8EBD3' },
       },
       boxShadow: {
         card: '0 1px 3px 0 rgb(0 0 0 / 0.06)',
