@@ -52,7 +52,7 @@ export function ValueInput({
     if (e.key === 'Escape') { e.preventDefault(); onCancel?.(); }
   };
   const base = cn(
-    'w-full h-full min-h-[26px] px-2 rounded-md border border-amber-400 bg-white text-xs text-ink',
+    'w-full h-full min-h-[26px] px-2 rounded-md border border-sand bg-white text-xs text-ink',
     'focus:outline-none focus:ring-2 focus:ring-accent',
     className,
   );
@@ -151,7 +151,7 @@ export function SaveBar({
                   <li key={r} className="flex items-center gap-3 px-5 py-2">
                     <button type="button" onClick={() => onOpen(r)} className="flex-1 min-w-0 text-left" title="Open the record">
                       <span className="block text-[13px] font-medium truncate">{rowTitle(page, r)}</span>
-                      <span className={cn('block text-[11px]', errors[r] ? 'text-red-300' : 'text-white/50')}>
+                      <span className={cn('block text-[11px]', errors[r] ? 'text-[#F2A898]' : 'text-white/50')}>
                         {errors[r] ?? `${n} change${n === 1 ? '' : 's'}`}
                       </span>
                     </button>
@@ -173,7 +173,7 @@ export function SaveBar({
             {single !== null ? (
               <button type="button" onClick={() => onOpen(single)} className="flex-1 min-w-0 text-left" title="Open the record">
                 <span className="block text-sm font-semibold truncate">{rowTitle(page, single)}</span>
-                <span className={cn('block text-xs', errors[single] ? 'text-red-300' : 'text-white/60')}>
+                <span className={cn('block text-xs', errors[single] ? 'text-[#F2A898]' : 'text-white/60')}>
                   {errors[single] ?? `${changes} unsaved change${changes === 1 ? '' : 's'}`}
                 </span>
               </button>
@@ -184,7 +184,7 @@ export function SaveBar({
                   <span className="block text-sm font-semibold">
                     {dirty.length} records · {changes} unsaved change{changes === 1 ? '' : 's'}
                   </span>
-                  <span className={cn('block text-xs', failed.length ? 'text-red-300' : 'text-white/60')}>
+                  <span className={cn('block text-xs', failed.length ? 'text-[#F2A898]' : 'text-white/60')}>
                     {busy
                       ? `Saving… ${dirty.length} left`
                       : failed.length
@@ -207,7 +207,7 @@ export function SaveBar({
               disabled={busy}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50',
-                confirmDiscard ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30' : 'text-white/80 hover:text-white hover:bg-white/10',
+                confirmDiscard ? 'bg-coral/25 text-[#F7C9BE] hover:bg-coral/35' : 'text-white/80 hover:text-white hover:bg-white/10',
               )}
             >
               <RotateCcw size={13} />
@@ -312,7 +312,7 @@ export function RecordDrawer({
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {historyError && <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">{historyError}</p>}
+          {historyError && <p className="text-xs text-coral-deep bg-coral-soft rounded-lg px-3 py-2">{historyError}</p>}
           {sections.map(({ group, cols }, s) => (
             <section key={`${group}-${s}`} className="space-y-1.5">
               {group && (
@@ -335,7 +335,7 @@ export function RecordDrawer({
                           column={c}
                           value={value}
                           onChange={(v) => onChange(c.key, v)}
-                          className={draft[c.key] !== undefined ? 'bg-amber-50' : 'border-surface-border'}
+                          className={draft[c.key] !== undefined ? 'bg-[#FBF1DE]' : 'border-surface-border'}
                         />
                       ) : (
                         <span className="text-xs text-ink break-words flex items-center gap-1.5 min-h-[26px]">
@@ -354,7 +354,7 @@ export function RecordDrawer({
                         title={changes.length ? `${changes.length} change${changes.length === 1 ? '' : 's'}` : 'No changes recorded'}
                         className={cn(
                           'relative w-7 h-7 rounded-lg flex items-center justify-center transition',
-                          changes.length ? 'text-ink-muted hover:text-ink hover:bg-surface-sunken' : 'text-stone-200',
+                          changes.length ? 'text-ink-muted hover:text-ink hover:bg-surface-sunken' : 'text-ink-faint/50',
                         )}
                       >
                         <History size={13} />
@@ -397,7 +397,7 @@ export function RecordDrawer({
 
         {editableCount > 0 && (
           <footer className="px-5 py-3 border-t border-surface-border flex items-center gap-3">
-            <span className={cn('flex-1 text-xs', error ? 'text-red-700' : 'text-ink-muted')}>
+            <span className={cn('flex-1 text-xs', error ? 'text-coral-deep' : 'text-ink-muted')}>
               {error ?? (dirty ? `${dirty} unsaved change${dirty === 1 ? '' : 's'}` : 'No changes')}
             </span>
             <button
@@ -412,7 +412,7 @@ export function RecordDrawer({
               type="button"
               onClick={onSave}
               disabled={!dirty || saving}
-              className="flex items-center gap-2 px-4 py-2 bg-ink text-white rounded-xl text-sm font-semibold hover:bg-ink-soft transition disabled:opacity-40"
+              className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover transition disabled:opacity-40"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Save
