@@ -78,6 +78,16 @@ export interface PmsAdapter {
   ): Promise<void>;
 
   /**
+   * Set the guest's phone on a booking in the PMS (Oct 2026). Optional: an
+   * adapter without it means the phone stays local to CleanOps.
+   */
+  updateBookingGuestPhone?(
+    pmsBookingId: string,
+    phone: string,
+    tenantConfig: PmsTenantConfig,
+  ): Promise<void>;
+
+  /**
    * Test the connection to the PMS.
    */
   testConnection(tenantConfig: PmsTenantConfig): Promise<boolean>;

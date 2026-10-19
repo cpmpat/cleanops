@@ -52,6 +52,8 @@ export interface User {
   preferences?: UserPreferences;
   /** International format (+420777123456). Source for the wa.me contact link. */
   mobileNumber?: string | null;
+  /** The person's id in the CDM User list (users.cdmUserId); null until linked. */
+  cdmUserId?: string | null;
 }
 
 export interface UserPreferences {
@@ -203,6 +205,12 @@ export interface PlanningBooking {
   checkOutTime?: string;
   /** Guest name from the PMS payload; present on the planning list only. */
   guestName?: string;
+  /** Guest phone: the desk's number if one was entered in Planning, else the PMS payload's (Oct 2026). */
+  guestPhone?: string | null;
+  guestPhoneSource?: 'DESK' | 'PMS' | null;
+  /** Last successful push of the desk's number to Avantio, and Avantio's refusal if the last push failed. */
+  guestPhonePushedAt?: string | null;
+  guestPhonePushError?: string | null;
   /** The owner is arriving, not a guest — same flag the cleaner's card crowns. */
   isOwnerStay?: boolean;
   /** Setup requests recorded by the front desk — local only, never sent to the PMS. */
@@ -1401,6 +1409,11 @@ export const integrations = {
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
+    /** Guest phone from the desk: saved in CleanOps, then pushed to Avantio. null clears ours (PMS number shows again). */
+    setGuestPhone: (bookingId: string, phone: string | null) =>
+      patch<{ success: boolean; guestPhone: string | null; guestPhoneSource: 'DESK' | 'PMS' | null; pushed: boolean; pushError: string | null }>(
+        `/integrations/planning/guest-phone/${bookingId}`, { phone },
+      ),
     /** Times are "HH:mm" in Europe/Prague; the backend anchors them on the booking's own day. */
     updateTimes: (pmsBookingId: string, data: { checkInTime?: string; checkOutTime?: string }) =>
       patch(`/integrations/planning/bookings/${pmsBookingId}`, data),
@@ -1505,6 +1518,25 @@ export const newsfeed = {
  * it); without, the badge asks the server.
  */
 export const NEWSFEED_CHANGED = 'newsfeed:changed';
+
+// ─── Controlling (Oct 2026) — manager only ────────────────────────────────────
+
+export interface ControllingSource { key: string; label: string; origin: string }
+export interface ControllingTable {
+  source: string;
+  label: string;
+  origin: string;
+  columns: { key: string; type: string }[];
+  rows: Array<Record<string, string | number | boolean | null>>;
+  total: number;
+  truncated: boolean;
+  fetchedAt: string;
+}
+export const controlling = {
+  sources: () => get<ControllingSource[]>('/controlling'),
+  read: (source: string, refresh = false) =>
+    get<ControllingTable>(`/controlling/${encodeURIComponent(source)}${refresh ? '?refresh=1' : ''}`),
+};
 
 // ─── Tasks (16 Oct 2026) ──────────────────────────────────────────────────────
 

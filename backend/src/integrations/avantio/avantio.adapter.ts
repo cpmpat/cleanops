@@ -519,6 +519,44 @@ export class AvantioAdapter implements PmsAdapter {
     }
   }
 
+  /**
+   * PUT /bookings/{id} with the guest's phone (Oct 2026).
+   *
+   * The customer is read first and sent back whole with the phone replaced, so
+   * a PUT that treats `customer` as a whole object cannot wipe the guest's
+   * name, surnames or e-mails. The new number replaces the mobile if there is
+   * one (else the first number) and keeps its type; with no number at all it
+   * is added as MOBILE.
+   */
+  async updateBookingGuestPhone(
+    pmsBookingId: string,
+    phone: string,
+    config: PmsTenantConfig,
+  ): Promise<void> {
+    const client = this.createClient(config);
+    const raw = await this.fetchFullBookingRaw(pmsBookingId, client);
+    const customer: any = { ...(raw.customer ?? {}) };
+    const contact: any = { ...(customer.contact ?? {}) };
+    const phones: Array<{ number?: string; type?: string }> = Array.isArray(contact.phones) ? [...contact.phones] : [];
+    const at = phones.findIndex((p) => String(p?.type ?? '').toUpperCase().includes('MOBILE'));
+    const idx = at >= 0 ? at : phones.length ? 0 : -1;
+    if (idx >= 0) phones[idx] = { ...phones[idx], number: phone };
+    else phones.push({ number: phone, type: 'MOBILE' });
+    contact.phones = phones;
+    customer.contact = contact;
+
+    try {
+      this.logger.log(`PUT /bookings/${pmsBookingId} → customer.contact.phones (${phones.length})`);
+      await client.put(`/bookings/${pmsBookingId}`, { customer });
+      this.logger.log(`Updated guest phone of booking ${pmsBookingId} in Avantio`);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        this.logger.error(`PUT /bookings/${pmsBookingId} (phone) failed: ${err.response?.status} - ${JSON.stringify(err.response?.data)}`);
+      }
+      throw err;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // TEST CONNECTION
   // ═══════════════════════════════════════════════════════════════

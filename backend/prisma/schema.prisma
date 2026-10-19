@@ -336,6 +336,14 @@ model Booking {
   // as icons on the turnover card.
   needsCrib         Boolean        @default(false)
   separateBeds      Boolean        @default(false)
+  /// Guest phone typed by the front desk in Planning (Oct 2026). Wins over the
+  /// number in the PMS payload; pushed to Avantio. Null = use the PMS number.
+  guestPhone          String?
+  guestPhoneSetAt     DateTime?
+  guestPhoneSetById   String?
+  /// Last successful push to the PMS, and the PMS's refusal if the last push failed.
+  guestPhonePushedAt  DateTime?
+  guestPhonePushError String?
 
   // PMS sync
   pmsLastSyncedAt   DateTime?

@@ -471,9 +471,11 @@ export class CheckInAgentService {
         id: true, bookingRef: true, accommodationName: true, checkInTime: true, checkInSource: true,
         numAdults: true, numChildren: true, checkInAgentConsent: true, checkInLinkUrl: true,
         pmsRawData: true, needsCrib: true, separateBeds: true,
+        // The desk may have typed a better number in Planning (Oct 2026).
+        guestPhone: true,
         checkInReport: { include: { ratings: true } },
-      },
-    });
+      } as any,
+    }) as any;
     if (!b) throw new NotFoundException('This check-in is not assigned to you');
     const day = todayInAppZone(b.checkInTime);
     return {
@@ -488,7 +490,7 @@ export class CheckInAgentService {
       needsCrib: b.needsCrib,
       separateBeds: b.separateBeds,
       guestName: guestNameFromRaw(b.pmsRawData) ?? null,
-      guestPhone: guestPhoneFromRaw(b.pmsRawData),
+      guestPhone: (b as any).guestPhone ?? guestPhoneFromRaw(b.pmsRawData),
       checkInLinkUrl: b.checkInLinkUrl ?? null,
       awaitingMyAnswer: b.checkInAgentConsent === ('PENDING' as any),
       canReport: this.reportOpen(day),

@@ -83,7 +83,6 @@ export default function CheckInsPage() {
           <div className="min-w-0">
             <p className="text-white/60 text-sm font-medium">{greeting}</p>
             <h1 className="text-xl font-bold mt-0.5">{s.title}</h1>
-            <p className="text-white/60 text-xs mt-1 leading-relaxed">{s.subtitle}</p>
           </div>
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             <button

@@ -6,7 +6,7 @@ import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
 import { useSocket } from '@/lib/socket';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2 } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2, SlidersHorizontal, Phone, CloudOff, Cloud } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 import { AssignedPanel } from './AssignedPanel';
 import { PlanningSummary } from './PlanningSummary';
@@ -87,13 +87,25 @@ const PUSH_CONCURRENCY = 3;
  * the cell it names. Columns: status · unit/guest · party · setup · check-in ·
  * check-out · row actions · cleaner.
  */
-const GRID = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 /**
  * With the Assigned view open the list loses ~26rem. Guests, setup and the
  * locked check-out column step aside so the unit name has the room
  * (Check-In tab only — the panel never opens on Check-Out).
  */
-const GRID_COMPACT = 'grid grid-cols-[5.75rem_6.75rem_minmax(0,1fr)_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+/** The same two grids with the optional guest-phone column (Additional attributes) after the unit setup. */
+const GRID_PHONE = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_9.5rem_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT_PHONE = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_9.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const gridFor = (compact: boolean, phone: boolean) =>
+  compact ? (phone ? GRID_COMPACT_PHONE : GRID_COMPACT) : (phone ? GRID_PHONE : GRID);
+
+/** Extra columns the desk can switch on (Additional attributes). Remembered per browser. */
+type ExtraAttr = 'guestPhone';
+const EXTRA_ATTRS: Array<{ key: ExtraAttr; label: string; hint: string }> = [
+  { key: 'guestPhone', label: 'Guest phone', hint: 'Edit the guest\'s phone; it is pushed to Avantio and the check-in agent sees it' },
+];
+const EXTRAS_KEY = 'planning.extraAttrs';
 /**
  * Below this list width (px) the full grid leaves the unit name too little
  * room — a laptop with the menu open, or a zoomed browser — and the list goes
@@ -104,12 +116,13 @@ const COMPACT_BELOW_PX = 1340;
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
 
-/** "Thu 25 Sep", Prague calendar — the day this row's time belongs to. */
+/** "Monday, 18/10" (cs "pondělí, 18/10"), Prague calendar — the day this row's time belongs to. */
 function dayLabel(iso: string, locale: string): string {
   try {
-    return new Date(iso).toLocaleDateString(LOCALE_TAG[locale] ?? 'en-GB', {
-      weekday: 'short', day: 'numeric', month: 'short', timeZone: APP_TIME_ZONE,
-    });
+    const d = new Date(iso);
+    const weekday = d.toLocaleDateString(LOCALE_TAG[locale] ?? 'en-GB', { weekday: 'long', timeZone: APP_TIME_ZONE });
+    const [, mm, dd] = pragueDay(iso).split('-');
+    return `${weekday}, ${dd}/${mm}`;
   } catch { return iso.slice(0, 10); }
 }
 
@@ -143,6 +156,20 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   // Check-In tab: plan state filter, and the split "Assigned" view.
   const [planFilter, setPlanFilter] = useState<'ALL' | PlanState>('ALL');
   const [splitOpen, setSplitOpen] = useState(false);
+  // Additional attributes: extra columns the desk switches on (Oct 2026).
+  const [extras, setExtras] = useState<ExtraAttr[]>([]);
+  const [extrasOpen, setExtrasOpen] = useState(false);
+  useEffect(() => {
+    try { const v = JSON.parse(localStorage.getItem(EXTRAS_KEY) ?? '[]'); if (Array.isArray(v)) setExtras(v.filter((x: string) => EXTRA_ATTRS.some(a => a.key === x))); } catch { /* private window */ }
+  }, []);
+  function toggleExtra(k: ExtraAttr) {
+    setExtras(prev => {
+      const next = prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k];
+      try { localStorage.setItem(EXTRAS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+  const showPhone = extras.includes('guestPhone') && !byCheckOut;
   const [highlight, setHighlight] = useState<string | null>(null);
   // The list's own width, so a narrow window (menu open, zoom) goes compact too.
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -452,6 +479,18 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     }
   }
 
+  /** Desk sets the guest phone: saved here, pushed to Avantio; the row shows whether Avantio took it. */
+  async function saveGuestPhone(b: PlanningBooking, value: string): Promise<void> {
+    const res = await integrations.planning.setGuestPhone(b.id, value.trim() || null);
+    setBookings(prev => prev.map(x => (x.id === b.id ? {
+      ...x,
+      guestPhone: res.guestPhone,
+      guestPhoneSource: res.guestPhoneSource,
+      guestPhonePushedAt: res.pushed ? new Date().toISOString() : (value.trim() ? x.guestPhonePushedAt ?? null : null),
+      guestPhonePushError: res.pushError,
+    } : x)));
+  }
+
   // ── Assign ──
   function openAssign(b: PlanningBooking, oldUserId?: string) {
     setAssigning(b);
@@ -568,8 +607,51 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           </div>
         </div>
 
-        {/* Unconfirmed + Apply — the text search lives in the list header now. */}
+        <StatusLegend t={t} byCheckOut={byCheckOut} />
+
+        {/* Additional attributes on the left; Unconfirmed + Apply on the right — the text search lives in the list header now. */}
         <div className="flex gap-2 justify-end">
+          {!byCheckOut && (
+            <div className="relative mr-auto">
+              <button
+                type="button"
+                onClick={() => setExtrasOpen(o => !o)}
+                aria-expanded={extrasOpen}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition',
+                  extras.length ? 'bg-accent-soft border-transparent text-accent' : 'bg-surface border-surface-border text-ink-muted hover:text-ink',
+                )}
+              >
+                <SlidersHorizontal size={14} />
+                Additional attributes
+                {extras.length > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none bg-white text-accent">{extras.length}</span>}
+              </button>
+              {extrasOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setExtrasOpen(false)} />
+                  <div className="absolute left-0 z-40 mt-2 w-80 bg-white border border-surface-border rounded-2xl shadow-lg p-2">
+                    <p className="px-2 pt-1 pb-2 text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Show in the list, per reservation</p>
+                    {EXTRA_ATTRS.map(a => {
+                      const on = extras.includes(a.key);
+                      return (
+                        <button key={a.key} type="button" onClick={() => toggleExtra(a.key)}
+                          className="w-full flex items-start gap-2.5 text-left px-2 py-2 rounded-lg hover:bg-surface-sunken">
+                          <span className={cn('mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                            on ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white')}>
+                            {on && <Check size={11} />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[13px] font-semibold text-ink">{a.label}</span>
+                            <span className="block text-[11.5px] text-ink-muted leading-snug">{a.hint}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setOnlyUnconfirmed(v => !v)}
@@ -605,10 +687,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
       {loaded && !byCheckOut && bookings.length > 0 && (
         <div className="mb-4">
-          <PlanningSummary bookings={bookings} onPick={id => {
-            const b = bookings.find(x => x.id === id);
-            if (b) { setPlanFilter('ALL'); setOnlyUnconfirmed(false); setSearch(b.bookingRef); }
-          }} />
+          {/* Figures follow the current filters (range, plan chips, search, unconfirmed) so they agree with the rows below. */}
+          <PlanningSummary bookings={filtered} onPick={pickFromPanel} />
         </div>
       )}
 
@@ -685,7 +765,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             </div>
           </div>
           {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
-          <div className={cn(compact ? GRID_COMPACT : GRID, 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
+          <div className={cn(gridFor(compact, showPhone), 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
             {/* Day: the calendar day this tab's time falls on — sorts with the time column. */}
             <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
               {tp.day}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
@@ -694,6 +774,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             <button type="button" onClick={() => toggleSort('unit')} className="text-left hover:text-ink transition">
               {tp.sortUnit} · {tp.guest}{sortKey === 'unit' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
             </button>
+            <span title={`${tp.checkInTypeLabel} · ${tp.checkInMethodLabel} · ${tp.unitStandard}`}>Check-in · Std</span>
+            {showPhone && <span>Guest phone</span>}
             {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
             {!compact && <span className="text-center">{tp.setup}</span>}
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
@@ -737,7 +819,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   id={`row-${b.id}`}
                   onClick={() => { if (splitOpen) setHighlight(b.id); }}
                   className={cn(
-                    compact ? GRID_COMPACT : GRID, 'px-4 py-2.5 transition group',
+                    gridFor(compact, showPhone), 'px-4 py-2.5 transition group',
                     highlight === b.id && 'ring-2 ring-inset ring-accent',
                     dirty ? 'bg-sand-soft/70' : 'hover:bg-surface-sunken',
                     state === 'error' && 'bg-coral-soft',
@@ -791,28 +873,11 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       <span className="font-mono text-xs text-ink-faint truncate max-w-[170px]" title={b.bookingRef}>{b.bookingRef}</span>
                       <ChannelDot channel={b.channel} label={t.channel[b.channel] ?? b.channel} />
                     </div>
-                    {/* From the accommodation sheet: what the desk needs to know before sending anyone. */}
-                    {(b.accommodationStandard || b.checkInType || b.checkInMethod) && (
-                      <div className="flex items-center gap-1 mt-0.5 min-w-0 whitespace-nowrap overflow-hidden">
-                        {([
-                          [b.accommodationStandard, tp.unitStandard],
-                          [b.checkInType, tp.checkInTypeLabel],
-                          // Type and method often carry the same word ("Lockbox"): show it once.
-                          [b.checkInMethod === b.checkInType ? null : b.checkInMethod, tp.checkInMethodLabel],
-                        ] as const).map(([val, label]) =>
-                          val ? (
-                            <span
-                              key={label}
-                              title={`${label}: ${val}`}
-                              className="rounded border border-surface-border bg-surface-sunken/60 text-ink-soft px-1.5 py-px text-[10px] truncate max-w-[130px]"
-                            >
-                              {val}
-                            </span>
-                          ) : null,
-                        )}
-                      </div>
-                    )}
                   </div>
+
+                  {/* From the accommodation sheet, stacked: type, method, standard — what the desk needs before sending anyone. */}
+                  <UnitSetup type={b.checkInType} method={b.checkInMethod} standard={b.accommodationStandard} tp={tp} />
+                  {showPhone && <PhoneCell b={b} onSave={v => saveGuestPhone(b, v)} />}
 
                   {!compact && (<>
                   {/* Guests — same "adults+children" reading the cleaner's card uses */}
@@ -1404,4 +1469,146 @@ function withPragueTime(iso: string, hhmm: string): string {
   const probe = new Date(`${day}T${h.padStart(2, '0')}:${m.padStart(2, '0')}:00Z`);
   const asZoned = new Date(probe.toLocaleString('sv-SE', { timeZone: 'Europe/Prague' }).replace(' ', 'T') + 'Z');
   return new Date(probe.getTime() - (asZoned.getTime() - probe.getTime())).toISOString();
+}
+
+
+// ─── Unit setup (CDM) ────────────────────────────────────────────────────────
+
+/** Squash "Self-checkin" / "self check-in" / "SELF_CHECKIN" to one key. */
+const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Accommodation standard: the four values the CDM list carries, each its own colour. */
+const STANDARD_TONE: Record<string, string> = {
+  lux: 'bg-[#1B2420] text-[#F3D99B]',
+  airstay: 'bg-accent text-white',
+  comfort: 'bg-[#E6ECF6] text-[#2F5DA8]',
+  basic: 'bg-[#EFEAE0] text-[#5B5446]',
+};
+
+/** Check-in type / method: known values pinned, anything new gets a stable colour from its name. */
+const SETUP_TONE: Record<string, string> = {
+  lockbox: 'bg-sand-soft text-sand-deep',
+  keybox: 'bg-sand-soft text-sand-deep',
+  ttlock: 'bg-[#E6ECF6] text-[#2F5DA8]',
+  nuki: 'bg-accent-soft text-accent',
+  personal: 'bg-[#EFEAF3] text-[#5E4B75]',
+  selfcheckin: 'bg-[#E3EEEE] text-[#2E6E73]',
+  reception: 'bg-[#F3E6EC] text-[#8A3B5C]',
+};
+const SETUP_FALLBACK = [
+  'bg-[#E3EEEE] text-[#2E6E73]', 'bg-[#EFEAF3] text-[#5E4B75]', 'bg-[#E6ECF6] text-[#2F5DA8]',
+  'bg-sand-soft text-sand-deep', 'bg-accent-soft text-accent', 'bg-[#F3E6EC] text-[#8A3B5C]',
+];
+function setupTone(v: string, table: Record<string, string>): string {
+  const k = norm(v);
+  if (table[k]) return table[k];
+  let h = 0;
+  for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0;
+  return SETUP_FALLBACK[Math.abs(h) % SETUP_FALLBACK.length];
+}
+
+function UnitSetup({ type, method, standard, tp }: {
+  type?: string | null; method?: string | null; standard?: string | null; tp: any;
+}) {
+  const rows: Array<[string | null | undefined, string, Record<string, string>]> = [
+    [type, tp.checkInTypeLabel, SETUP_TONE],
+    [method, tp.checkInMethodLabel, SETUP_TONE],
+    [standard, tp.unitStandard, STANDARD_TONE],
+  ];
+  return (
+    <div className="min-w-0 flex flex-col items-start gap-[3px]">
+      {rows.map(([v, label, table]) => v ? (
+        <span key={label} title={`${label}: ${v}`}
+          className={cn('max-w-full truncate rounded-[5px] px-1.5 text-[10px] leading-[15px] font-semibold', setupTone(v, table))}>
+          {v}
+        </span>
+      ) : (
+        <span key={label} title={`${label}: —`} className="text-[10px] leading-[15px] text-ink-faint px-1.5">—</span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Status legend ───────────────────────────────────────────────────────────
+
+const LEGEND_STATUSES: Array<[TurnoverStatus | 'CANCELLED', string]> = [
+  ['PENDING', 'cleaning in the pool, nobody took it'],
+  ['ASSIGNED', 'a cleaner has it, not started'],
+  ['IN_PROGRESS', 'being cleaned now'],
+  ['COMPLETED', 'ready for the guest'],
+  ['FLAGGED', 'done, but the cleaner reported a problem'],
+];
+
+/** One low line under the date filters: what each status and mark in the list means. */
+function StatusLegend({ t, byCheckOut }: { t: any; byCheckOut: boolean }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl bg-surface px-3 py-1.5 text-[11px] text-ink-muted">
+      <span className="font-semibold uppercase tracking-[0.08em] text-[10px]">Status</span>
+      {LEGEND_STATUSES.map(([st, meaning]) => (
+        <span key={st} className="flex items-center gap-1.5">
+          <StatusBadge status={st as any} t={t} size="sm" />
+          <span>{meaning}</span>
+        </span>
+      ))}
+      {!byCheckOut && (
+        <>
+          <span className="w-px h-4 bg-surface-border" />
+          <span className="flex items-center gap-1.5"><span className="w-1 h-4 rounded-full bg-coral" />last minute</span>
+          <span className="flex items-center gap-1.5"><span className="w-1 h-4 rounded-full bg-sand" />owner stay</span>
+          <span className="flex items-center gap-1.5"><b className="font-mono font-bold text-ink">16:30</b>confirmed time</span>
+          <span className="flex items-center gap-1.5"><span className="font-mono text-ink-muted">15:00</span><span className="w-1.5 h-1.5 rounded-full bg-sand" />assumed time</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// ─── Guest phone (Additional attributes) ─────────────────────────────────────
+
+/**
+ * The guest's phone, editable. Saved on Enter or when the field loses focus,
+ * then pushed to Avantio by the backend. The icon says where the number stands:
+ * a green cloud — Avantio has it; a coral one — Avantio refused (hover for why,
+ * the agent still sees our number); none — the number came from Avantio.
+ */
+function PhoneCell({ b, onSave }: { b: PlanningBooking; onSave: (value: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(b.guestPhone ?? '');
+  const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [err, setErr] = useState('');
+  useEffect(() => { setDraft(b.guestPhone ?? ''); }, [b.guestPhone]);
+
+  async function commit() {
+    if (draft.trim() === (b.guestPhone ?? '').trim()) return;
+    setState('saving'); setErr('');
+    try { await onSave(draft); setState('idle'); }
+    catch (e: any) { setState('error'); setErr(e?.message ?? 'Could not save'); }
+  }
+
+  const desk = b.guestPhoneSource === 'DESK';
+  return (
+    <div className="min-w-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+      <div className={cn('flex-1 min-w-0 flex items-center gap-1 h-7 px-1.5 rounded-lg border bg-white',
+        state === 'error' ? 'border-coral' : 'border-surface-border focus-within:ring-2 focus-within:ring-accent/30')}>
+        <Phone size={11} className="text-ink-faint flex-shrink-0" />
+        <input
+          type="tel"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setDraft(b.guestPhone ?? ''); (e.target as HTMLInputElement).blur(); } }}
+          placeholder="+420…"
+          disabled={state === 'saving'}
+          className="w-full min-w-0 bg-transparent outline-none font-mono text-[11.5px] text-ink placeholder:text-ink-faint disabled:opacity-60"
+          title={state === 'error' ? err : desk ? 'Entered by the front desk' : b.guestPhone ? 'From Avantio' : 'No phone yet'}
+        />
+      </div>
+      <span className="w-4 flex-shrink-0 flex justify-center">
+        {state === 'saving' ? <span className="w-2 h-2 rounded-full bg-sand animate-pulse" />
+          : desk && b.guestPhonePushError ? <span title={b.guestPhonePushError}><CloudOff size={13} className="text-coral" /></span>
+          : desk && b.guestPhonePushedAt ? <span title="Pushed to Avantio"><Cloud size={13} className="text-accent" /></span>
+          : null}
+      </span>
+    </div>
+  );
 }
