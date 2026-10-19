@@ -89,9 +89,9 @@ enum UserRole {
   FRONT_DESK_MANAGER
   FRONT_DESK
   ASSIST
-  /// Field runner — moves between flats with linen, keys and small fixes.
-  /// Scope still to be defined.
-  TERENAK
+  /// Check-in agent: meets guests and declares availability in the agent app.
+  /// Also carries what TERENAK had (Data and Tasks, row filters). TERENAK was
+  /// merged into this role on 19 Oct 2026 — one role, one name.
   AGENT
 
   /// Added 30 Aug 2026. Values only — no module access is granted to any of

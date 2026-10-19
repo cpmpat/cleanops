@@ -23,6 +23,26 @@ Entries are newest first. Dates are the merge date.
 
 ---
 
+## Unreleased — TERENAK merged into AGENT
+
+**One role, one name.** The TERENAK role is gone; AGENT is the only name. Every
+TERENAK account becomes AGENT, and so do its Data matrix columns, row filters
+(Accommodation from Avantio, Valid users), Notifications → Data rows and
+column layouts. An AGENT row that already existed for the same key is kept and
+the TERENAK one dropped. Agents still start on Availability; they also keep
+what TERENAK had: Data and Tasks on the desktop, by address (no menu link in
+the agent app yet), and the whole Tasks board. The access-matrix CSV headers
+and `docs/ACCESS.md` say AGENT. Older entries below keep the name TERENAK:
+that is what the role was called when they went out.
+
+*Migrations:* `20261019010000_merge_terenak_into_agent` (moves the rows, then
+builds the `UserRole` enum again without TERENAK; run against a throwaway
+Postgres first, not against Neon). *Env:* None. *Rollback:* reverting the code
+is not enough once the migration has run — TERENAK accounts are AGENT from then
+on.
+
+---
+
 ## Unreleased — branch `chore/accommodation-picklists`
 
 **Accommodation pick lists.** Five columns of the Accommodation list are now

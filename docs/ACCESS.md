@@ -99,13 +99,20 @@ Point chosen in `oxPointId` (a pick list of OX Point codes, `id`) and follow it.
 A list's record key (idAvantio, OX Point `id`, …) is view-only for every role,
 whatever the matrix says.
 
-## DIRECTOR, TERENAK
+## DIRECTOR
 
 Data only (menu and start page), since 7 Oct 2026. Columns are the access
-matrix's. TERENAK additionally sees only some rows (`dataset_row_filters`):
-Accommodation where source = "Avantio", User where validity = "Valid". The
-filter applies to reading, saving, history and export. Neither role has
-Notifications yet.
+matrix's. No Notifications yet.
+
+## AGENT (formerly TERENAK, merged 19 Oct 2026)
+
+The check-in agent. On a phone the agent starts on Availability (the cleaner
+app admits CLEANER and AGENT). The role also carries what TERENAK had: Data
+and Tasks on the desktop (`ROLE_PATHS`), columns per the access matrix, and
+only some rows (`dataset_row_filters`): Accommodation where source =
+"Avantio", User where validity = "Valid". The filter applies to reading,
+saving, history and export. No Notifications. There is no menu link from the
+agent app to Data or Tasks yet; they open by address.
 
 ## Notifications → Data
 
@@ -162,7 +169,7 @@ hidden is not the protection — the API refuses on its own.
 
 | Who | May |
 |---|---|
-| Every office-app role (MANAGER, ADMIN, OPERATION_MANAGER, FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT, FRONT_DESK, ASSIST, EVIDENCE, TERENAK, DIRECTOR, FINANCE, REVENUE_MANAGER, MARKETING_MANAGER, MARKETING_SPECIALIST) | see the board, open any task, comment, tag (@), watch, set "waiting on" |
+| Every office-app role (MANAGER, ADMIN, OPERATION_MANAGER, FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT, FRONT_DESK, ASSIST, EVIDENCE, AGENT, DIRECTOR, FINANCE, REVENUE_MANAGER, MARKETING_MANAGER, MARKETING_SPECIALIST) | see the board, open any task, comment, tag (@), watch, set "waiting on" |
 | MANAGER, FRONT_DESK_MANAGER, DIRECTOR, REVENUE_MANAGER (+ ADMIN) | create, edit, assign, clear anyone's "waiting on", remove any record link |
 | The task's creator | close (Done / Won't do) and reopen — nobody else, unless the creator's account is deactivated (then any role above) |
 | Assignees of a task | move it between the open stages, suggest closing (move to Review), link records |

@@ -404,7 +404,7 @@ export class DatasetsService {
 
   /**
    * The rows a role may see on one list, as a Prisma `where` fragment
-   * (dataset_row_filters; e.g. TERENAK: Accommodation where source is
+   * (dataset_row_filters; e.g. AGENT: Accommodation where source is
    * "Avantio"). Empty for a role with no filter — every row. Read per request
    * for the same reason as the access matrix: nothing to go stale.
    */

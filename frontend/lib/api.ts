@@ -14,7 +14,6 @@ export type Role =
   | 'FRONT_DESK_MANAGER'
   | 'FRONT_DESK'
   | 'ASSIST'
-  | 'TERENAK'
   | 'AGENT'
   | 'DIRECTOR'
   | 'EVIDENCE'

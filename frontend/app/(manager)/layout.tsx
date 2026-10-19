@@ -44,9 +44,10 @@ const ROLE_PATHS: Record<string, string[]> = {
   ASSIST:             ['/airchat', '/datasets', '/tasks'],
   /** Data only; which lists and columns is the access matrix's call. */
   EVIDENCE:           ['/newsfeed', '/datasets', '/tasks'],
-  /** Data only (7 Oct 2026). Columns per the matrix; TERENAK also sees only
-   *  some rows (dataset_row_filters: Avantio accommodations, Valid users). */
-  TERENAK:            ['/datasets', '/tasks'],
+  /** Agent (TERENAK until 19 Oct 2026): Data + Tasks on the desktop. Columns
+   *  per the matrix, rows per dataset_row_filters (Avantio accommodations,
+   *  Valid users). On a phone an agent starts on Availability (lib/home.ts). */
+  AGENT:              ['/datasets', '/tasks'],
   /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. */
   DIRECTOR:           ['/newsfeed', '/datasets', '/tasks'],
   FINANCE:            ['/newsfeed', '/datasets', '/tasks'],

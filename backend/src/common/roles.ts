@@ -64,8 +64,9 @@ export const NEWSFEED_ROLES = [
 /**
  * Tasks (16 Oct 2026).
  *
- * TASK_ROLES: who opens the board — every role of the office app. Cleaners,
- * agents and repairmen will get some level of access later; when they do,
+ * TASK_ROLES: who opens the board — every role of the office app, and AGENT
+ * (TERENAK until 19 Oct 2026), who sees the whole board for now. Cleaners and
+ * repairmen will get some level of access later; when they do,
  * TasksService.visibleWhere() is where "only tasks I am involved in" goes.
  *
  * TASK_MANAGER_ROLES: who creates, closes (Done / Won't do), reopens, edits
@@ -73,7 +74,7 @@ export const NEWSFEED_ROLES = [
  */
 export const TASK_ROLES = [
   'MANAGER', 'ADMIN', 'OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'ASSIST',
-  'EVIDENCE', 'TERENAK', 'DIRECTOR', 'FINANCE', 'REVENUE_MANAGER', 'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
+  'EVIDENCE', 'AGENT', 'DIRECTOR', 'FINANCE', 'REVENUE_MANAGER', 'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
 ] as const;
 
 export const TASK_MANAGER_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'DIRECTOR', 'REVENUE_MANAGER'] as const;
