@@ -63,14 +63,16 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
       const noCleaner = !b.assignments.some(a => a.status !== 'REASSIGNED' && a.status !== 'REJECTED')
         && b.status !== 'COMPLETED' && b.status !== 'IN_PROGRESS';
       if (!noAgent && !noCleaner) continue;
-      const lastMinute = !!b.pmsCreatedAt && pragueDay(b.pmsCreatedAt) === today && pragueDay(b.checkInTime) === today;
-      const missing = [noAgent && 'no agent', noCleaner && 'no cleaner'].filter(Boolean).join(' · ');
+      // Same rule as the list's Last minute pill: booked today for today, and the cleaning not done yet.
+      const lastMinute = !!b.pmsCreatedAt && b.status !== 'COMPLETED'
+        && pragueDay(b.pmsCreatedAt) === today && pragueDay(b.checkInTime) === today;
       const declined = noAgent && b.checkInDeclinedAgentName ? ` · ${b.checkInDeclinedAgentName} declined` : '';
       att.push({
         id: b.id,
         unit: street(b.accommodationName),
-        why: `${hhmm(b.checkInTime)} · ${missing}${declined}`,
-        tag: lastMinute ? 'Last minute' : noAgent && noCleaner ? 'Both missing' : noAgent ? 'No agent' : 'No cleaner',
+        // The pill says what is missing; last minute is the stopwatch, the solid pill and a word in the line under the unit.
+        why: `${hhmm(b.checkInTime)}${lastMinute ? ' · last minute' : ''}${declined}`,
+        tag: noAgent && noCleaner ? 'No agent · no cleaner' : noAgent ? 'No agent' : 'No cleaner',
         tone: lastMinute || (noAgent && noCleaner) ? 'coral' : 'sand',
         icon: lastMinute ? StopwatchIcon : noAgent ? UserX : Brush,
         rank: lastMinute ? 0 : noAgent && noCleaner ? 1 : 2,
