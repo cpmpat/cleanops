@@ -115,6 +115,15 @@ const COMPACT_BELOW_PX = 1340;
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
 
+/** The three-day quick range named by its days: "Tuesday, Wednesday, Thursday" (cs "Úterý, Středa, Čtvrtek"). */
+function threeDayLabel(locale: string): string {
+  const tag = LOCALE_TAG[locale] ?? 'en-GB';
+  return [0, 1, 2].map(n => {
+    const name = new Date(Date.now() + n * 86_400_000).toLocaleDateString(tag, { weekday: 'long', timeZone: APP_TIME_ZONE });
+    return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
+  }).join(', ');
+}
+
 /** "Monday, 18/10" (cs "pondělí, 18/10"), Prague calendar — the day this row's time belongs to. */
 function dayLabel(iso: string, locale: string): string {
   try {
@@ -577,7 +586,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           {quickBtn('today', tp.next24)}
           {quickBtn('tomorrow', tp.quickTomorrow)}
           {quickBtn('today2', tp.next48)}
-          {quickBtn('days3', tp.next72)}
+          {quickBtn('days3', threeDayLabel(locale))}
         </div>
 
         <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 transition', quick && 'opacity-50')}>
@@ -1560,8 +1569,8 @@ function PhoneCell({ b, onSave }: { b: PlanningBooking; onSave: (value: string) 
   const [err, setErr] = useState('');
   useEffect(() => { setDraft(b.guestPhone ?? ''); }, [b.guestPhone]);
 
-  async function commit() {
-    if (draft.trim() === (b.guestPhone ?? '').trim()) return;
+  async function commit(force = false) {
+    if (!force && draft.trim() === (b.guestPhone ?? '').trim()) return;
     setState('saving'); setErr('');
     try { await onSave(draft); setState('idle'); }
     catch (e: any) { setState('error'); setErr(e?.message ?? 'Could not save'); }
@@ -1587,7 +1596,11 @@ function PhoneCell({ b, onSave }: { b: PlanningBooking; onSave: (value: string) 
       </div>
       <span className="w-4 flex-shrink-0 flex justify-center">
         {state === 'saving' ? <span className="w-2 h-2 rounded-full bg-sand animate-pulse" />
-          : desk && b.guestPhonePushError ? <span title={b.guestPhonePushError}><CloudOff size={13} className="text-coral" /></span>
+          : desk && b.guestPhonePushError ? (
+            <button type="button" onClick={() => void commit(true)} title={`Not in Avantio — click to push again.\n\n${b.guestPhonePushError}`}>
+              <CloudOff size={13} className="text-coral" />
+            </button>
+          )
           : desk && b.guestPhonePushedAt ? <span title="Pushed to Avantio"><Cloud size={13} className="text-accent" /></span>
           : null}
       </span>

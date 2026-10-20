@@ -522,11 +522,14 @@ export class AvantioAdapter implements PmsAdapter {
   /**
    * PUT /bookings/{id} with the guest's phone (Oct 2026).
    *
-   * The customer is read first and sent back whole with the phone replaced, so
-   * a PUT that treats `customer` as a whole object cannot wipe the guest's
-   * name, surnames or e-mails. The new number replaces the mobile if there is
-   * one (else the first number) and keeps its type; with no number at all it
-   * is added as MOBILE.
+   * Avantio validates `customer` as a whole object, in the PUT shape, which is
+   * not the GET shape: GET returns `identityDocument` and `language` as
+   * { code, internalCode }; PUT wants `document` (non-empty object), `language`
+   * as the code ("en_GB") and a `type` (ADULT | CHILD | BABY). Sending the GET
+   * object back was refused (20 Oct 2026). So the customer is read, converted,
+   * and sent whole — name, surnames, e-mails, address and document are kept —
+   * with only the phone replaced: the mobile if there is one, else the first
+   * number; with no number at all it is added as MOBILE.
    */
   async updateBookingGuestPhone(
     pmsBookingId: string,
@@ -535,18 +538,10 @@ export class AvantioAdapter implements PmsAdapter {
   ): Promise<void> {
     const client = this.createClient(config);
     const raw = await this.fetchFullBookingRaw(pmsBookingId, client);
-    const customer: any = { ...(raw.customer ?? {}) };
-    const contact: any = { ...(customer.contact ?? {}) };
-    const phones: Array<{ number?: string; type?: string }> = Array.isArray(contact.phones) ? [...contact.phones] : [];
-    const at = phones.findIndex((p) => String(p?.type ?? '').toUpperCase().includes('MOBILE'));
-    const idx = at >= 0 ? at : phones.length ? 0 : -1;
-    if (idx >= 0) phones[idx] = { ...phones[idx], number: phone };
-    else phones.push({ number: phone, type: 'MOBILE' });
-    contact.phones = phones;
-    customer.contact = contact;
+    const customer = toPutCustomer((raw as any).customer ?? {}, phone);
 
     try {
-      this.logger.log(`PUT /bookings/${pmsBookingId} → customer.contact.phones (${phones.length})`);
+      this.logger.log(`PUT /bookings/${pmsBookingId} → customer (phone replaced)`);
       await client.put(`/bookings/${pmsBookingId}`, { customer });
       this.logger.log(`Updated guest phone of booking ${pmsBookingId} in Avantio`);
     } catch (err) {
@@ -766,4 +761,54 @@ export class AvantioAdapter implements PmsAdapter {
     );
     return 'cancelled';
   }
+}
+
+// ─── Customer: GET shape → PUT shape ─────────────────────────────────────────
+
+const CUSTOMER_TYPES = ['ADULT', 'CHILD', 'BABY'];
+
+/** Drop null/undefined, empty strings and empty objects/arrays, recursively. */
+function compact(v: any): any {
+  if (Array.isArray(v)) {
+    const a = v.map(compact).filter((x) => x !== undefined);
+    return a.length ? a : undefined;
+  }
+  if (v && typeof v === 'object') {
+    const o: Record<string, any> = {};
+    for (const [k, x] of Object.entries(v)) {
+      const c = compact(x);
+      if (c !== undefined) o[k] = c;
+    }
+    return Object.keys(o).length ? o : undefined;
+  }
+  if (v === null || v === undefined || v === '') return undefined;
+  return v;
+}
+
+/**
+ * The customer Avantio returned on GET, as its PUT accepts it, with the phone
+ * replaced. Exported for tests and the dry-run script.
+ */
+export function toPutCustomer(c: any, phone: string): Record<string, any> {
+  const phones: Array<{ number?: string; type?: string }> = Array.isArray(c?.contact?.phones) ? [...c.contact.phones] : [];
+  const at = phones.findIndex((p) => String(p?.type ?? '').toUpperCase().includes('MOBILE'));
+  const idx = at >= 0 ? at : phones.length ? 0 : -1;
+  if (idx >= 0) phones[idx] = { ...phones[idx], number: phone };
+  else phones.push({ number: phone, type: 'MOBILE' });
+
+  const language = typeof c?.language === 'string' ? c.language : c?.language?.code;
+  const doc = compact(c?.document ?? c?.identityDocument) ?? {};
+  if (!doc.type) doc.type = 'ID';
+
+  const out: Record<string, any> = {
+    name: c?.name,
+    surnames: c?.surnames,
+    type: CUSTOMER_TYPES.includes(String(c?.type ?? '').toUpperCase()) ? String(c.type).toUpperCase() : 'ADULT',
+    language: language || 'en_GB',
+    document: doc,
+    contact: { emails: Array.isArray(c?.contact?.emails) ? c.contact.emails : [], phones },
+  };
+  const address = compact(c?.address);
+  if (address) out.address = address;
+  return out;
 }

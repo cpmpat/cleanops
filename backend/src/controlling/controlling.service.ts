@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { BigQuery } from '@google-cloud/bigquery';
 import { PrismaService } from '../common/prisma.service';
 
@@ -44,6 +44,24 @@ const ALLOWED_TENANTS = (process.env.CONTROLLING_TENANT_SLUGS ?? 'prague-stays')
 export class ControllingService {
   private readonly logger = new Logger(ControllingService.name);
   private bq: BigQuery | null = null;
+  private serviceAccount: string | null = null;
+
+  /** BigQuery with the app's service account (GCP_SERVICE_ACCOUNT_JSON), not ADC — ADC is not set on Railway. */
+  private client(project: string): BigQuery {
+    if (this.bq) return this.bq;
+    const raw = process.env.GCP_SERVICE_ACCOUNT_JSON;
+    if (!raw) throw new ServiceUnavailableException('GCP_SERVICE_ACCOUNT_JSON is not set — Controlling cannot read BigQuery.');
+    let creds: { client_email: string; private_key: string };
+    try { creds = JSON.parse(raw); } catch {
+      throw new ServiceUnavailableException('GCP_SERVICE_ACCOUNT_JSON is not valid JSON — Controlling cannot read BigQuery.');
+    }
+    this.serviceAccount = creds.client_email ?? null;
+    this.bq = new BigQuery({
+      projectId: project,
+      credentials: { client_email: creds.client_email, private_key: creds.private_key },
+    });
+    return this.bq;
+  }
   private cache = new Map<string, ControllingTable>();
 
   constructor(private readonly prisma: PrismaService) {}
@@ -65,17 +83,36 @@ export class ControllingService {
     const hit = this.cache.get(source);
     if (!refresh && hit && Date.now() - Date.parse(hit.fetchedAt) < CACHE_MS) return hit;
 
-    // Application Default Credentials, as staff-sync: GOOGLE_APPLICATION_CREDENTIALS in prod.
-    this.bq ??= new BigQuery({ projectId: s.project });
-    const table = this.bq.dataset(s.dataset, { projectId: s.project }).table(s.table);
-    const [meta] = await table.getMetadata();
+    // The same service account the app already uses for Sheets and GCS
+    // (GCP_SERVICE_ACCOUNT_JSON). It needs, in project avantio-intergation:
+    // BigQuery Data Viewer (on dataset chekin_data or the project) and
+    // BigQuery Job User (project) — the query runs as a job there.
+    const bq = this.client(s.project);
+    let meta: any;
+    let rows: any[];
+    try {
+      [meta] = await bq.dataset(s.dataset, { projectId: s.project }).table(s.table).getMetadata();
+      [rows] = await bq.query({
+        query: `SELECT * FROM \`${s.project}.${s.dataset}.${s.table}\` LIMIT ${MAX_ROWS + 1}`,
+        location: meta?.location,
+      });
+    } catch (err: any) {
+      const code = err?.code ?? err?.response?.status;
+      const msg = String(err?.message ?? err);
+      this.logger.error(`Controlling ${source}: BigQuery ${code ?? ''} ${msg}`);
+      const who = this.serviceAccount ?? 'the service account in GCP_SERVICE_ACCOUNT_JSON';
+      if (code === 403 || /permission|denied|access/i.test(msg)) {
+        throw new ServiceUnavailableException(
+          `BigQuery refused ${who}. Grant it BigQuery Data Viewer on ${s.project}.${s.dataset} and BigQuery Job User on project ${s.project}.`,
+        );
+      }
+      if (code === 404 || /not found/i.test(msg)) {
+        throw new ServiceUnavailableException(`BigQuery table ${s.project}.${s.dataset}.${s.table} not found (or not visible to ${who}).`);
+      }
+      throw new ServiceUnavailableException(`BigQuery error: ${msg.slice(0, 300)}`);
+    }
     const fields: Array<{ name: string; type: string }> = meta?.schema?.fields ?? [];
     const columns = fields.map((f) => ({ key: f.name, type: String(f.type ?? 'STRING') }));
-
-    const [rows] = await this.bq.query({
-      query: `SELECT * FROM \`${s.project}.${s.dataset}.${s.table}\` LIMIT ${MAX_ROWS + 1}`,
-      location: meta?.location,
-    });
     const truncated = rows.length > MAX_ROWS;
     const out: ControllingTable = {
       source,
