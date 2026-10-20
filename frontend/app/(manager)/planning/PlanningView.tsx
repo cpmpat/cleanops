@@ -92,10 +92,11 @@ const GRID = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_3.5rem_4.75rem
  * locked check-out column step aside so the unit name has the room
  * (Check-In tab only — the panel never opens on Check-Out).
  */
-const GRID_COMPACT = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+// Compact also shortens the day ("Wed, 21/10") and the cleaner column, so a 1280–1440 px laptop keeps ~220 px for the unit.
+const GRID_COMPACT = 'grid grid-cols-[5.25rem_6.75rem_minmax(0,1fr)_6.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
 /** The same two grids with the optional guest-phone column (Additional attributes) after the unit setup. */
 const GRID_PHONE = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_9.5rem_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
-const GRID_COMPACT_PHONE = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_9.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_6.75rem_minmax(0,1fr)_6.5rem_8.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
 const gridFor = (compact: boolean, phone: boolean) =>
   compact ? (phone ? GRID_COMPACT_PHONE : GRID_COMPACT) : (phone ? GRID_PHONE : GRID);
 
@@ -110,7 +111,10 @@ const EXTRAS_KEY = 'planning.extraAttrs';
  * room — a laptop with the menu open, or a zoomed browser — and the list goes
  * compact on its own, whatever the panel does.
  */
-const COMPACT_BELOW_PX = 1340;
+// The full grid's fixed columns take ~1100 px; below 1440 px of list the unit
+// would get under ~300 px, so the list goes compact there (20 Oct 2026, after
+// the Check-in · Std column and the longer day were added).
+const COMPACT_BELOW_PX = 1440;
 
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
@@ -123,10 +127,10 @@ function threeDayLabel(locale: string, today: string, tomorrow: string): string 
 }
 
 /** "Monday, 18/10" (cs "pondělí, 18/10"), Prague calendar — the day this row's time belongs to. */
-function dayLabel(iso: string, locale: string): string {
+function dayLabel(iso: string, locale: string, short = false): string {
   try {
     const d = new Date(iso);
-    const weekday = d.toLocaleDateString(LOCALE_TAG[locale] ?? 'en-GB', { weekday: 'long', timeZone: APP_TIME_ZONE });
+    const weekday = d.toLocaleDateString(LOCALE_TAG[locale] ?? 'en-GB', { weekday: short ? 'short' : 'long', timeZone: APP_TIME_ZONE });
     const [, mm, dd] = pragueDay(iso).split('-');
     return `${weekday}, ${dd}/${mm}`;
   } catch { return iso.slice(0, 10); }
@@ -833,7 +837,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     const isTodayRow = pragueDay(iso) === pragueDay(new Date().toISOString());
                     return (
                       <span className={cn('text-xs tabular-nums whitespace-nowrap', isTodayRow ? 'font-bold text-ink' : 'text-ink-soft')}>
-                        {dayLabel(iso, locale)}
+                        {dayLabel(iso, locale, compact)}
                       </span>
                     );
                   })()}
@@ -849,7 +853,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   {/* Unit + guest + ref */}
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate">{b.accommodationName}</p>
+                    {/* Full name always: wraps to a second line on a narrow screen rather than being cut. */}
+                    <p className="text-sm font-semibold text-ink leading-snug line-clamp-2 break-words" title={b.accommodationName}>{b.accommodationName}</p>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0 whitespace-nowrap">
                       {/* Same two flags the cleaner's card wears, at list size. */}
                       {b.isOwnerStay && (
