@@ -510,7 +510,8 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-[calc(100vh-16px)] bg-surface rounded-2xl flex flex-col min-w-0">
           {/* Search on its own row at the top; the breadcrumb sits under it in
               small type, as in the reference (16 Oct 2026). */}
-          <header className="sticky top-0 z-20 h-14 flex items-center px-6 border-b border-surface-border bg-surface/90 backdrop-blur rounded-t-2xl">
+          {/* Planning keeps its own bookings bar on screen instead, so the search scrolls away there. */}
+          <header className={cn('h-14 flex items-center px-6 border-b border-surface-border bg-surface/90 backdrop-blur rounded-t-2xl', !pathname?.startsWith('/planning') && 'sticky top-0 z-20')}>
             {canSearch && (
               <button
                 type="button"

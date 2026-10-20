@@ -88,20 +88,22 @@ const PUSH_CONCURRENCY = 3;
 
 /**
  * One column template for the header and every row, so a heading sits over
- * the cell it names. Columns: status · unit/guest · party · setup · check-in ·
- * check-out · row actions · cleaner.
+ * the cell it names. Columns: day · status (+ last-minute / owner pill) ·
+ * unit/guest · check-in type/method/standard · party · setup · this tab's own
+ * time (check-in on Check-In, check-out on Check-Out — the other one is not
+ * shown, 20 Oct 2026) · row actions · cleaner.
  */
-const GRID = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_3.5rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 /**
  * With the Assigned view open the list loses ~26rem. Guests, setup and the
  * locked check-out column step aside so the unit name has the room
  * (Check-In tab only — the panel never opens on Check-Out).
  */
 // Compact also shortens the day ("Wed, 21/10") and the cleaner column, so a 1280–1440 px laptop keeps ~220 px for the unit.
-const GRID_COMPACT = 'grid grid-cols-[5.25rem_6.75rem_minmax(0,1fr)_6.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
+const GRID_COMPACT = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.75rem_4rem_10rem] items-center gap-x-3';
 /** The same two grids with the optional guest-phone column (Additional attributes) after the unit setup. */
-const GRID_PHONE = 'grid grid-cols-[7.5rem_6.75rem_minmax(0,1fr)_6.5rem_9.5rem_3.5rem_4.75rem_8.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
-const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_6.75rem_minmax(0,1fr)_6.5rem_8.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
+const GRID_PHONE = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_9.5rem_3.5rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
 const gridFor = (compact: boolean, phone: boolean) =>
   compact ? (phone ? GRID_COMPACT_PHONE : GRID_COMPACT) : (phone ? GRID_PHONE : GRID);
 
@@ -662,7 +664,10 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           <p className="text-sm text-ink-muted">{tp.noBookings}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-surface-border overflow-hidden">
+        // overflow-clip (not hidden) keeps the rounded corners without breaking the sticky bar.
+        <div className="bg-white rounded-2xl border border-surface-border overflow-clip">
+          {/* Toolbar + column headings stay on screen while the list scrolls. */}
+          <div className="sticky top-0 z-20 bg-white rounded-t-2xl">
           <div className="px-4 py-2 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
               <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Bookings</p>
@@ -792,7 +797,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
             {!compact && <span className="text-center">{tp.setup}</span>}
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
-            {!(compact && byCheckOut) && <span className="flex items-center gap-1.5">
+            {!byCheckOut && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <span className="flex items-center gap-1"><Lock size={10} /> {tp.checkInTime}</span>
@@ -802,7 +807,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                 </button>
               )}
             </span>}
-            {!(compact && !byCheckOut) && <span className="flex items-center gap-1.5">
+            {byCheckOut && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
               {byCheckOut ? (
                 <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
@@ -814,6 +819,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             </span>}
             <span />
             <span className="text-right">{tp.cleaner}</span>
+          </div>
           </div>
           <div className="divide-y divide-surface-border">
             {filtered.length === 0 && (
@@ -853,11 +859,24 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   })()}
 
                   {/* Turnover status: before arrival (Check-In) or after departure (Check-Out) — what the cleaner did with it. */}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex flex-col items-start gap-1">
                     {b.status ? (
                       <StatusBadge status={b.status as any} t={t} size="sm" />
                     ) : (
                       <span className="text-[11px] text-ink-faint italic" title={tp.noTurnover}>{tp.noTurnover}</span>
+                    )}
+                    {/* Same two flags the cleaner's card wears, at list size — under the status. */}
+                    {b.isOwnerStay && (
+                      <span className="inline-flex items-center gap-1 max-w-full rounded-full bg-sand-soft border border-sand/70 text-sand-deep px-1.5 py-px text-[10px] leading-[13px] font-bold uppercase tracking-wide" title={tp.ownerStay}>
+                        <Crown size={10} className="flex-shrink-0" />
+                        {tp.ownerStay}
+                      </span>
+                    )}
+                    {lastMinute && (
+                      <span className="inline-flex items-center gap-1 max-w-full rounded-full bg-coral-soft border border-coral/40 text-coral-deep px-1.5 py-px text-[10px] leading-[13px] font-bold uppercase tracking-wide" title={tp.lastMinute}>
+                        <Flame size={10} className="flex-shrink-0" />
+                        {tp.lastMinute}
+                      </span>
                     )}
                   </div>
 
@@ -866,19 +885,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     {/* Full name always: wraps to a second line on a narrow screen rather than being cut. */}
                     <p className="text-sm font-semibold text-ink leading-snug line-clamp-2 break-words" title={b.accommodationName}>{b.accommodationName}</p>
                     <div className="flex items-center gap-2 mt-0.5 min-w-0 whitespace-nowrap">
-                      {/* Same two flags the cleaner's card wears, at list size. */}
-                      {b.isOwnerStay && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-sand-soft border border-sand/70 text-sand-deep px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.ownerStay}>
-                          <Crown size={10} />
-                          {tp.ownerStay}
-                        </span>
-                      )}
-                      {lastMinute && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-coral-soft border border-coral/40 text-coral-deep px-1.5 py-px text-[10px] font-bold uppercase tracking-wide flex-shrink-0" title={tp.lastMinute}>
-                          <Flame size={10} />
-                          {tp.lastMinute}
-                        </span>
-                      )}
                       {b.guestName && (
                         <span className="text-xs text-ink-soft truncate max-w-[180px]" title={`${tp.guest}: ${b.guestName}`}>
                           {b.guestName}
@@ -942,7 +948,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   </>)}
 
-                  {!(compact && byCheckOut) && (<>
+                  {!byCheckOut && (<>
                   {/* Check-in — editable on the Check-In tab, locked on Check-Out. The amber dot means we assumed the time. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -973,7 +979,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
 
                   </>)}
 
-                  {!(compact && !byCheckOut) && (<>
+                  {byCheckOut && (<>
                   {/* Check-out — editable on the Check-Out tab, locked on Check-In. */}
                   <div className="flex items-center gap-1.5">
                     <span
@@ -1524,7 +1530,7 @@ function UnitSetup({ type, method, standard, tp }: {
     <div className="min-w-0 flex flex-col items-start gap-[3px]">
       {rows.map(([v, label, table]) => v ? (
         <span key={label} title={`${label}: ${v}`}
-          className={cn('max-w-full truncate rounded-[5px] px-1.5 text-[10px] leading-[15px] font-semibold', setupTone(v, table))}>
+          className={cn('max-w-full break-words rounded-[5px] px-1.5 text-[10px] leading-[15px] font-semibold', setupTone(v, table))}>
           {v}
         </span>
       ) : (
