@@ -6,8 +6,9 @@ import { formatTime, cn } from '@/lib/utils';
 import type { Translations } from '@/i18n/translations';
 import {
   X, Camera, MapPin, Clock, Users, AlertTriangle,
-  CheckCircle2, UserPlus, ChevronDown, ArrowLeftRight, Crown,
+  CheckCircle2, UserPlus, ChevronDown, ArrowLeftRight,
 } from 'lucide-react';
+import { OwnerIcon } from '@/components/BookingFlags';
 
 interface EventDetailSheetProps {
   event: CleaningEvent;
@@ -179,8 +180,8 @@ export function EventDetailSheet({
           {/* Owner stay banner — prominent reminder for cleaners */}
           {event.isOwnerStay && (
             <div className="flex items-start gap-3 bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-300 rounded-2xl p-3.5">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-200 to-yellow-200 flex items-center justify-center flex-shrink-0">
-                <Crown size={18} className="text-amber-800" />
+              <div className="w-9 h-9 rounded-full bg-sand text-white flex items-center justify-center flex-shrink-0">
+                <OwnerIcon size={18} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold uppercase tracking-wider text-amber-900">

@@ -2,7 +2,8 @@
 import { useMemo } from 'react';
 import type { PlanningBooking } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Brush, Flame, UserX } from 'lucide-react';
+import { Brush, UserX } from 'lucide-react';
+import { StopwatchIcon } from '@/components/BookingFlags';
 
 const pragueDay = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
 const pragueHour = (iso: string) =>
@@ -71,7 +72,7 @@ export function PlanningSummary({ bookings, onPick }: { bookings: PlanningBookin
         why: `${hhmm(b.checkInTime)} · ${missing}${declined}`,
         tag: lastMinute ? 'Last minute' : noAgent && noCleaner ? 'Both missing' : noAgent ? 'No agent' : 'No cleaner',
         tone: lastMinute || (noAgent && noCleaner) ? 'coral' : 'sand',
-        icon: lastMinute ? Flame : noAgent ? UserX : Brush,
+        icon: lastMinute ? StopwatchIcon : noAgent ? UserX : Brush,
         rank: lastMinute ? 0 : noAgent && noCleaner ? 1 : 2,
         at: b.checkInTime,
       });

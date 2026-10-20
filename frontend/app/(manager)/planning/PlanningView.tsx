@@ -1,12 +1,13 @@
 'use client';
 import { useLocale } from '@/lib/locale-context';
+import { LastMinutePill, OwnerStayPill } from '@/components/BookingFlags';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { integrations, turnovers as turnoversApi, type PlanningBooking, type User, type AgentOptionsResponse, type AgentOption } from '@/lib/api';
 import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
 import { useSocket } from '@/lib/socket';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2, SlidersHorizontal, Phone } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Lock, UserCheck, Columns2, SlidersHorizontal, Phone } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 import { AssignedPanel } from './AssignedPanel';
 import { PlanningSummary } from './PlanningSummary';
@@ -881,18 +882,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       <span className="text-[11px] text-ink-faint italic" title={tp.noTurnover}>{tp.noTurnover}</span>
                     )}
                     {/* Same two flags the cleaner's card wears, at list size — under the status. */}
-                    {b.isOwnerStay && (
-                      <span className="inline-flex items-center gap-1 max-w-full rounded-full bg-sand-soft border border-sand/70 text-sand-deep px-1.5 py-px text-[10px] leading-[13px] font-bold uppercase tracking-wide" title={tp.ownerStay}>
-                        <Crown size={10} className="flex-shrink-0" />
-                        {tp.ownerStay}
-                      </span>
-                    )}
-                    {lastMinute && (
-                      <span className="inline-flex items-center gap-1 max-w-full rounded-full bg-coral-soft border border-coral/40 text-coral-deep px-1.5 py-px text-[10px] leading-[13px] font-bold uppercase tracking-wide" title={tp.lastMinute}>
-                        <Flame size={10} className="flex-shrink-0" />
-                        {tp.lastMinute}
-                      </span>
-                    )}
+                    {b.isOwnerStay && <OwnerStayPill label={tp.ownerStay} />}
+                    {lastMinute && <LastMinutePill label={tp.lastMinute} />}
                   </div>
 
                   {/* Unit + guest + ref */}
