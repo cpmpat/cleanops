@@ -185,6 +185,7 @@ export default function DashboardPage() {
       <StatusCard
         title={td.statusTitle}
         total={view.total}
+        totalLabel={td.total}
         overdue={view.overdue.size}
         overdueLabel={td.overdueCleanings}
         loading={loading && !rows.length}
@@ -238,60 +239,86 @@ export default function DashboardPage() {
 }
 
 /**
- * The day's cleanings as one picture: overdue on top, a bar split by lane
- * (hatched blocks, widths by count) and the counts underneath.
+ * The day's cleanings as one picture: a donut split by lane with the total in
+ * the middle, overdue and the per-lane counts (with shares) beside it.
  */
-function StatusCard({ title, total, overdue, overdueLabel, parts, loading }: {
+function StatusCard({ title, total, totalLabel, overdue, overdueLabel, parts, loading }: {
   title: string;
   total: number;
+  totalLabel: string;
   overdue: number;
   overdueLabel: string;
   loading: boolean;
   parts: Array<{ key: string; label: string; fill: string; n: number }>;
 }) {
-  const shown = parts.filter(p => p.n > 0);
-  const hatch = 'repeating-linear-gradient(115deg, rgba(255,255,255,0.22) 0 1.5px, transparent 1.5px 9px)';
+  // Donut geometry: r 70, stroke 22, small gap between segments.
+  const R = 70;
+  const C = 2 * Math.PI * R;
+  const GAP = parts.filter(p => p.n > 0).length > 1 ? 3 : 0;
+  let offset = 0;
+  const arcs = parts.filter(p => p.n > 0).map(p => {
+    const len = total ? (p.n / total) * C : 0;
+    const arc = { ...p, dash: Math.max(0, len - GAP), offset };
+    offset += len;
+    return arc;
+  });
+  const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
+
   return (
     <section className="bg-white border border-surface-border rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-surface-border">
-        <div className="flex items-center gap-3">
-          <span className="w-9 h-9 rounded-[10px] border border-surface-border flex items-center justify-center text-ink-soft">
-            <ClipboardList size={17} />
-          </span>
-          <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
-        </div>
-        <span className="font-mono text-[12.5px] text-ink-muted">{loading ? '–' : total}</span>
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-border">
+        <span className="w-9 h-9 rounded-[10px] border border-surface-border flex items-center justify-center text-ink-soft">
+          <ClipboardList size={17} />
+        </span>
+        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
       </div>
-      <div className="px-5 py-4 flex flex-col gap-4">
-        <div className={cn('flex items-center justify-between gap-3 rounded-full border px-5 py-2.5',
-          overdue > 0 ? 'bg-coral-soft/50 border-coral/30' : 'bg-surface border-surface-border')}>
-          <span className="text-[13.5px] text-ink-soft">
-            {overdueLabel}: <span className={cn('ml-1 text-[20px] font-semibold align-middle', overdue > 0 ? 'text-coral-deep' : 'text-ink')}>{loading ? '–' : overdue}</span>
-          </span>
-          {overdue > 0 && <AlertCircle size={18} className="text-coral" />}
+      <div className="px-5 py-5 flex flex-wrap items-center gap-x-10 gap-y-5">
+        {/* Donut with the total in the middle */}
+        <div className="relative w-[180px] h-[180px] flex-shrink-0">
+          <svg viewBox="0 0 180 180" className="w-full h-full -rotate-90" aria-hidden>
+            <circle cx="90" cy="90" r={R} fill="none" stroke="#EFEBE3" strokeWidth="22" />
+            {!loading && arcs.map(a => (
+              <circle
+                key={a.key}
+                cx="90" cy="90" r={R} fill="none"
+                stroke={a.fill} strokeWidth="22"
+                strokeDasharray={`${a.dash} ${C - a.dash}`}
+                strokeDashoffset={-a.offset}
+                className="transition-all duration-500"
+              >
+                <title>{`${a.label}: ${a.n}`}</title>
+              </circle>
+            ))}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-[34px] font-semibold tracking-tight text-ink leading-none tabular-nums">{loading ? '\u2013' : total}</span>
+            <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{totalLabel}</span>
+          </div>
         </div>
-        <div className="flex gap-2 h-[112px]">
-          {shown.length === 0 ? (
-            <div className="flex-1 rounded-2xl bg-surface-sunken" />
-          ) : shown.map(p => (
-            <div
-              key={p.key}
-              title={`${p.label}: ${p.n}`}
-              className="rounded-2xl min-w-[28px] transition-all"
-              style={{ flexGrow: p.n, flexBasis: 0, backgroundColor: p.fill, backgroundImage: hatch }}
-            />
-          ))}
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-2">
-          {parts.map(p => (
-            <div key={p.key} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-[13.5px] text-ink-soft">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.fill }} />
-                {p.label}
-              </span>
-              <span className="text-[24px] font-semibold tracking-tight text-ink tabular-nums">{loading ? '–' : p.n}</span>
-            </div>
-          ))}
+
+        {/* Overdue + the lanes */}
+        <div className="flex-1 min-w-[260px] flex flex-col gap-3">
+          <div className={cn('flex items-center justify-between gap-3 rounded-full border px-5 py-2.5',
+            overdue > 0 ? 'bg-coral-soft/50 border-coral/30' : 'bg-surface border-surface-border')}>
+            <span className="text-[13.5px] text-ink-soft">
+              {overdueLabel}: <span className={cn('ml-1 text-[20px] font-semibold align-middle', overdue > 0 ? 'text-coral-deep' : 'text-ink')}>{loading ? '\u2013' : overdue}</span>
+            </span>
+            {overdue > 0 && <AlertCircle size={18} className="text-coral" />}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5">
+            {parts.map(p => (
+              <div key={p.key} className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-[13.5px] text-ink-soft">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.fill }} />
+                  {p.label}
+                </span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[24px] font-semibold tracking-tight text-ink tabular-nums">{loading ? '\u2013' : p.n}</span>
+                  <span className="w-9 text-right font-mono text-[11.5px] text-ink-muted">{loading ? '' : `${pct(p.n)}%`}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
