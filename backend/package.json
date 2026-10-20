@@ -30,7 +30,8 @@
     "import:cdm": "ts-node -P tsconfig.scripts.json scripts/import-cdm.ts",
     "import:access-matrix": "ts-node -P tsconfig.scripts.json scripts/import-access-matrix.ts",
     "import:notify-matrix": "ts-node -P tsconfig.scripts.json scripts/import-notify-matrix.ts",
-    "picklist:from-data": "ts-node -P tsconfig.scripts.json scripts/picklist-from-data.ts"
+    "picklist:from-data": "ts-node -P tsconfig.scripts.json scripts/picklist-from-data.ts",
+    "set:row-filter": "ts-node -P tsconfig.scripts.json scripts/set-row-filter.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
