@@ -42,7 +42,8 @@ const ROLE_PATHS: Record<string, string[]> = {
   FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
   OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
-  FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/datasets'],
+  /** Dashboard → Cleaning on (21 Oct 2026). */
+  FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets', '/tasks'],
   ASSIST:             ['/airchat', '/datasets', '/tasks'],
   /** Data only; which lists and columns is the access matrix's call. */
