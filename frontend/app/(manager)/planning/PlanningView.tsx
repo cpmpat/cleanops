@@ -6,7 +6,7 @@ import { translations } from '@/i18n/translations';
 import { StatusBadge, ChannelDot } from '@/components/StatusBadge';
 import { formatTime, formatOccupancy, todayISO, cn, APP_TIME_ZONE } from '@/lib/utils';
 import { useSocket } from '@/lib/socket';
-import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2, SlidersHorizontal, Phone, CloudOff, Cloud } from 'lucide-react';
+import { Search, Filter, X, Send, UserPlus, ChevronDown, ArrowLeftRight, AlertCircle, Check, RotateCcw, Users, Baby, BedSingle, Flame, Crown, Lock, UserCheck, Columns2, SlidersHorizontal, Phone } from 'lucide-react';
 import type { TurnoverStatus } from '@/lib/api';
 import { AssignedPanel } from './AssignedPanel';
 import { PlanningSummary } from './PlanningSummary';
@@ -103,7 +103,7 @@ const gridFor = (compact: boolean, phone: boolean) =>
 /** Extra columns the desk can switch on (Additional attributes). Remembered per browser. */
 type ExtraAttr = 'guestPhone';
 const EXTRA_ATTRS: Array<{ key: ExtraAttr; label: string; hint: string }> = [
-  { key: 'guestPhone', label: 'Guest phone', hint: 'Edit the guest\'s phone; it is pushed to Avantio and the check-in agent sees it' },
+  { key: 'guestPhone', label: 'Guest phone', hint: 'From the Avantio booking; add or correct it here — kept in CleanOps, and the check-in agent sees it' },
 ];
 const EXTRAS_KEY = 'planning.extraAttrs';
 /**
@@ -489,15 +489,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     }
   }
 
-  /** Desk sets the guest phone: saved here, pushed to Avantio; the row shows whether Avantio took it. */
+  /** Desk sets the guest phone: stored on the booking in CleanOps (not sent to Avantio). */
   async function saveGuestPhone(b: PlanningBooking, value: string): Promise<void> {
     const res = await integrations.planning.setGuestPhone(b.id, value.trim() || null);
     setBookings(prev => prev.map(x => (x.id === b.id ? {
       ...x,
       guestPhone: res.guestPhone,
       guestPhoneSource: res.guestPhoneSource,
-      guestPhonePushedAt: res.pushed ? new Date().toISOString() : (value.trim() ? x.guestPhonePushedAt ?? null : null),
-      guestPhonePushError: res.pushError,
     } : x)));
   }
 
@@ -1561,10 +1559,10 @@ function StatusLegend({ t, byCheckOut }: { t: any; byCheckOut: boolean }) {
 // ─── Guest phone (Additional attributes) ─────────────────────────────────────
 
 /**
- * The guest's phone, editable. Saved on Enter or when the field loses focus,
- * then pushed to Avantio by the backend. The icon says where the number stands:
- * a green cloud — Avantio has it; a coral one — Avantio refused (hover for why,
- * the agent still sees our number); none — the number came from Avantio.
+ * The guest's phone, editable. Shows the number from the Avantio booking, or
+ * the desk's if one was entered (green dot). Saved on Enter or when the field
+ * loses focus, on the booking in CleanOps only; clearing it brings Avantio's
+ * number back. The check-in agent sees whichever is shown.
  */
 function PhoneCell({ b, onSave }: { b: PlanningBooking; onSave: (value: string) => Promise<void> }) {
   const [draft, setDraft] = useState(b.guestPhone ?? '');
@@ -1594,17 +1592,15 @@ function PhoneCell({ b, onSave }: { b: PlanningBooking; onSave: (value: string) 
           placeholder="+420…"
           disabled={state === 'saving'}
           className="w-full min-w-0 bg-transparent outline-none font-mono text-[11.5px] text-ink placeholder:text-ink-faint disabled:opacity-60"
-          title={state === 'error' ? err : desk ? 'Entered by the front desk' : b.guestPhone ? 'From Avantio' : 'No phone yet'}
+          title={state === 'error' ? err
+            : desk ? 'Entered by the front desk (kept in CleanOps). Clear it to show the number from Avantio again.'
+            : b.guestPhone ? 'From the Avantio booking. Type over it to correct it here.'
+            : 'No phone in Avantio — type one here.'}
         />
       </div>
       <span className="w-4 flex-shrink-0 flex justify-center">
         {state === 'saving' ? <span className="w-2 h-2 rounded-full bg-sand animate-pulse" />
-          : desk && b.guestPhonePushError ? (
-            <button type="button" onClick={() => void commit(true)} title={`Not in Avantio — click to push again.\n\n${b.guestPhonePushError}`}>
-              <CloudOff size={13} className="text-coral" />
-            </button>
-          )
-          : desk && b.guestPhonePushedAt ? <span title="Pushed to Avantio"><Cloud size={13} className="text-accent" /></span>
+          : desk ? <span title="Entered by the front desk" className="w-1.5 h-1.5 rounded-full bg-accent" />
           : null}
       </span>
     </div>

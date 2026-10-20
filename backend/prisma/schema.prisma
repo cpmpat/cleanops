@@ -337,11 +337,13 @@ model Booking {
   needsCrib         Boolean        @default(false)
   separateBeds      Boolean        @default(false)
   /// Guest phone typed by the front desk in Planning (Oct 2026). Wins over the
-  /// number in the PMS payload; pushed to Avantio. Null = use the PMS number.
+  /// number in the PMS payload; kept in CleanOps only (never sent to Avantio,
+  /// 20 Oct 2026). Null = use the number from the Avantio booking.
   guestPhone          String?
   guestPhoneSetAt     DateTime?
   guestPhoneSetById   String?
-  /// Last successful push to the PMS, and the PMS's refusal if the last push failed.
+  /// Unused since 20 Oct 2026 (the phone is no longer pushed). Kept to avoid a
+  /// destructive migration; safe to drop later.
   guestPhonePushedAt  DateTime?
   guestPhonePushError String?
 
