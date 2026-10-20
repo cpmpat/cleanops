@@ -36,7 +36,20 @@ export type OfficeRole = (typeof OFFICE_ROLES)[number];
  * times to the PMS, record setup requests, and assign / reassign cleaners
  * (ADMIN passes every check).
  */
-export const PLANNING_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK'] as const;
+export const PLANNING_ROLES = [
+  'MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK',
+  /** Planning + Dashboard → Cleaning (20 Oct 2026). */
+  'DIRECTOR', 'MARKETING_MANAGER',
+] as const;
+
+/**
+ * Who reads the turnover list (Dashboard → Cleaning, GET /turnovers) and the
+ * Agents board: the desk plus the Planning roles outside it. Kept apart from
+ * OFFICE_ROLES on purpose — OFFICE_ROLES also means "member of every turnover
+ * chat" and "full socket broadcasts"; DIRECTOR and MARKETING_MANAGER get the
+ * nudges, which is all the Dashboard and Planning need to reload.
+ */
+export const DESK_READ_ROLES = [...OFFICE_ROLES, 'DIRECTOR', 'MARKETING_MANAGER'] as const;
 
 export function isOfficeRole(role?: string | null): boolean {
   return !!role && (OFFICE_ROLES as readonly string[]).includes(role);
