@@ -42,8 +42,12 @@ function laneOf(t: Turnover): Lane {
   return activeAssignments(t).length > 0 ? 'ASSIGNED' : 'POOL';
 }
 
-const cleanerNames = (t: Turnover) =>
-  activeAssignments(t).map(a => a.user?.name?.split(' ')[0]).filter(Boolean).join(', ');
+/** The cleaners on a turnover, full name and e-mail. */
+const cleaners = (t: Turnover) =>
+  activeAssignments(t).map(a => ({ id: a.userId, name: a.user?.name ?? '—', email: a.user?.email ?? '' }));
+
+/** Board columns: the four states, plus Overdue between In progress and Done when there is any. */
+type Column = Lane | 'OVERDUE';
 
 const unitName = (t: Turnover) =>
   t.toBooking?.accommodationName ?? t.fromBooking?.accommodationName ?? t.property?.name ?? '—';
@@ -109,7 +113,16 @@ export default function DashboardPage() {
     const lanes: Record<Lane, Turnover[]> = { POOL: [], ASSIGNED: [], IN_PROGRESS: [], DONE: [] };
     for (const r of mine.sort(byDue)) lanes[laneOf(r)].push(r);
     const overdue = mine.filter(r => laneOf(r) !== 'DONE' && r.dueBy && Date.parse(r.dueBy) < now);
-    return { total: mine.length, lanes, overdue: new Set(overdue.map(r => r.id)) };
+    const late = new Set(overdue.map(r => r.id));
+    // The board shows an overdue cleaning once, in Overdue; the donut still counts it by its state.
+    const board: Record<Column, Turnover[]> = {
+      POOL: lanes.POOL.filter(r => !late.has(r.id)),
+      ASSIGNED: lanes.ASSIGNED.filter(r => !late.has(r.id)),
+      IN_PROGRESS: lanes.IN_PROGRESS.filter(r => !late.has(r.id)),
+      OVERDUE: overdue.sort(byDue),
+      DONE: lanes.DONE,
+    };
+    return { total: mine.length, lanes, board, overdue: late };
   }, [rows, day, isToday, now]);
 
   // One colour per lane, shared by the status card, the lane headers and the tags.
@@ -121,31 +134,67 @@ export default function DashboardPage() {
   ];
   const short: Record<Lane, string> = { POOL: td.inPool, ASSIGNED: td.assigned, IN_PROGRESS: td.inProgress, DONE: td.completed };
 
-  function sub(r: Turnover, lane: Lane): string {
-    const who = cleanerNames(r);
+  const columns: Array<{ key: Column; label: string; dot: string }> = [
+    ...lanes.filter(l => l.key !== 'DONE').map(l => ({ key: l.key as Column, label: l.label, dot: l.dot })),
+    ...(view.board.OVERDUE.length ? [{ key: 'OVERDUE' as Column, label: td.overdue, dot: 'bg-coral' }] : []),
+    { key: 'DONE', label: td.completed, dot: 'bg-accent' },
+  ];
+
+  /** Under the unit name: who (full name), when they started / finished, e-mail while assigned. */
+  function Details({ r }: { r: Turnover }) {
+    const state = laneOf(r);
     const b = r.toBooking;
-    if (lane === 'IN_PROGRESS') return [who, r.startedAt && `${td.startedAt} ${formatTime(r.startedAt)}`].filter(Boolean).join(' · ');
-    if (lane === 'DONE') return [who, r.completedAt && `${td.doneAt} ${formatTime(r.completedAt)}`].filter(Boolean).join(' · ');
-    if (lane === 'ASSIGNED') return who;
-    if (!b) return td.noArrival;
-    if (b.isOwnerStay || r.isOwnerStay) return td.ownerStay;
-    if (b.pmsCreatedAt && r.dueBy && pragueDay(b.pmsCreatedAt) === pragueDay(r.dueBy)) {
-      return `${td.lastMinute} · ${formatTime(b.pmsCreatedAt)}`;
+    const people = cleaners(r);
+    if (state === 'POOL') {
+      // In the pool nobody has it yet — only what matters for picking it up.
+      const note = !b ? td.noArrival
+        : (b.isOwnerStay || r.isOwnerStay) ? td.ownerStay
+        : b.pmsCreatedAt && r.dueBy && pragueDay(b.pmsCreatedAt) === pragueDay(r.dueBy) ? `${td.lastMinute} · ${formatTime(b.pmsCreatedAt)}`
+        : null;
+      return note ? <span className="text-[11.5px] text-ink-muted">{note}</span> : null;
     }
-    return `${b.numAdults}+${b.numChildren}`;
+    const when = state === 'IN_PROGRESS' && r.startedAt ? `${td.startedAt} ${formatTime(r.startedAt)}`
+      : state === 'DONE' && r.completedAt ? `${td.doneAt} ${formatTime(r.completedAt)}`
+      : null;
+    return (
+      <span className="flex flex-col gap-0.5">
+        {people.map((p, i) => (
+          <span key={p.id} className="flex flex-col">
+            <span className="flex flex-wrap items-center gap-x-2 text-[11.5px] text-ink-soft">
+              <span className="font-medium">{p.name}</span>
+              {when && i === 0 && (
+                <>
+                  <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-ink-faint" />
+                  <span className="text-ink-muted">{when}</span>
+                </>
+              )}
+            </span>
+            {state === 'ASSIGNED' && p.email && <span className="text-[11px] text-ink-muted break-all">{p.email}</span>}
+          </span>
+        ))}
+      </span>
+    );
   }
 
-  function tag(r: Turnover, lane: Lane): { text: string; cls: string } {
-    if (view.overdue.has(r.id)) return { text: td.overdue, cls: 'bg-coral text-white' };
-    if (lane === 'DONE') {
+  function tag(r: Turnover): { text: string; cls: string } {
+    const state = laneOf(r);
+    if (state === 'DONE') {
       return r.status === 'FLAGGED' || r.completedAllGood === false
         ? { text: td.issue, cls: 'bg-coral-soft text-coral-deep' }
         : { text: td.done, cls: 'bg-accent-soft text-accent' };
     }
     // Slow pulse: something is happening right now.
-    if (lane === 'IN_PROGRESS') return { text: td.inProgress, cls: 'bg-[#2F5DA8] text-white animate-[pulse_2.6s_ease-in-out_infinite]' };
-    if (lane === 'ASSIGNED') return { text: td.assigned, cls: 'bg-surface-sunken text-ink-soft' };
+    if (state === 'IN_PROGRESS') return { text: td.inProgress, cls: 'bg-[#2F5DA8] text-white animate-[pulse_2.6s_ease-in-out_infinite]' };
+    if (state === 'ASSIGNED') return { text: td.assigned, cls: 'bg-surface-sunken text-ink-soft' };
     return { text: td.inPool, cls: 'bg-sand-soft text-sand-deep' };
+  }
+
+  /** "45 min late" / "2 h 10 min late" for the Overdue column. */
+  function lateBy(r: Turnover): string | null {
+    if (!r.dueBy) return null;
+    const m = Math.max(0, Math.round((now - Date.parse(r.dueBy)) / 60_000));
+    const h = Math.floor(m / 60);
+    return `${h ? `${h} h ` : ''}${m % 60} min ${td.late}`;
   }
 
   return (
@@ -198,21 +247,23 @@ export default function DashboardPage() {
           <p className="font-semibold text-ink">{td.noEvents}</p>
         </div>
       ) : (
-        <div className="grid gap-3 items-start grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
-          {lanes.map(l => {
-            const items = view.lanes[l.key];
+        // Four columns, five while anything is overdue — always the status card's width.
+        <div className={cn('grid gap-3 items-start grid-cols-1 md:grid-cols-2', columns.length === 5 ? 'xl:grid-cols-5' : 'xl:grid-cols-4')}>
+          {columns.map(c => {
+            const items = view.board[c.key];
             return (
-              <section key={l.key} className="bg-white border border-surface-border rounded-2xl flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
-                  <h2 className="text-xs font-semibold text-ink flex items-center gap-2">
-                    <span className={cn('w-2 h-2 rounded-full', l.dot)} />{l.label}
+              <section key={c.key} className={cn('bg-white border rounded-2xl flex flex-col overflow-hidden min-w-0',
+                c.key === 'OVERDUE' ? 'border-coral/40' : 'border-surface-border')}>
+                <div className={cn('flex items-center justify-between px-4 py-3 border-b border-surface-border', c.key === 'OVERDUE' && 'bg-coral-soft/40')}>
+                  <h2 className={cn('text-xs font-semibold flex items-center gap-2', c.key === 'OVERDUE' ? 'text-coral-deep' : 'text-ink')}>
+                    <span className={cn('w-2 h-2 rounded-full', c.dot)} />{c.label}
                   </h2>
                   <span className="font-mono text-[11.5px] text-ink-muted">{items.length}</span>
                 </div>
                 {items.length === 0 && <p className="px-4 py-6 text-center text-[12.5px] text-ink-faint">—</p>}
                 <div className="divide-y divide-surface-border/70">
                   {items.map(r => {
-                    const tg = tag(r, l.key);
+                    const tg = tag(r);
                     const assumed = r.toBooking?.checkInSource === 'FALLBACK';
                     return (
                       <div key={r.id} className="flex items-start gap-2.5 px-4 py-2.5" title={r.managerNote ?? undefined}>
@@ -222,8 +273,11 @@ export default function DashboardPage() {
                         {/* Full unit name (wraps), then who/when, then the status tag — nothing is cut. */}
                         <span className="flex-1 min-w-0 flex flex-col items-start gap-1">
                           <span className="text-[13px] font-semibold text-ink leading-[1.35] break-words">{unitName(r)}</span>
-                          {sub(r, l.key) && <span className="text-[11.5px] text-ink-muted">{sub(r, l.key)}</span>}
-                          <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-semibold', tg.cls)}>{tg.text}</span>
+                          <Details r={r} />
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-semibold', tg.cls)}>{tg.text}</span>
+                            {c.key === 'OVERDUE' && <span className="text-[11px] font-semibold text-coral-deep">{lateBy(r)}</span>}
+                          </span>
                         </span>
                       </div>
                     );
