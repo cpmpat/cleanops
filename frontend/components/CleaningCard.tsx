@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { MapPin, Users, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut, Flame, Crown } from 'lucide-react';
+import { MapPin, Users, Check, Undo2, AlertTriangle, Moon, LogIn, LogOut } from 'lucide-react';
+import { LastMinutePill, OwnerStayPill } from '@/components/BookingFlags';
 import { formatTime, formatOccupancy } from '@/lib/utils';
 import type { CleaningEvent } from '@/lib/api';
 import type { Translations } from '@/i18n/translations';
@@ -114,16 +115,10 @@ export function CleaningCard({
         {(event.isOwnerStay || isLastMinute) && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {event.isOwnerStay && (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-900 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 rounded-full px-2.5 py-1 shadow-sm">
-                <Crown size={11} className="text-amber-700" />
-                Owner stay
-              </div>
+              <OwnerStayPill size="md" label="Owner stay" />
             )}
             {isLastMinute && (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
-                <Flame size={11} />
-                Last minute
-              </div>
+              <LastMinutePill size="md" label="Last minute" className="animate-pulse" />
             )}
           </div>
         )}

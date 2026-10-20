@@ -2,9 +2,10 @@
 import Link from 'next/link';
 import {
   MapPin, Users, Check, Undo2, AlertTriangle, Moon,
-  LogIn, LogOut, Flame, Crown, Clock, Play, ArrowLeftRight, MessageSquare, AlertCircle,
+  LogIn, LogOut, Clock, Play, ArrowLeftRight, MessageSquare, AlertCircle,
   Baby, BedSingle,
 } from 'lucide-react';
+import { LastMinutePill, OwnerStayPill } from '@/components/BookingFlags';
 import { formatTime, formatOccupancy, APP_TIME_ZONE } from '@/lib/utils';
 import type { Turnover } from '@/lib/api';
 import type { Translations, Locale } from '@/i18n/translations';
@@ -214,16 +215,10 @@ export function TurnoverCard({
         {(turnover.isOwnerStay || isLastMinute || (arrivesToday && mode === 'pool')) && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {turnover.isOwnerStay && (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-900 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 rounded-full px-2.5 py-1 shadow-sm">
-                <Crown size={11} className="text-amber-700" />
-                Owner stay
-              </div>
+              <OwnerStayPill size="md" label="Owner stay" />
             )}
             {isLastMinute && (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1 animate-pulse">
-                <Flame size={11} />
-                Last minute
-              </div>
+              <LastMinutePill size="md" label="Last minute" className="animate-pulse" />
             )}
             {/* Same-day arrival that is not last-minute: urgent, but not news. */}
             {arrivesToday && !isLastMinute && mode === 'pool' && (
@@ -384,11 +379,9 @@ export function TurnoverCard({
               when this is a last-minute booking (created today for today). */}
           {toBooking?.checkInTime ? (
             isLastMinute ? (
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 text-red-700 bg-red-50 border-red-300 animate-pulse">
-                <Flame size={11} />
-                <span className="font-bold uppercase tracking-wide">Last minute</span>
-                <span className="opacity-70">·</span>
-                <span>
+              <LastMinutePill size="md" label="Last minute" className="animate-pulse">
+                <span className="opacity-70 font-normal">·</span>
+                <span className="font-medium normal-case tracking-normal">
                   Next check-in{' '}
                   {new Date(toBooking.checkInTime).toLocaleDateString(undefined, {
                     month: 'short',
@@ -396,7 +389,7 @@ export function TurnoverCard({
                   })}
                   , <span className={checkInConfirmed ? 'font-bold' : 'font-normal'}>{formatTime(toBooking.checkInTime)}</span>
                 </span>
-              </div>
+              </LastMinutePill>
             ) : (
               <div
                 className={`inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-full px-2 py-0.5 ${
