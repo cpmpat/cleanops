@@ -41,7 +41,7 @@ const ROLE_PATHS: Record<string, string[]> = {
    *  Dashboard → Cleaning on (20 Oct 2026); its data is GET /turnovers (office roles), Praha-scoped by area. */
   FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
-  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/datasets'],
+  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
   FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/datasets'],
   OPERATION_MANAGER:  ['/airchat', '/datasets', '/tasks'],
   ASSIST:             ['/airchat', '/datasets', '/tasks'],
@@ -51,11 +51,14 @@ const ROLE_PATHS: Record<string, string[]> = {
    *  per the matrix, rows per dataset_row_filters (Avantio accommodations,
    *  Valid users). On a phone an agent starts on Availability (lib/home.ts). */
   AGENT:              ['/datasets', '/tasks'],
-  /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. */
-  DIRECTOR:           ['/newsfeed', '/datasets', '/tasks'],
+  /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. Planning
+   *  (Check-In, Check-Out, Agents) and Dashboard → Cleaning added 20 Oct 2026
+   *  for DIRECTOR and MARKETING_MANAGER, as for ADMIN, OPERATIONS_ASSISTANT
+   *  and FRONT_DESK_MANAGER. */
+  DIRECTOR:           ['/newsfeed', '/planning', '/dashboard', '/datasets', '/tasks'],
   FINANCE:            ['/newsfeed', '/datasets', '/tasks'],
   REVENUE_MANAGER:    ['/newsfeed', '/datasets', '/tasks'],
-  MARKETING_MANAGER:  ['/newsfeed', '/datasets', '/tasks'],
+  MARKETING_MANAGER:  ['/newsfeed', '/planning', '/dashboard', '/datasets', '/tasks'],
   /** MARKETING_MANAGER's modules (15 Oct 2026). */
   MARKETING_SPECIALIST: ['/newsfeed', '/datasets', '/tasks'],
 };

@@ -8,7 +8,7 @@ import { TenantRequest } from '../common/middleware/tenant.middleware';
 import { TurnoversService } from './turnovers.service';
 import { IncidentPriority } from '@prisma/client';
 import { todayInAppZone } from '../common/time';
-import { OFFICE_ROLES, PLANNING_ROLES } from '../common/roles';
+import { OFFICE_ROLES, PLANNING_ROLES, DESK_READ_ROLES } from '../common/roles';
 
 @ApiTags('Turnovers')
 @ApiBearerAuth()
@@ -22,7 +22,7 @@ export class TurnoversController {
   // The whole tenant's turnovers (guest numbers, unit notes): the office only.
   // A cleaner reads her own through /mine and the claimable ones through /pool.
   @Get()
-  @Roles(...OFFICE_ROLES)
+  @Roles(...DESK_READ_ROLES)
   @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get turnovers for a date (or date range)' })
   findByDate(
@@ -88,7 +88,7 @@ export class TurnoversController {
   }
 
   @Get(':id')
-  @Roles(...OFFICE_ROLES)
+  @Roles(...DESK_READ_ROLES)
   @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get turnover by ID' })
   findById(@Req() req: TenantRequest, @Param('id') id: string) {

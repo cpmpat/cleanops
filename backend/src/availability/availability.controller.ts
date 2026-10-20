@@ -4,7 +4,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard, Roles, RolesGuard } from '../common/guards/auth.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
-import { OFFICE_ROLES, PLANNING_ROLES } from '../common/roles';
+import { DESK_READ_ROLES, PLANNING_ROLES } from '../common/roles';
 import {
   AvailabilityService,
   CreateAvailabilityDto,
@@ -112,7 +112,7 @@ export class AvailabilityController {
   }
 
   @Get('board')
-  @Roles(...OFFICE_ROLES)
+  @Roles(...DESK_READ_ROLES)
   @ApiOperation({
     summary: 'Planning → Agents: agents, their blocks and the arrivals for from..to (inclusive, ≤ 14 days)',
   })
