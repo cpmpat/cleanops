@@ -34,34 +34,37 @@ import { CommandSearch, ShortcutCue, SEARCH_STRINGS, isTyping } from '@/componen
  * and columns they then see is the dataset access matrix's decision.
  */
 const ROLE_PATHS: Record<string, string[]> = {
+  // Tasks hidden for now (21 Oct 2026) for every role but MANAGER, ADMIN and
+  // DIRECTOR; TASK_ROLES on the API says the same. To bring it back, add
+  // '/tasks' to a role here and the role to TASK_ROLES.
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
   ADMIN:              ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets', '/notify'],
   /** Notifications off for FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE (15 Oct 2026).
    *  Dashboard → Cleaning on (20 Oct 2026); its data is GET /turnovers (office roles), Praha-scoped by area. */
-  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
+  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/dashboard', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
-  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
+  OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/dashboard', '/datasets'],
   /** Dashboard → Cleaning on (21 Oct 2026). */
-  FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
-  OPERATION_MANAGER:  ['/airchat', '/datasets', '/tasks'],
-  ASSIST:             ['/airchat', '/datasets', '/tasks'],
+  FRONT_DESK:         ['/newsfeed', '/planning', '/dashboard', '/datasets'],
+  OPERATION_MANAGER:  ['/airchat', '/datasets'],
+  ASSIST:             ['/airchat', '/datasets'],
   /** Data only; which lists and columns is the access matrix's call. */
-  EVIDENCE:           ['/newsfeed', '/datasets', '/tasks'],
+  EVIDENCE:           ['/newsfeed', '/datasets'],
   /** Agent (TERENAK until 19 Oct 2026): Data + Tasks on the desktop. Columns
    *  per the matrix, rows per dataset_row_filters (Avantio accommodations,
    *  Valid users). On a phone an agent starts on Availability (lib/home.ts). */
-  AGENT:              ['/datasets', '/tasks'],
+  AGENT:              ['/datasets'],
   /** Newsfeed + Data (7 Oct 2026); they start on the Newsfeed. Planning
    *  (Check-In, Check-Out, Agents) and Dashboard → Cleaning added 20 Oct 2026
    *  for DIRECTOR and MARKETING_MANAGER, as for ADMIN, OPERATIONS_ASSISTANT
    *  and FRONT_DESK_MANAGER. */
   DIRECTOR:           ['/newsfeed', '/planning', '/dashboard', '/datasets', '/tasks'],
-  FINANCE:            ['/newsfeed', '/datasets', '/tasks'],
-  REVENUE_MANAGER:    ['/newsfeed', '/datasets', '/tasks'],
-  MARKETING_MANAGER:  ['/newsfeed', '/planning', '/dashboard', '/datasets', '/tasks'],
+  FINANCE:            ['/newsfeed', '/datasets'],
+  REVENUE_MANAGER:    ['/newsfeed', '/datasets'],
+  MARKETING_MANAGER:  ['/newsfeed', '/planning', '/dashboard', '/datasets'],
   /** MARKETING_MANAGER's modules (15 Oct 2026). */
-  MARKETING_SPECIALIST: ['/newsfeed', '/datasets', '/tasks'],
+  MARKETING_SPECIALIST: ['/newsfeed', '/datasets'],
 };
 
 /** The office "Notifications" section (t.nav.notifications is the cleaners' "Alerts"). */

@@ -85,10 +85,12 @@ export const NEWSFEED_ROLES = [
  * TASK_MANAGER_ROLES: who creates, closes (Done / Won't do), reopens, edits
  * and assigns. ADMIN passes every check.
  */
-export const TASK_ROLES = [
-  'MANAGER', 'ADMIN', 'OPERATION_MANAGER', 'FRONT_DESK_MANAGER', 'OPERATIONS_ASSISTANT', 'FRONT_DESK', 'ASSIST',
-  'EVIDENCE', 'AGENT', 'DIRECTOR', 'FINANCE', 'REVENUE_MANAGER', 'MARKETING_MANAGER', 'MARKETING_SPECIALIST',
-] as const;
+// Hidden for everyone but MANAGER, ADMIN and DIRECTOR for now (21 Oct 2026).
+// Until then it was: MANAGER, ADMIN, OPERATION_MANAGER, FRONT_DESK_MANAGER,
+// OPERATIONS_ASSISTANT, FRONT_DESK, ASSIST, EVIDENCE, AGENT, DIRECTOR, FINANCE,
+// REVENUE_MANAGER, MARKETING_MANAGER, MARKETING_SPECIALIST. Only these roles
+// open the board and can be assigned a task.
+export const TASK_ROLES = ['MANAGER', 'ADMIN', 'DIRECTOR'] as const;
 
 export const TASK_MANAGER_ROLES = ['MANAGER', 'FRONT_DESK_MANAGER', 'DIRECTOR', 'REVENUE_MANAGER'] as const;
 

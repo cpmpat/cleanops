@@ -12,11 +12,37 @@ import { cn } from '@/lib/utils';
  * src/newsfeed/rules.ts). Closing an item hides it for this person only.
  *
  * Oct 2026 redesign: one card grouped by day, a tile per kind (live / offline
- * / other), filters for the kinds, and a side column with the counts.
+ * / other). 21 Oct 2026: the All / Went live / Went offline / Closed switch is
+ * gone; beside the list a pick list of the types of change seen in the last
+ * three months (the feed's whole window, NEWSFEED_DAYS) filters it.
  */
 
 type Kind = 'live' | 'off' | 'other';
-type Show = 'all' | Kind | 'closed';
+
+/** What each rule (backend src/newsfeed/rules.ts) is called in the pick list. */
+const RULE_LABEL: Record<string, string> = {
+  'accommodation.airbnbOnline': 'Went live on Airbnb',
+  'accommodation.bookingOnline': 'Went live on Booking.com',
+  'accommodation.offboard': 'Going offline (delisted)',
+  'accommodation.move.pricingGroup': 'Pricing group changed',
+};
+const ruleLabel = (rule: string) =>
+  RULE_LABEL[rule] ?? rule.split('.').pop()!.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+
+/** The info mark from the supplied artwork (outline speech bubble with an "i"), redrawn as a flat glyph. */
+function InfoBubble({ size = 34, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className={className}>
+      <path
+        d="M12 2.5 A8.5 8.5 0 1 1 7.9 18.45 L3.9 20.1 A.55 .55 0 0 1 3.2 19.4 L4.8 15.5 A8.5 8.5 0 0 1 12 2.5 Z"
+        fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
+      />
+      <circle cx="12.75" cy="7.2" r="1.3" fill="currentColor" />
+      <path d="M10.5 10.3 H12.5 L11.35 15.4 Q11.15 16.45 12.15 16.15 L13.3 15.7"
+        fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function kindOf(rule: string): Kind {
   if (rule.includes('offboard')) return 'off';
@@ -103,15 +129,18 @@ function dayLabel(day: string): string {
 export default function NewsfeedPage() {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [unread, setUnread] = useState(0);
-  const [show, setShow] = useState<Show>('all');
+  // Types picked in the pick list; empty = every type.
+  const [types, setTypes] = useState<string[]>([]);
+  const [showClosed, setShowClosed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const showClosed = show === 'closed';
 
-  const load = useCallback(async (all: boolean) => {
+  // Always the whole window (closed included): the pick list counts what
+  // happened in the last three months, read or not.
+  const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res = await api.list(all);
+      const res = await api.list(true);
       setItems(res.items); setUnread(res.unread);
       // The menu badge shows the same number as this page, at once.
       announceNewsfeed(res.unread);
@@ -122,13 +151,13 @@ export default function NewsfeedPage() {
     }
   }, []);
 
-  useEffect(() => { load(showClosed); }, [showClosed, load]);
+  useEffect(() => { load(); }, [load]);
 
   const close = async (id: string) => {
     // Optimistic: the item goes (or greys out) at once; a failure brings it back.
     const before = items;
     const next = Math.max(0, unread - 1);
-    setItems((xs) => showClosed ? xs.map((x) => x.id === id ? { ...x, dismissed: true } : x) : xs.filter((x) => x.id !== id));
+    setItems((xs) => xs.map((x) => x.id === id ? { ...x, dismissed: true } : x));
     setUnread(next);
     announceNewsfeed(next);
     try {
@@ -141,20 +170,23 @@ export default function NewsfeedPage() {
   const closeAll = async () => {
     await api.dismissAll();
     announceNewsfeed(0);
-    load(showClosed);
+    load();
   };
 
-  // Counts are over the open items, whatever the filter shows.
-  const counts = useMemo(() => {
-    const c: Record<Kind, number> = { live: 0, off: 0, other: 0 };
-    for (const n of items) if (!n.dismissed) c[kindOf(n.rule)]++;
-    return c;
+  // The pick list: every type of change in the window, with how many (read or not).
+  const typeOptions = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const n of items) c.set(n.rule, (c.get(n.rule) ?? 0) + 1);
+    return Array.from(c.entries())
+      .map(([rule, n]) => ({ rule, n, label: ruleLabel(rule) }))
+      .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
   }, [items]);
-  const openTotal = counts.live + counts.off + counts.other;
+  const toggleType = (rule: string) =>
+    setTypes((ts) => ts.includes(rule) ? ts.filter((t) => t !== rule) : [...ts, rule]);
 
   const groups = useMemo(() => {
     const shown = items.filter((n) =>
-      show === 'closed' ? true : show === 'all' ? true : kindOf(n.rule) === show,
+      (showClosed || !n.dismissed) && (types.length === 0 || types.includes(n.rule)),
     );
     const out: Array<{ day: string; items: NewsItem[] }> = [];
     for (const n of shown) {
@@ -163,9 +195,7 @@ export default function NewsfeedPage() {
       if (last && last.day === d) last.items.push(n); else out.push({ day: d, items: [n] });
     }
     return out;
-  }, [items, show]);
-
-  const tabs: Array<[Show, string]> = [['all', 'All'], ['live', 'Went live'], ['off', 'Went offline'], ['closed', 'Closed']];
+  }, [items, showClosed, types]);
   const today = pragueDay(new Date());
 
   return (
@@ -181,19 +211,6 @@ export default function NewsfeedPage() {
           <p className="text-sm text-ink-muted">Changes in the accommodation list that people should know about. Confirm each with ✓ once read.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div role="group" aria-label="Show" className="flex gap-1 bg-white border border-surface-border rounded-[10px] p-[3px]">
-            {tabs.map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setShow(k)}
-                className={cn('rounded-lg px-3 py-1.5 text-[13px] transition',
-                  show === k ? 'bg-accent text-white font-semibold' : 'text-ink-soft hover:bg-surface-sunken')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
           {unread > 0 && (
             <button
               onClick={closeAll}
@@ -203,7 +220,7 @@ export default function NewsfeedPage() {
             </button>
           )}
           <button
-            onClick={() => load(showClosed)}
+            onClick={() => load()}
             disabled={loading}
             title="Refresh"
             aria-label="Refresh"
@@ -223,7 +240,7 @@ export default function NewsfeedPage() {
           ) : groups.length === 0 ? (
             <div className="py-14 text-center">
               <Newspaper size={28} className="mx-auto text-ink-faint" />
-              <p className="mt-3 text-sm text-ink-muted">You are all caught up.</p>
+              <p className="mt-3 text-sm text-ink-muted">{types.length ? 'Nothing of the picked types to show.' : 'You are all caught up.'}</p>
             </div>
           ) : groups.map((g) => (
             <div key={g.day}>
@@ -290,42 +307,60 @@ export default function NewsfeedPage() {
           ))}
           <div className="px-4 py-3 flex justify-between items-center text-[11.5px] text-ink-muted">
             <span>Confirming an item hides it only for you.</span>
-            {!showClosed && (
-              <button type="button" onClick={() => setShow('closed')} className="font-semibold text-accent hover:text-accent-hover flex items-center gap-0.5">
-                Show closed <ChevronRight size={12} />
-              </button>
-            )}
+            <button type="button" onClick={() => setShowClosed((v) => !v)} className="font-semibold text-accent hover:text-accent-hover flex items-center gap-0.5">
+              {showClosed ? 'Hide closed' : 'Show closed'} <ChevronRight size={12} />
+            </button>
           </div>
         </section>
 
         <aside className="flex-[1_1_280px] flex flex-col gap-3">
-          <section className="bg-white border border-surface-border rounded-2xl px-4 py-3.5 flex flex-col gap-2.5">
-            <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">In this feed</h2>
-            {([
-              ['live', 'Went live on a channel', 'bg-accent'],
-              ['off', 'Went offline', 'bg-coral'],
-              ['other', 'Other changes', 'bg-sand'],
-            ] as const).map(([k, label, fill]) => (
-              <button key={k} type="button" onClick={() => setShow(show === k ? 'all' : k)} className="flex flex-col gap-1.5 text-left group">
-                <span className="flex justify-between w-full text-[13px]">
-                  <span className="flex items-center gap-2 text-ink-soft group-hover:text-ink">
-                    <span className={cn('w-2 h-2 rounded-sm', fill)} />{label}
+          {/* Pick list: the types of change seen in the last three months; picking narrows the list. */}
+          <section className="bg-white border border-surface-border rounded-2xl px-3 py-3 flex flex-col gap-1">
+            <div className="flex items-center justify-between px-1 pb-1">
+              <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Type of change · last 3 months</h2>
+              {types.length > 0 && (
+                <button type="button" onClick={() => setTypes([])} className="text-[11.5px] font-semibold text-accent hover:text-accent-hover">Clear</button>
+              )}
+            </div>
+            {typeOptions.length === 0 && <p className="px-1 py-1 text-[13px] text-ink-muted">No changes in the last 3 months.</p>}
+            {typeOptions.map((o) => {
+              const on = types.includes(o.rule);
+              const k = kindOf(o.rule);
+              return (
+                <button
+                  key={o.rule}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={on}
+                  onClick={() => toggleType(o.rule)}
+                  className={cn('flex items-center gap-2.5 rounded-xl px-1.5 py-1.5 text-left transition',
+                    on ? 'bg-accent-soft' : 'hover:bg-surface')}
+                >
+                  <span className={cn('w-4 h-4 rounded border flex items-center justify-center flex-shrink-0',
+                    on ? 'bg-accent border-accent text-white' : 'border-surface-border bg-white')}>
+                    {on && <Check size={11} />}
                   </span>
-                  <strong className="font-semibold text-ink tabular-nums">{counts[k]}</strong>
-                </span>
-                <span className="h-1.5 w-full bg-surface-sunken rounded-full overflow-hidden">
-                  <span className={cn('block h-full', fill)} style={{ width: `${openTotal ? (counts[k] / openTotal) * 100 : 0}%` }} />
-                </span>
-              </button>
-            ))}
+                  <span className={cn('w-6 h-6 rounded-[7px] flex items-center justify-center flex-shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5', TILE[k].cls)}>
+                    {TILE[k].icon}
+                  </span>
+                  <span className={cn('flex-1 min-w-0 text-[13px]', on ? 'text-ink font-semibold' : 'text-ink-soft')}>{o.label}</span>
+                  <span className="text-[12px] font-semibold text-ink tabular-nums">{o.n}</span>
+                </button>
+              );
+            })}
           </section>
-          <section className="bg-white border border-surface-border rounded-2xl px-4 py-3.5 flex flex-col gap-2">
-            <h2 className="text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-muted">Where it comes from</h2>
-            <p className="text-[13px] text-ink-soft leading-relaxed">
-              Each item is a recorded change in Data → Accommodation, turned into a sentence. Click a unit to open its record.
-            </p>
-            <Link href="/datasets" className="self-start rounded-[9px] bg-[#F3F0E9] px-3 py-1.5 text-[13px] font-semibold text-accent hover:bg-surface-sunken">
-              Open Data ›
+          {/* Where the news comes from — no heading, the info mark and one plain sentence. */}
+          <section className="bg-white border border-surface-border rounded-2xl px-4 py-3.5 flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              <InfoBubble size={34} className="text-accent flex-shrink-0" />
+              <p className="text-[13px] text-ink-soft leading-relaxed">
+                These updates come from our apartment list. Whenever something important changes there — a unit
+                goes online on Airbnb or Booking.com, is taken off sale, or moves to another pricing group — it
+                appears here. Click a unit&apos;s name to see all its details.
+              </p>
+            </div>
+            <Link href="/datasets?d=accommodation" className="self-start rounded-[9px] bg-[#F3F0E9] px-3 py-1.5 text-[13px] font-semibold text-accent hover:bg-surface-sunken">
+              Data › CDM › Accommodation
             </Link>
           </section>
         </aside>
