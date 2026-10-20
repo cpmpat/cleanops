@@ -159,6 +159,12 @@ function dayLabel(iso: string, locale: string, short = false): string {
  */
 export type PlanningMode = 'checkIn' | 'checkOut';
 
+/** Sortable headings: Day, Status, Unit and the tab's own time (20 Oct 2026). */
+type SortKey = 'day' | 'status' | 'unit' | 'time';
+/** Status sorts in the order a turnover moves through; rows without a cleaning go last. */
+const STATUS_RANK: Record<string, number> = { PENDING: 0, ASSIGNED: 1, IN_PROGRESS: 2, FLAGGED: 3, COMPLETED: 4 };
+const statusRank = (st?: string | null) => (st && st in STATUS_RANK ? STATUS_RANK[st] : 9);
+
 export function PlanningView({ mode }: { mode: PlanningMode }) {
   const { locale } = useLocale();
   const t = translations[locale];
@@ -211,7 +217,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
   // A quick window overrides the date inputs while it is active.
   const [quick, setQuick] = useState<QuickWindow | null>('today');
   // Default: by unit name, so the desk reads the list the way the building is laid out.
-  const [sortKey, setSortKey] = useState<'unit' | 'time'>('unit');
+  const [sortKey, setSortKey] = useState<SortKey>('unit');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // ── Data ──
@@ -361,10 +367,17 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     const matchPlan = byCheckOut || planFilter === 'ALL' || planState(b) === planFilter;
     return matchSearch && matchUnconfirmed && matchPlan;
   }).sort((a, b) => {
-    const cmp = sortKey === 'unit'
-      ? a.accommodationName.localeCompare(b.accommodationName, 'cs', { numeric: true, sensitivity: 'base' })
-      : ownTime(a).localeCompare(ownTime(b));
-    return sortDir === 'asc' ? cmp : -cmp;
+    const byUnit = a.accommodationName.localeCompare(b.accommodationName, 'cs', { numeric: true, sensitivity: 'base' });
+    const byTime = ownTime(a).localeCompare(ownTime(b));
+    const byDay = pragueDay(ownTime(a)).localeCompare(pragueDay(ownTime(b)));
+    // The chosen column decides (asc/desc); ties keep a steady order: day, then unit, then time.
+    const primary =
+      sortKey === 'unit' ? byUnit
+      : sortKey === 'time' ? byTime
+      : sortKey === 'day' ? byDay
+      : statusRank(a.status) - statusRank(b.status);
+    if (primary !== 0) return sortDir === 'asc' ? primary : -primary;
+    return (sortKey !== 'day' && byDay) || (sortKey !== 'unit' && byUnit) || byTime;
   });
 
   const planCounts = useMemo(() => {
@@ -390,7 +403,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
     document.getElementById(`row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function toggleSort(key: 'unit' | 'time') {
+  function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir('asc'); }
   }
@@ -782,13 +795,15 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
               )}
             </div>
           </div>
-          {/* Column headings — same grid as the rows. Unit and Check-in sort. */}
+          {/* Column headings — same grid as the rows. Day, Status, Unit and the tab's time sort. */}
           <div className={cn(gridFor(compact, showPhone), 'px-4 py-1.5 border-b border-surface-border bg-surface-sunken/60 text-[11px] font-semibold text-ink-muted uppercase tracking-wider')}>
-            {/* Day: the calendar day this tab's time falls on — sorts with the time column. */}
-            <button type="button" onClick={() => toggleSort('time')} className="text-left hover:text-ink transition">
-              {tp.day}{sortKey === 'time' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            {/* Day: the calendar day this tab's time falls on. Day, Status and Unit each sort; click again to flip. */}
+            <button type="button" onClick={() => toggleSort('day')} className="text-left hover:text-ink transition">
+              {tp.day}{sortKey === 'day' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
             </button>
-            <span>{tp.filterStatus}</span>
+            <button type="button" onClick={() => toggleSort('status')} className="text-left hover:text-ink transition" title="Pool → Assigned → In progress → Flagged → Completed">
+              {tp.filterStatus}{sortKey === 'status' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            </button>
             <button type="button" onClick={() => toggleSort('unit')} className="text-left hover:text-ink transition">
               {tp.sortUnit} · {tp.guest}{sortKey === 'unit' && (sortDir === 'asc' ? ' ↑' : ' ↓')}
             </button>
