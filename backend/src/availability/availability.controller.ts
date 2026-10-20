@@ -117,6 +117,6 @@ export class AvailabilityController {
     summary: 'Planning → Agents: agents, their blocks and the arrivals for from..to (inclusive, ≤ 14 days)',
   })
   board(@Req() req: TenantRequest, @Query('from') from: string, @Query('to') to: string) {
-    return this.service.board(req.tenantId!, from, to ?? from);
+    return this.service.board(req.tenantId!, from, to ?? from, req.userId);
   }
 }

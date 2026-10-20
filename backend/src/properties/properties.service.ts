@@ -1,3 +1,4 @@
+import { areaOf } from '../common/area';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 
@@ -5,10 +6,12 @@ import { PrismaService } from '../common/prisma.service';
 export class PropertiesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(tenantId: string, slim = false) {
+  async findAll(tenantId: string, slim = false, viewerId?: string) {
     if (slim) {
+      // Cleaning staff see the units of their area only (20 Oct 2026).
+      const area = await areaOf(this.prisma, tenantId, viewerId);
       return this.prisma.property.findMany({
-        where: { tenantId, isActive: true },
+        where: { tenantId, isActive: true, ...(area ? { area } : {}) } as any,
         select: { id: true, name: true, address: true, pmsPropertyId: true, accommodationType: true, isActive: true },
         orderBy: { name: 'asc' },
       });

@@ -1,3 +1,4 @@
+import { areaOf, propertyInArea } from '../common/area';
 import {
   Injectable,
   NotFoundException,
@@ -142,7 +143,8 @@ export class TurnoversService {
    * Returns turnovers whose [availableFrom, dueBy] window overlaps the date.
    * For a cleaner, filters to their assigned ones.
    */
-  async findByDate(tenantId: string, date: string, userId?: string) {
+  async findByDate(tenantId: string, date: string, userId?: string, viewerId?: string) {
+    const area = await areaOf(this.prisma, tenantId, viewerId);
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
 
@@ -150,6 +152,7 @@ export class TurnoversService {
       tenantId,
       supersededById: null,
       status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
+      ...propertyInArea(area),
       // Window-overlap: availableFrom <= endOfDay AND (dueBy >= startOfDay OR dueBy is null)
       AND: [
         {
@@ -186,13 +189,15 @@ export class TurnoversService {
     });
   }
 
-  async findByDateRange(tenantId: string, from: string, to: string) {
+  async findByDateRange(tenantId: string, from: string, to: string, viewerId?: string) {
     const fromDate = new Date(from);
     const toDate = new Date(to);
+    const area = await areaOf(this.prisma, tenantId, viewerId);
     return this.prisma.turnover.findMany({
       where: {
         tenantId,
         supersededById: null,
+        ...propertyInArea(area),
         status: { notIn: [TurnoverStatus.CANCELLED, TurnoverStatus.SKIPPED] },
         AND: [
           {
@@ -248,7 +253,7 @@ export class TurnoversService {
    * never drift apart. Returns null when the cleaner has selected no
    * properties — the pool is empty for them by design.
    */
-  private async buildPoolWhere(tenantId: string, userId?: string) {
+  private async buildPoolWhere(tenantId: string, userId?: string, viewerId?: string) {
     // Rolling cutoff: midnight, N days ago, in server local time.
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - POOL_STALE_CUTOFF_DAYS);
@@ -260,6 +265,8 @@ export class TurnoversService {
       supersededById: null,
       // Implicitly drops orphan rows (availableFrom IS NULL) — { gte } excludes nulls.
       availableFrom: { gte: cutoff },
+      // The viewer's area (20 Oct 2026): a Praha cleaner's pool is Praha only.
+      ...propertyInArea(await areaOf(this.prisma, tenantId, viewerId ?? userId)),
     };
 
     if (userId) {
@@ -277,8 +284,8 @@ export class TurnoversService {
     return where;
   }
 
-  async getPool(tenantId: string, userId?: string) {
-    const where = await this.buildPoolWhere(tenantId, userId);
+  async getPool(tenantId: string, userId?: string, viewerId?: string) {
+    const where = await this.buildPoolWhere(tenantId, userId, viewerId);
     if (!where) return [];
 
     return this.prisma.turnover.findMany({
@@ -305,8 +312,8 @@ export class TurnoversService {
    * actually see. A badge that counts something invisible is a badge people
    * learn to ignore.
    */
-  async getTodayArrivalPoolCount(tenantId: string, userId?: string) {
-    const where = await this.buildPoolWhere(tenantId, userId);
+  async getTodayArrivalPoolCount(tenantId: string, userId?: string, viewerId?: string) {
+    const where = await this.buildPoolWhere(tenantId, userId, viewerId);
     if (!where) return { count: 0 };
 
     const today = todayInAppZone();
@@ -341,6 +348,7 @@ export class TurnoversService {
           status: { not: AssignmentStatus.REASSIGNED },
         },
       },
+      ...propertyInArea(await areaOf(this.prisma, tenantId, userId)),
     };
 
     if (opts.from || opts.to) {

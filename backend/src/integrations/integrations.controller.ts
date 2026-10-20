@@ -11,6 +11,7 @@ import { AvantioAdapter } from './avantio/avantio.adapter';
 import { PmsTenantConfig } from '../common/interfaces/pms-adapter.interface';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
+import { areaOf } from '../common/area';
 import { PLANNING_ROLES } from '../common/roles';
 
 @ApiTags('Integrations')
@@ -67,7 +68,7 @@ export class IntegrationsController {
   @ApiQuery({ name: 'creationDateFrom', required: false, description: 'Filter by event created >= (ISO date)' })
   @ApiQuery({ name: 'creationDateTo', required: false, description: 'Filter by event created <= (ISO date)' })
   @ApiQuery({ name: 'status', required: false, description: 'Filter by cleaning event status (PENDING, ASSIGNED, etc.)' })
-  getBookingsForPlanning(
+  async getBookingsForPlanning(
     @Req() req: TenantRequest,
     @Query('arrivalFrom') arrivalFrom?: string,
     @Query('arrivalTo') arrivalTo?: string,
@@ -83,7 +84,7 @@ export class IntegrationsController {
       creationDateFrom,
       creationDateTo,
       status,
-    });
+    }, await areaOf(this.prisma, req.tenantId!, req.userId));
   }
 
   @Get('planning/bookings/:pmsBookingId')
@@ -164,14 +165,14 @@ export class IntegrationsController {
     summary: 'Split "Assigned" view: agents\' check-ins in order, with the leg between each',
     description: 'Query: from, to (YYYY-MM-DD, ≤ 7 days), agentIds (comma-separated, optional).',
   })
-  checkInRoute(
+  async checkInRoute(
     @Req() req: TenantRequest,
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('agentIds') agentIds?: string,
   ) {
     const ids = (agentIds ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-    return this.checkInAgents.route(req.tenantId!, from, to ?? from, ids.length ? ids : undefined);
+    return this.checkInAgents.route(req.tenantId!, from, to ?? from, ids.length ? ids : undefined, await areaOf(this.prisma, req.tenantId!, req.userId));
   }
 
   @Get('planning/checkin-agent/:bookingId/options')

@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
+import { areaFromName, propertyInArea } from '../common/area';
 import { atTimeInAppZone, startOfDayInAppZone, todayInAppZone } from '../common/time';
 import {
   PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
@@ -300,11 +301,12 @@ export class BookingSyncService {
    * Uses the local cleaning_events table (populated by PMS sync) so the
    * response is instant. Each record includes the assignment summary.
    */
-  async getBookingsForPlanning(tenantId: string, filters: PlanningFilters) {
+  async getBookingsForPlanning(tenantId: string, filters: PlanningFilters, area: string | null = null) {
     // Cancelled bookings have nothing to plan: their turnovers are SKIPPED or
     // superseded, so they surfaced as a dash with a stale 00:00 check-in
     // (two cancelled July/August stays on the Check-out tab, 25 Sep).
-    const where: any = { tenantId, status: BookingStatus.CONFIRMED };
+    // A person with an area plans only that area's bookings (20 Oct 2026).
+    const where: any = { tenantId, status: BookingStatus.CONFIRMED, ...propertyInArea(area) };
 
     // A bare date ("2026-09-30") means that calendar day in Prague, whole. It
     // used to become `new Date('2026-09-30')` — midnight UTC — so an arrival
@@ -796,7 +798,9 @@ export class BookingSyncService {
 
         if (existing) {
           // Update name, type, status, clean flag
+          const area = areaFromName(accom.name);
           const hasChanges =
+            (existing as any).area !== area ||
             existing.name !== accom.name ||
             existing.accommodationType !== accom.type ||
             existing.pmsStatus !== accom.status ||
@@ -807,13 +811,14 @@ export class BookingSyncService {
               where: { id: existing.id },
               data: {
                 name: accom.name,
+                area,
                 accommodationType: accom.type,
                 pmsStatus: accom.status,
                 pmsClean: accom.clean,
                 pmsLastSyncedAt: new Date(),
                 // Deactivate if Avantio marks as DISABLED/DELETED
                 isActive: accom.status === 'ENABLED',
-              },
+              } as any,
             });
             updated++;
           }
@@ -843,13 +848,14 @@ export class BookingSyncService {
             data: {
               tenantId,
               name: accom.name,
+              area: areaFromName(accom.name),
               pmsPropertyId: accom.pmsId,
               accommodationType: accom.type,
               pmsStatus: accom.status,
               pmsClean: accom.clean,
               pmsLastSyncedAt: new Date(),
               isActive: accom.status === 'ENABLED',
-            },
+            } as any,
           });
           created++;
 
