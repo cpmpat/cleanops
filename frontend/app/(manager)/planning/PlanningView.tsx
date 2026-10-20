@@ -115,13 +115,11 @@ const COMPACT_BELOW_PX = 1340;
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
 
-/** The three-day quick range named by its days: "Tuesday, Wednesday, Thursday" (cs "Úterý, Středa, Čtvrtek"). */
-function threeDayLabel(locale: string): string {
+/** The three-day quick range: "Today, Tomorrow, Thursday" — the third day by name (cs "Dnes, Zítra, Čtvrtek"). */
+function threeDayLabel(locale: string, today: string, tomorrow: string): string {
   const tag = LOCALE_TAG[locale] ?? 'en-GB';
-  return [0, 1, 2].map(n => {
-    const name = new Date(Date.now() + n * 86_400_000).toLocaleDateString(tag, { weekday: 'long', timeZone: APP_TIME_ZONE });
-    return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-  }).join(', ');
+  const name = new Date(Date.now() + 2 * 86_400_000).toLocaleDateString(tag, { weekday: 'long', timeZone: APP_TIME_ZONE });
+  return `${today}, ${tomorrow}, ${name.charAt(0).toLocaleUpperCase(tag)}${name.slice(1)}`;
 }
 
 /** "Monday, 18/10" (cs "pondělí, 18/10"), Prague calendar — the day this row's time belongs to. */
@@ -586,7 +584,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
           {quickBtn('today', tp.next24)}
           {quickBtn('tomorrow', tp.quickTomorrow)}
           {quickBtn('today2', tp.next48)}
-          {quickBtn('days3', threeDayLabel(locale))}
+          {quickBtn('days3', threeDayLabel(locale, tp.next24, tp.quickTomorrow))}
         </div>
 
         <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 transition', quick && 'opacity-50')}>
