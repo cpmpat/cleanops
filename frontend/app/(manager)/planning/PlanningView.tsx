@@ -42,12 +42,17 @@ function isLastMinute(b: PlanningBooking): boolean {
  */
 type QuickWindow = 'today' | 'tomorrow' | 'today2' | 'days3';
 
-/** Offsets from today (first and last day, inclusive). */
+/**
+ * Offsets from today (first and last day, inclusive). Since 20 Oct 2026 the
+ * three after Today look ahead and are named by their days:
+ * Today · Wednesday · Wednesday, Thursday · Wednesday, Thursday, Friday.
+ * (The keys are kept; only the windows moved.)
+ */
 const QUICK_DAYS: Record<QuickWindow, [number, number]> = {
   today: [0, 0],
   tomorrow: [1, 1],
-  today2: [0, 1],
-  days3: [0, 2],
+  today2: [1, 2],
+  days3: [1, 3],
 };
 
 /** First and last Prague day of a quick window, as YYYY-MM-DD (the API reads a bare date as that whole day). */
@@ -119,11 +124,18 @@ const COMPACT_BELOW_PX = 1440;
 /** Intl tags for the four UI languages — the day column reads "Thu 25 Sep" / "čt 25. 9." in the operator's language. */
 const LOCALE_TAG: Record<string, string> = { en: 'en-GB', cs: 'cs-CZ', ru: 'ru-RU', uk: 'uk-UA' };
 
-/** The three-day quick range: "Today, Tomorrow, Thursday" — the third day by name (cs "Dnes, Zítra, Čtvrtek"). */
-function threeDayLabel(locale: string, today: string, tomorrow: string): string {
+/** A quick window named by its days: "Wednesday", "Wednesday, Thursday", … (Prague calendar, operator's language). */
+function quickLabel(w: QuickWindow, locale: string): string {
   const tag = LOCALE_TAG[locale] ?? 'en-GB';
-  const name = new Date(Date.now() + 2 * 86_400_000).toLocaleDateString(tag, { weekday: 'long', timeZone: APP_TIME_ZONE });
-  return `${today}, ${tomorrow}, ${name.charAt(0).toLocaleUpperCase(tag)}${name.slice(1)}`;
+  const today = pragueDay(new Date().toISOString());
+  const [y, m, d] = today.split('-').map(Number);
+  const [first, last] = QUICK_DAYS[w];
+  const names: string[] = [];
+  for (let n = first; n <= last; n++) {
+    const name = new Date(Date.UTC(y, m - 1, d + n, 12)).toLocaleDateString(tag, { weekday: 'long', timeZone: 'UTC' });
+    names.push(name.charAt(0).toLocaleUpperCase(tag) + name.slice(1));
+  }
+  return names.join(', ');
 }
 
 /** "Monday, 18/10" (cs "pondělí, 18/10"), Prague calendar — the day this row's time belongs to. */
@@ -584,9 +596,9 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider mr-1">{byCheckOut ? tp.filterDeparture : tp.filterArrival}</span>
           {quickBtn('today', tp.next24)}
-          {quickBtn('tomorrow', tp.quickTomorrow)}
-          {quickBtn('today2', tp.next48)}
-          {quickBtn('days3', threeDayLabel(locale, tp.next24, tp.quickTomorrow))}
+          {quickBtn('tomorrow', quickLabel('tomorrow', locale))}
+          {quickBtn('today2', quickLabel('today2', locale))}
+          {quickBtn('days3', quickLabel('days3', locale))}
         </div>
 
         <div className={cn('grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 transition', quick && 'opacity-50')}>

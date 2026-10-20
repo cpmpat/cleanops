@@ -130,6 +130,10 @@ model User {
   updatedAt DateTime  @updatedAt
 
   cdmUserId       String?   @unique
+  /// Area the person works in (20 Oct 2026), e.g. "Praha". Set: they see only
+  /// that area's units — bookings in Planning, turnovers on the Dashboard and in
+  /// the cleaners' app, the unit list for cleaners. Null: every area.
+  area            String?
   position        String?
   isSyncManaged   Boolean   @default(true)
   lastSyncedAt    DateTime?
@@ -231,6 +235,10 @@ model Property {
   pmsPropertyId   String?
 
   accommodationType String?
+  /// Area the unit belongs to (20 Oct 2026): "Praha", "Karlovy Vary", … Taken
+  /// from the Avantio name on every accommodation sync — the part after the last
+  /// " - " without the district number ("… - Praha 3" → "Praha").
+  area              String?
   pmsStatus         String?
   pmsClean          Boolean  @default(false)
   pmsLastSyncedAt   DateTime?
@@ -254,6 +262,7 @@ model Property {
   @@unique([tenantId, pmsPropertyId])
   @@index([tenantId])
   @@index([tenantId, pmsStatus])
+  @@index([tenantId, area])
   @@map("properties")
 }
 

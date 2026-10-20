@@ -18,7 +18,7 @@ export class PropertiesController {
 
   @Get()
   findAll(@Req() req: TenantRequest) {
-    return this.service.findAll(req.tenantId!, !isOfficeRole(req.userRole as string));
+    return this.service.findAll(req.tenantId!, !isOfficeRole(req.userRole as string), req.userId);
   }
 
   @Get(':id')

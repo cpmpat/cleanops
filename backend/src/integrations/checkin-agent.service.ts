@@ -1,3 +1,4 @@
+import { propertyInArea } from '../common/area';
 import {
   BadRequestException,
   ConflictException,
@@ -712,7 +713,7 @@ export class CheckInAgentService {
    * from the previous one and a day footer. Without `agentIds`, every agent
    * who has something in the range.
    */
-  async route(tenantId: string, from: string, to: string, agentIds?: string[]) {
+  async route(tenantId: string, from: string, to: string, agentIds?: string[], area: string | null = null) {
     const DAY = /^\d{4}-\d{2}-\d{2}$/;
     if (!DAY.test(from) || !DAY.test(to) || to < from) throw new BadRequestException('from/to must be YYYY-MM-DD');
     if (Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1 > 7) {
@@ -730,6 +731,7 @@ export class CheckInAgentService {
         where: {
           tenantId, status: BookingStatus.CONFIRMED, isOwnerStay: false, checkInTime: range,
           checkInAgentId: agentIds?.length ? { in: agentIds } : { not: null },
+          ...propertyInArea(area),
         },
         orderBy: { checkInTime: 'asc' },
         select: {
@@ -739,7 +741,7 @@ export class CheckInAgentService {
         },
       }),
       this.prisma.booking.count({
-        where: { tenantId, status: BookingStatus.CONFIRMED, isOwnerStay: false, checkInTime: range, checkInAgentId: null },
+        where: { tenantId, status: BookingStatus.CONFIRMED, isOwnerStay: false, checkInTime: range, checkInAgentId: null, ...propertyInArea(area) },
       }),
     ]);
 

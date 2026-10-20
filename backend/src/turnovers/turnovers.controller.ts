@@ -32,13 +32,14 @@ export class TurnoversController {
     @Query('to') to?: string,
   ) {
     if (from && to) {
-      return this.service.findByDateRange(req.tenantId!, from, to);
+      return this.service.findByDateRange(req.tenantId!, from, to, req.userId);
     }
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
     return this.service.findByDate(
       req.tenantId!,
       date || todayInAppZone(),
       userId,
+      req.userId,
     );
   }
 
@@ -48,7 +49,7 @@ export class TurnoversController {
   @ApiOperation({ summary: 'Get turnovers available to claim (pool)' })
   getPool(@Req() req: TenantRequest) {
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
-    return this.service.getPool(req.tenantId!, userId);
+    return this.service.getPool(req.tenantId!, userId, req.userId);
   }
 
   @Get('pool/today-arrivals/count')
@@ -63,7 +64,7 @@ export class TurnoversController {
   })
   getTodayArrivalCount(@Req() req: TenantRequest) {
     const userId = req.userRole === 'CLEANER' ? req.userId : undefined;
-    return this.service.getTodayArrivalPoolCount(req.tenantId!, userId);
+    return this.service.getTodayArrivalPoolCount(req.tenantId!, userId, req.userId);
   }
 
   @Get('mine')

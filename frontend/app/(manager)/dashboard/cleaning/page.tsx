@@ -153,8 +153,14 @@ export default function DashboardPage() {
         : null;
       return note ? <span className="text-[11.5px] text-ink-muted">{note}</span> : null;
     }
-    const when = state === 'IN_PROGRESS' && r.startedAt ? `${td.startedAt} ${formatTime(r.startedAt)}`
-      : state === 'DONE' && r.completedAt ? `${td.doneAt} ${formatTime(r.completedAt)}`
+    // Time only when it happened today; otherwise the date too ("done 19/10 13:15").
+    const stamp = (iso: string) => {
+      if (pragueDay(iso) === today) return formatTime(iso);
+      const [, mm, dd] = pragueDay(iso).split('-');
+      return `${dd}/${mm} ${formatTime(iso)}`;
+    };
+    const when = state === 'IN_PROGRESS' && r.startedAt ? `${td.startedAt} ${stamp(r.startedAt)}`
+      : state === 'DONE' && r.completedAt ? `${td.doneAt} ${stamp(r.completedAt)}`
       : null;
     return (
       <span className="flex flex-col gap-0.5">

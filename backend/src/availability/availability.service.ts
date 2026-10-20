@@ -1,3 +1,4 @@
+import { areaOf, propertyInArea } from '../common/area';
 import {
   BadRequestException,
   ConflictException,
@@ -462,7 +463,8 @@ export class AvailabilityService {
    * whose time is our 15:00 default, so the page can show them apart instead
    * of piling them all onto the 15:00 hour as if they were real.
    */
-  async board(tenantId: string, from: string, to: string) {
+  async board(tenantId: string, from: string, to: string, viewerId?: string) {
+    const area = await areaOf(this.prisma, tenantId, viewerId);
     assertDay(from);
     assertDay(to);
     if (to < from) throw new BadRequestException('to is before from');
@@ -488,6 +490,7 @@ export class AvailabilityService {
             gte: startOfDayInAppZone(from),
             lt: startOfDayInAppZone(addDays(to, 1)),
           },
+          ...propertyInArea(area),
         },
         select: {
           id: true, bookingRef: true, accommodationName: true, checkInTime: true, checkInSource: true,
