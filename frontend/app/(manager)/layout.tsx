@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { LocaleProvider, useLocale } from '@/lib/locale-context';
 import { messageStrings } from '@/i18n/messages';
 import { NewVersionPrompt } from '@/components/NewVersionPrompt';
-import { datasets as datasetsApi, newsfeed as newsfeedApi, tasks as tasksApi, NEWSFEED_CHANGED, TASKS_CHANGED, type DatasetSummary } from '@/lib/api';
+import { datasets as datasetsApi, newsfeed as newsfeedApi, tasks as tasksApi, controlling as controllingApi, NEWSFEED_CHANGED, TASKS_CHANGED, type DatasetSummary, type ControllingSource } from '@/lib/api';
 import { taskStrings } from '@/i18n/tasks';
 import { useSocket } from '@/lib/socket';
 import { homeFor } from '@/lib/home';
@@ -198,6 +198,16 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     datasetsApi.list().then(setDataLists).catch(() => {});
   }, [user]);
 
+  // Controlling unfolds into its tables, one level (manager only, 20 Oct 2026).
+  const onControlling = pathname?.startsWith('/controlling') ?? false;
+  const [controllingOpen, setControllingOpen] = useState(onControlling);
+  useEffect(() => { if (onControlling) setControllingOpen(true); }, [onControlling]);
+  const [controllingSources, setControllingSources] = useState<ControllingSource[]>([]);
+  useEffect(() => {
+    if (user?.role !== 'MANAGER') return;
+    controllingApi.sources().then(setControllingSources).catch(() => {});
+  }, [user]);
+
   // Planning unfolds into the two sides of a stay. Each tab edits only its
   // own time (Check-In → arrival, Check-Out → departure); the other is shown
   // read-only, so two desk operators cannot fight over the same field.
@@ -357,11 +367,13 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                   const isData = href === '/datasets';
                   const isPlanning = href === '/planning';
                   const isNotify = href === '/notify';
+                  const isControlling = href === '/controlling';
                   const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : null;
-                  const expandable = !!sub || (isData && dataLists.length > 0);
-                  const open = isData ? dataOpen : isNotify ? notifyOpen : planningOpen;
+                  const expandable = !!sub || (isData && dataLists.length > 0) || (isControlling && controllingSources.length > 0);
+                  const open = isData ? dataOpen : isNotify ? notifyOpen : isControlling ? controllingOpen : planningOpen;
                   const toggle = isData ? () => setDataOpen(o => !o)
                     : isNotify ? () => setNotifyOpen(o => !o)
+                    : isControlling ? () => setControllingOpen(o => !o)
                     : () => setPlanningOpen(o => !o);
                   const badge = href === '/newsfeed' ? newsUnread : href === '/tasks' ? tasksOnMe : 0;
                   return (
@@ -409,6 +421,13 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                             </TreeLeaf>
                           ))}
                         </TreeBranch>
+                      )}
+
+                      {/* Controlling → its tables (one level) */}
+                      {isControlling && controllingOpen && controllingSources.length > 0 && (
+                        <Suspense fallback={null}>
+                          <ControllingSubnav sources={controllingSources} on={onControlling} />
+                        </Suspense>
                       )}
 
                       {/* Data → CDM → the lists in it */}
@@ -544,6 +563,21 @@ function Breadcrumb({ section, item, itemHref, tab, lists, onData }: {
  * force every manager page to bail out of prerendering, which is what failed
  * the Vercel build.
  */
+/** Controlling → its tables: one level, no source group (unlike Data → CDM → lists). */
+function ControllingSubnav({ sources, on }: { sources: ControllingSource[]; on: boolean }) {
+  const searchParams = useSearchParams();
+  const active = searchParams?.get('s') ?? sources[0]?.key ?? '';
+  return (
+    <TreeBranch>
+      {sources.map((s, i) => (
+        <TreeLeaf key={s.key} last={i === sources.length - 1}>
+          <SubLink href={`/controlling?s=${encodeURIComponent(s.key)}`} icon={Table2} label={s.label} on={on && active === s.key} />
+        </TreeLeaf>
+      ))}
+    </TreeBranch>
+  );
+}
+
 function DataSubnav({ lists, onData }: { lists: DatasetSummary[]; onData: boolean }) {
   const searchParams = useSearchParams();
   const activeList = searchParams?.get('d') ?? lists[0]?.key ?? '';

@@ -1,6 +1,6 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowDown, ArrowUp, Download, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { controlling as api, type ControllingSource, type ControllingTable } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -18,9 +18,21 @@ import { cn } from '@/lib/utils';
 const PAGE = 100;
 const NUMERIC = new Set(['INTEGER', 'INT64', 'FLOAT', 'FLOAT64', 'NUMERIC', 'BIGNUMERIC']);
 
+/** useSearchParams() needs a Suspense boundary above it for the build to prerender this route. */
 export default function ControllingPage() {
+  return (
+    <Suspense fallback={null}>
+      <ControllingView />
+    </Suspense>
+  );
+}
+
+function ControllingView() {
   const { user } = useAuth();
   const router = useRouter();
+  // Which table: ?s=<source>, set by the menu (Controlling → its tables).
+  const params = useSearchParams();
+  const wanted = params?.get('s') ?? '';
   const [sources, setSources] = useState<ControllingSource[]>([]);
   const [active, setActive] = useState('');
   const [table, setTable] = useState<ControllingTable | null>(null);
@@ -35,9 +47,14 @@ export default function ControllingPage() {
 
   useEffect(() => {
     api.sources()
-      .then((s) => { setSources(s); if (s.length) setActive((a) => a || s[0].key); })
+      .then(setSources)
       .catch((e: any) => setError(e?.message ?? 'Could not load the sources'));
   }, []);
+  useEffect(() => {
+    if (!sources.length) return;
+    const next = sources.some((x) => x.key === wanted) ? wanted : sources[0].key;
+    if (next !== active) { setActive(next); setTable(null); setQ(''); setSort(null); }
+  }, [sources, wanted, active]);
 
   const load = useCallback(async (refresh = false) => {
     if (!active) return;
@@ -102,27 +119,12 @@ export default function ControllingPage() {
     <div className="p-6 max-w-full flex flex-col gap-4">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-ink-muted">Records</span>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Controlling</h1>
-          <p className="text-sm text-ink-muted">Data from outside CleanOps, read-only. {table && <span className="font-mono text-[12px]">{table.origin}</span>}</p>
+          <span className="text-xs text-ink-muted">Records · Controlling</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">{table?.label ?? sources.find((x) => x.key === active)?.label ?? 'Controlling'}</h1>
+          <p className="text-sm text-ink-muted">
+            Read-only, from outside CleanOps{table && <> · <span className="font-mono text-[12px]">{table.origin}</span></>}. Re-read at most every 10 minutes; ↻ reads it now.
+          </p>
         </div>
-        {sources.length > 0 && (
-          <div role="tablist" aria-label="Source" className="flex flex-wrap gap-1 bg-white border border-surface-border rounded-[10px] p-[3px]">
-            {sources.map((s) => (
-              <button
-                key={s.key}
-                role="tab"
-                aria-selected={active === s.key}
-                onClick={() => { setActive(s.key); setTable(null); setQ(''); setSort(null); }}
-                title={s.origin}
-                className={cn('rounded-lg px-3 py-1.5 text-[13px] transition',
-                  active === s.key ? 'bg-accent text-white font-semibold' : 'text-ink-soft hover:bg-surface-sunken')}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {table && (
@@ -139,6 +141,12 @@ export default function ControllingPage() {
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
+      )}
+
+      {table && table.missing.length > 0 && (
+        <p className="rounded-xl bg-sand-soft px-4 py-2.5 text-[12.5px] text-sand-deep">
+          Not in the source table, so not shown: <span className="font-mono">{table.missing.join(', ')}</span>
+        </p>
       )}
 
       <section className="bg-white border border-surface-border rounded-2xl flex flex-col min-w-0 overflow-hidden">

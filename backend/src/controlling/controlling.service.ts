@@ -15,6 +15,8 @@ import { PrismaService } from '../common/prisma.service';
 export interface ControllingColumn { key: string; type: string }
 export interface ControllingTable {
   source: string;
+  /** Wanted columns the BigQuery table does not have (skipped, not an error). */
+  missing: string[];
   label: string;
   origin: string;
   columns: ControllingColumn[];
@@ -27,12 +29,24 @@ export interface ControllingTable {
 const MAX_ROWS = 20_000;
 const CACHE_MS = 10 * 60_000;
 
-const SOURCES: Record<string, { label: string; project: string; dataset: string; table: string }> = {
-  'chekin-housing': {
-    label: 'Chekin Housing',
+/**
+ * `columns`: which columns to pull, in display order (the first is pinned on
+ * the left). A name like `location_city` that is not a top-level column is
+ * read from the record `location`, field `city`. Leave `columns` out to pull
+ * every column of the table.
+ */
+const SOURCES: Record<string, { label: string; project: string; dataset: string; table: string; columns?: string[] }> = {
+  'chekin-accommodation': {
+    label: 'Chekin Accommodation',
     project: 'avantio-intergation',
     dataset: 'chekin_data',
     table: 'housing',
+    // 20 Oct 2026 (Patrik): these only, name first.
+    columns: [
+      'name', 'created_at', 'external_id', 'id', 'identity_verification',
+      'is_auto_police_registration_enabled', 'is_deactivated', 'is_police_registration_enabled',
+      'is_smart_lock_enabled', 'is_stat_registration_enabled', 'iv_for_all_guests', 'location_city',
+    ],
   },
 };
 
@@ -90,10 +104,26 @@ export class ControllingService {
     const bq = this.client(s.project);
     let meta: any;
     let rows: any[];
+    const columns: ControllingColumn[] = [];
+    const missing: string[] = [];
     try {
       [meta] = await bq.dataset(s.dataset, { projectId: s.project }).table(s.table).getMetadata();
+      const fields: Array<{ name: string; type: string; fields?: Array<{ name: string; type: string }> }> = meta?.schema?.fields ?? [];
+      // Only names taken from the schema reach the SQL — never user input.
+      const select: string[] = [];
+      for (const want of s.columns ?? fields.map((f) => f.name)) {
+        const top = fields.find((f) => f.name === want);
+        if (top) { select.push(`\`${top.name}\``); columns.push({ key: want, type: String(top.type ?? 'STRING') }); continue; }
+        // location_city → location.city
+        const cut = want.indexOf('_');
+        const rec = cut > 0 ? fields.find((f) => f.name === want.slice(0, cut) && (f.type === 'RECORD' || f.type === 'STRUCT')) : undefined;
+        const sub = rec?.fields?.find((x) => x.name === want.slice(cut + 1));
+        if (rec && sub) { select.push(`\`${rec.name}\`.\`${sub.name}\` AS \`${want}\``); columns.push({ key: want, type: String(sub.type ?? 'STRING') }); continue; }
+        missing.push(want);
+      }
+      if (!select.length) throw new Error(`none of the wanted columns exist in ${s.table}`);
       [rows] = await bq.query({
-        query: `SELECT * FROM \`${s.project}.${s.dataset}.${s.table}\` LIMIT ${MAX_ROWS + 1}`,
+        query: `SELECT ${select.join(', ')} FROM \`${s.project}.${s.dataset}.${s.table}\` LIMIT ${MAX_ROWS + 1}`,
         location: meta?.location,
       });
     } catch (err: any) {
@@ -111,11 +141,11 @@ export class ControllingService {
       }
       throw new ServiceUnavailableException(`BigQuery error: ${msg.slice(0, 300)}`);
     }
-    const fields: Array<{ name: string; type: string }> = meta?.schema?.fields ?? [];
-    const columns = fields.map((f) => ({ key: f.name, type: String(f.type ?? 'STRING') }));
+
     const truncated = rows.length > MAX_ROWS;
     const out: ControllingTable = {
       source,
+      missing,
       label: s.label,
       origin: `BigQuery · ${s.project}.${s.dataset}.${s.table}`,
       columns,

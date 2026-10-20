@@ -1501,6 +1501,8 @@ export const NEWSFEED_CHANGED = 'newsfeed:changed';
 export interface ControllingSource { key: string; label: string; origin: string }
 export interface ControllingTable {
   source: string;
+  /** Wanted columns the source table does not have (skipped). */
+  missing: string[];
   label: string;
   origin: string;
   columns: { key: string; type: string }[];
