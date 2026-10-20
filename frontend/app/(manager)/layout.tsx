@@ -37,8 +37,9 @@ const ROLE_PATHS: Record<string, string[]> = {
   /** Everything else is off for ADMIN in the UI (30 Sep 2026); the API still
    *  lets ADMIN through every role check. MANAGER keeps the full menu. */
   ADMIN:              ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets', '/notify'],
-  /** Notifications off for FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE (15 Oct 2026). */
-  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/datasets'],
+  /** Notifications off for FRONT_DESK_MANAGER, OPERATIONS_ASSISTANT and EVIDENCE (15 Oct 2026).
+   *  Dashboard → Cleaning on (20 Oct 2026); its data is GET /turnovers (office roles), Praha-scoped by area. */
+  FRONT_DESK_MANAGER: ['/newsfeed', '/planning', '/tasks', '/dashboard', '/datasets'],
   /** FRONT_DESK_MANAGER's modules (15 Oct 2026). */
   OPERATIONS_ASSISTANT: ['/newsfeed', '/planning', '/tasks', '/datasets'],
   FRONT_DESK:         ['/newsfeed', '/planning', '/tasks', '/datasets'],

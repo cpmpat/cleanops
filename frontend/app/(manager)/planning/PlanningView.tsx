@@ -93,17 +93,17 @@ const PUSH_CONCURRENCY = 3;
  * time (check-in on Check-In, check-out on Check-Out — the other one is not
  * shown, 20 Oct 2026) · row actions · cleaner.
  */
-const GRID = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_3.5rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_3.5rem_4.75rem_8.75rem_4rem_13rem] items-center gap-x-3';
 /**
  * With the Assigned view open the list loses ~26rem. Guests, setup and the
  * locked check-out column step aside so the unit name has the room
  * (Check-In tab only — the panel never opens on Check-Out).
  */
 // Compact also shortens the day ("Wed, 21/10") and the cleaner column, so a 1280–1440 px laptop keeps ~220 px for the unit.
-const GRID_COMPACT = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.75rem_4rem_10rem] items-center gap-x-3';
+const GRID_COMPACT = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 /** The same two grids with the optional guest-phone column (Additional attributes) after the unit setup. */
-const GRID_PHONE = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_9.5rem_3.5rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
-const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.5rem_8.75rem_4rem_10rem] items-center gap-x-3';
+const GRID_PHONE = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_9.5rem_3.5rem_4.75rem_8.75rem_4rem_13rem] items-center gap-x-3';
+const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 const gridFor = (compact: boolean, phone: boolean) =>
   compact ? (phone ? GRID_COMPACT_PHONE : GRID_COMPACT) : (phone ? GRID_PHONE : GRID);
 
@@ -1043,13 +1043,14 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                         ? <span className="text-xs text-sand-deep font-medium">⚠ Unassigned</span>
                         : <span className="text-xs text-ink-faint" />
                     ) : (
-                      <div className="flex items-center gap-1.5">
+                      // Full name (20 Oct 2026); two cleaners stack instead of sitting side by side.
+                      <div className="flex flex-col items-end gap-1 min-w-0">
                         {b.assignments.slice(0, 2).map(a => (
-                          <div key={a.id} className="flex items-center gap-1 bg-surface-sunken rounded-full pl-1 pr-2.5 py-1">
-                            <div className="w-5 h-5 rounded-full bg-ink text-white text-[10px] flex items-center justify-center font-bold">
+                          <div key={a.id} className="flex items-center gap-1 max-w-full bg-surface-sunken rounded-full pl-1 pr-2.5 py-1">
+                            <div className="w-5 h-5 rounded-full bg-ink text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">
                               {a.userName[0]}
                             </div>
-                            <span className="text-xs text-ink-soft max-w-[60px] truncate">{a.userName.split(' ')[0]}</span>
+                            <span className="text-xs text-ink-soft leading-tight break-words min-w-0" title={a.userName}>{a.userName}</span>
                             {mayAssign && <button
                               onClick={() => openAssign(b, a.userId)}
                               title={`Reassign ${a.userName}`}
