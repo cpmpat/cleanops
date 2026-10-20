@@ -10,6 +10,7 @@ import {
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
   LogIn, Clock, Bell, History, Newspaper, Layers, KanbanSquare,
   Gauge,
+  Sparkles,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
@@ -220,6 +221,14 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     { href: '/planning/agents',    icon: Clock,  label: availabilityStrings[locale]?.tabLabel ?? 'Agents' },
   ];
 
+  // Dashboard unfolds into its views; Cleaning is the first (20 Oct 2026).
+  const onDashboard = pathname?.startsWith('/dashboard') ?? false;
+  const [dashboardOpen, setDashboardOpen] = useState(onDashboard);
+  useEffect(() => { if (onDashboard) setDashboardOpen(true); }, [onDashboard]);
+  const dashboardTabs = [
+    { href: '/dashboard/cleaning', icon: Sparkles, label: (t.dashboard as any).navCleaning ?? 'Cleaning' },
+  ];
+
   // Notifications unfolds like Planning; Data is its first (and for now only)
   // section — changes to the CDM lists. /notify, not /notifications: that path
   // belongs to the cleaner app's inbox.
@@ -326,7 +335,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
 
   // Where am I: section › item › tab, for the top bar.
   const current = navItems.find((i) => pathname === i.href || pathname?.startsWith(i.href + '/'));
-  const currentTab = [...planningTabs, ...notifyTabs].find((x) => pathname === x.href || pathname?.startsWith(x.href + '/'));
+  const currentTab = [...planningTabs, ...notifyTabs, ...dashboardTabs].find((x) => pathname === x.href || pathname?.startsWith(x.href + '/'));
   const sectionLabels = SECTION_LABEL[locale] ?? SECTION_LABEL.en;
   const searchStrings = SEARCH_STRINGS[locale] ?? SEARCH_STRINGS.en;
 
@@ -368,11 +377,13 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                   const isPlanning = href === '/planning';
                   const isNotify = href === '/notify';
                   const isControlling = href === '/controlling';
-                  const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : null;
+                  const isDashboard = href === '/dashboard';
+                  const sub = isPlanning ? planningTabs : isNotify ? notifyTabs : isDashboard ? dashboardTabs : null;
                   const expandable = !!sub || (isData && dataLists.length > 0) || (isControlling && controllingSources.length > 0);
-                  const open = isData ? dataOpen : isNotify ? notifyOpen : isControlling ? controllingOpen : planningOpen;
+                  const open = isData ? dataOpen : isNotify ? notifyOpen : isControlling ? controllingOpen : isDashboard ? dashboardOpen : planningOpen;
                   const toggle = isData ? () => setDataOpen(o => !o)
                     : isNotify ? () => setNotifyOpen(o => !o)
+                    : isDashboard ? () => setDashboardOpen(o => !o)
                     : isControlling ? () => setControllingOpen(o => !o)
                     : () => setPlanningOpen(o => !o);
                   const badge = href === '/newsfeed' ? newsUnread : href === '/tasks' ? tasksOnMe : 0;

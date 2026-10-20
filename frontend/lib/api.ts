@@ -205,12 +205,9 @@ export interface PlanningBooking {
   checkOutTime?: string;
   /** Guest name from the PMS payload; present on the planning list only. */
   guestName?: string;
-  /** Guest phone: the desk's number if one was entered in Planning, else the PMS payload's (Oct 2026). */
+  /** Guest phone: the desk's number if one was entered in Planning, else the one in the Avantio booking. Kept in CleanOps. */
   guestPhone?: string | null;
   guestPhoneSource?: 'DESK' | 'PMS' | null;
-  /** Last successful push of the desk's number to Avantio, and Avantio's refusal if the last push failed. */
-  guestPhonePushedAt?: string | null;
-  guestPhonePushError?: string | null;
   /** The owner is arriving, not a guest — same flag the cleaner's card crowns. */
   isOwnerStay?: boolean;
   /** Setup requests recorded by the front desk — local only, never sent to the PMS. */
@@ -1386,9 +1383,9 @@ export const integrations = {
     /** Crib / separate beds — local only, never sent to the PMS. */
     setup: (bookingId: string, flags: { needsCrib?: boolean; separateBeds?: boolean }) =>
       patch<{ success: boolean }>(`/integrations/planning/setup/${bookingId}`, flags),
-    /** Guest phone from the desk: saved in CleanOps, then pushed to Avantio. null clears ours (PMS number shows again). */
+    /** Guest phone from the desk: stored on the booking in CleanOps (not sent to Avantio). null clears it — Avantio's number shows again. */
     setGuestPhone: (bookingId: string, phone: string | null) =>
-      patch<{ success: boolean; guestPhone: string | null; guestPhoneSource: 'DESK' | 'PMS' | null; pushed: boolean; pushError: string | null }>(
+      patch<{ success: boolean; guestPhone: string | null; guestPhoneSource: 'DESK' | 'PMS' | null }>(
         `/integrations/planning/guest-phone/${bookingId}`, { phone },
       ),
     /** Times are "HH:mm" in Europe/Prague; the backend anchors them on the booking's own day. */

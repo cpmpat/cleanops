@@ -431,8 +431,6 @@ export class BookingSyncService {
       // Desk-entered phone wins over the PMS payload (Oct 2026).
       guestPhone: (b as any).guestPhone ?? guestPhoneFromRaw(b.pmsRawData),
       guestPhoneSource: (b as any).guestPhone ? 'DESK' : guestPhoneFromRaw(b.pmsRawData) ? 'PMS' : null,
-      guestPhonePushedAt: (b as any).guestPhonePushedAt ?? null,
-      guestPhonePushError: (b as any).guestPhonePushError ?? null,
       isOwnerStay: b.isOwnerStay,
       needsCrib: (b as any).needsCrib ?? false,
       separateBeds: (b as any).separateBeds ?? false,
@@ -533,11 +531,11 @@ export class BookingSyncService {
   /**
    * The desk sets (or clears) a guest's phone in Planning (Oct 2026).
    *
-   * Saved here first — the agent sees it at once whatever the PMS says — then
-   * pushed to Avantio. A refused push is recorded on the booking and returned,
-   * not thrown: the number is still right for our people, and the desk sees
-   * that Avantio did not take it. An empty value clears ours and the PMS
-   * number shows again (nothing is pushed for a clear).
+   * Stored on the booking in CleanOps only — never sent to Avantio (decided
+   * 20 Oct 2026: Avantio accepts guest changes only together with the guest's
+   * ID document). The number shown is the desk's if one was entered, else the
+   * one in the Avantio booking (pulled with every sync). An empty value clears
+   * the desk's number and Avantio's shows again.
    */
   async updateGuestPhone(tenantId: string, bookingId: string, rawPhone: string | null, actorId?: string) {
     const phone = (rawPhone ?? '').replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
@@ -546,7 +544,7 @@ export class BookingSyncService {
     }
     const b = await this.prisma.booking.findFirst({
       where: { tenantId, id: bookingId },
-      select: { id: true, pmsBookingId: true, bookingRef: true, accommodationName: true, pmsRawData: true, guestPhone: true } as any,
+      select: { id: true, bookingRef: true, accommodationName: true, pmsRawData: true, guestPhone: true } as any,
     }) as any;
     if (!b) throw new NotFoundException('Booking not found');
 
@@ -555,8 +553,8 @@ export class BookingSyncService {
       await tx.booking.update({
         where: { id: b.id },
         data: (phone
-          ? { guestPhone: phone, guestPhoneSetAt: now, guestPhoneSetById: actorId ?? null, guestPhonePushError: null }
-          : { guestPhone: null, guestPhoneSetAt: now, guestPhoneSetById: actorId ?? null, guestPhonePushError: null, guestPhonePushedAt: null }) as any,
+          ? { guestPhone: phone, guestPhoneSetAt: now, guestPhoneSetById: actorId ?? null }
+          : { guestPhone: null, guestPhoneSetAt: now, guestPhoneSetById: actorId ?? null }) as any,
       });
       await tx.auditEvent.create({
         data: {
@@ -572,30 +570,6 @@ export class BookingSyncService {
       });
     });
 
-    let pushed = false;
-    let pushError: string | null = null;
-    if (phone && b.pmsBookingId) {
-      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-      const config = tenant ? pmsConfigFor(tenant) : null;
-      const adapter = this.getAdapter(tenant?.pmsProvider || 'avantio');
-      if (!config || !adapter.updateBookingGuestPhone) {
-        pushError = 'PMS not configured — saved in CleanOps only';
-      } else {
-        try {
-          await adapter.updateBookingGuestPhone(b.pmsBookingId, phone, config);
-          pushed = true;
-        } catch (err: any) {
-          const status = err?.response?.status;
-          const detail = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : err?.message;
-          pushError = `Avantio refused${status ? ` (${status})` : ''}: ${detail ?? 'unknown error'}`;
-        }
-      }
-      await this.prisma.booking.update({
-        where: { id: b.id },
-        data: (pushed ? { guestPhonePushedAt: new Date(), guestPhonePushError: null } : { guestPhonePushError: pushError }) as any,
-      });
-    }
-
     this.gateway?.emitToTenant(tenantId, 'event:updated', {
       source: 'planning-guest-phone', bookingId: b.id, at: new Date().toISOString(),
     });
@@ -603,8 +577,6 @@ export class BookingSyncService {
       success: true,
       guestPhone: phone || guestPhoneFromRaw(b.pmsRawData),
       guestPhoneSource: phone ? 'DESK' : guestPhoneFromRaw(b.pmsRawData) ? 'PMS' : null,
-      pushed,
-      pushError,
     };
   }
 
