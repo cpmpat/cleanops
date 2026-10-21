@@ -239,6 +239,10 @@ model Property {
   /// from the Avantio name on every accommodation sync — the part after the last
   /// " - " without the district number ("… - Praha 3" → "Praha").
   area              String?
+  /// Set by hand when a unit belongs to another area for cleaning than its name
+  /// says (21 Oct 2026: "Pražská 78, villa Zlatý Slavík - Jevany" → Praha). The
+  /// sync keeps `area` equal to this when set and never writes it itself.
+  areaOverride      String?
   pmsStatus         String?
   pmsClean          Boolean  @default(false)
   pmsLastSyncedAt   DateTime?
