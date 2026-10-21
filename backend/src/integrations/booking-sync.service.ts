@@ -798,7 +798,8 @@ export class BookingSyncService {
 
         if (existing) {
           // Update name, type, status, clean flag
-          const area = areaFromName(accom.name);
+          // A hand-set areaOverride wins over the name (the name stays as Avantio has it).
+          const area = (existing as any).areaOverride ?? areaFromName(accom.name);
           const hasChanges =
             (existing as any).area !== area ||
             existing.name !== accom.name ||

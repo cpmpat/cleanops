@@ -349,17 +349,17 @@ export default function NewsfeedPage() {
               );
             })}
           </section>
-          {/* Where the news comes from — no heading, the info mark and one plain sentence. */}
-          <section className="bg-white border border-surface-border rounded-2xl px-4 py-3.5 flex flex-col gap-3">
-            <div className="flex items-start gap-3">
-              <InfoBubble size={34} className="text-accent flex-shrink-0" />
-              <p className="text-[13px] text-ink-soft leading-relaxed">
-                These updates come from our apartment list. Whenever something important changes there — a unit
-                goes online on Airbnb or Booking.com, is taken off sale, or moves to another pricing group — it
-                appears here. Click a unit&apos;s name to see all its details.
-              </p>
-            </div>
-            <Link href="/datasets?d=accommodation" className="self-start rounded-[9px] bg-[#F3F0E9] px-3 py-1.5 text-[13px] font-semibold text-accent hover:bg-surface-sunken">
+          {/* Where the news comes from — no heading. The info mark sits in the top-right
+              corner, three quarters of it above the text; text and button share the left edge. */}
+          <section className="relative bg-white border border-surface-border rounded-2xl px-4 pt-[38px] pb-3.5 flex flex-col items-start gap-3">
+            <InfoBubble size={34} className="absolute top-3 right-4 text-accent" />
+            <p className="text-[13px] text-ink-soft leading-relaxed">
+              {/* Keeps the first line clear of the icon's lower quarter. */}
+              <span aria-hidden className="float-right w-[38px] h-[10px]" />
+              These updates come from our Accommodation table. Whenever something important changes there, it
+              appears here. Click a unit&apos;s name to see all its details.
+            </p>
+            <Link href="/datasets?d=accommodation" className="rounded-[9px] bg-[#F3F0E9] px-3 py-1.5 text-[13px] font-semibold text-accent hover:bg-surface-sunken">
               Data › CDM › Accommodation
             </Link>
           </section>
