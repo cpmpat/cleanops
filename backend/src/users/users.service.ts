@@ -1,5 +1,6 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { OffboardingService } from '../offboarding/offboarding.service';
 import { UserRole, Language } from '@prisma/client';
 
 interface CreateUserDto {
@@ -36,7 +37,7 @@ const UPDATABLE_FIELDS = ['name', 'role', 'language', 'isActive', 'mobileNumber'
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private offboarding: OffboardingService) {}
 
   async create(tenantId: string, dto: CreateUserDto) {
     const existing = await this.prisma.user.findUnique({
@@ -93,7 +94,7 @@ export class UsersService {
     for (const k of UPDATABLE_FIELDS) {
       if ((input as any)?.[k] !== undefined) (dto as any)[k] = (input as any)[k];
     }
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...dto,
@@ -103,6 +104,9 @@ export class UsersService {
       },
       select: USER_PUBLIC_SELECT,
     });
+    // Deactivated: cut access now and hand back open cleanings, check-ins and waits.
+    if (dto.isActive === false) await this.offboarding.release(tenantId, userId, 'app');
+    return updated;
   }
 
   /**

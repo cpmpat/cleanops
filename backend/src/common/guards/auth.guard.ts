@@ -58,6 +58,11 @@ export async function accountStatus(prisma: PrismaService, userId: string): Prom
   return entry;
 }
 
+/** Drop a cached status at once (deactivation), so the next request sees it. */
+export function forgetAccountStatus(userId: string) {
+  statusCache.delete(userId);
+}
+
 // ─── Auth Guard ───
 @Injectable()
 export class AuthGuard implements CanActivate {

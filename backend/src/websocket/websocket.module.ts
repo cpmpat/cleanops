@@ -97,6 +97,11 @@ export class CleanOpsGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(`user:${userId}`).emit(event, data);
   }
 
+  /** Close every open socket of a person (deactivated account). */
+  disconnectUser(userId: string) {
+    this.server.in(`user:${userId}`).disconnectSockets(true);
+  }
+
   /** Event created/updated from PMS sync */
   notifyEventCreated(tenantId: string, event: any) {
     this.emitToTenant(tenantId, 'event:created', event);

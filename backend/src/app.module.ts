@@ -17,6 +17,7 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { JobsModule } from './jobs/jobs.module';
 import { StaffSyncModule } from './staff-sync/staff-sync.module';
+import { OffboardingModule } from './offboarding/offboarding.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { StorageModule } from './storage/storage.module';
 import { StreamsModule } from './streams/streams.module';
@@ -51,6 +52,7 @@ import { TasksModule } from './tasks/tasks.module';
     IntegrationsModule,
     JobsModule,
     StaffSyncModule,
+    OffboardingModule,
     IncidentsModule,
     StorageModule,
     StreamsModule,
