@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OffboardingService } from '../offboarding/offboarding.service';
 import { PrismaService } from '../common/prisma.service';
 import { BigQueryClient, CdmUserRow } from './bigquery.client';
 import { resolveRole } from './position-mapping';
@@ -23,6 +24,7 @@ export class StaffSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bq: BigQueryClient,
+    private readonly offboarding: OffboardingService,
   ) {}
 
   async sync(tenantId: string): Promise<SyncResult> {
@@ -227,6 +229,7 @@ export class StaffSyncService {
           } as any,
         },
       });
+      await this.offboarding.release(tenantId, u.id, 'staff_sync');
     }
 
     return toDisable.length;
