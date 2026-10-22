@@ -14,6 +14,8 @@
 // Usage:
 //   ./scripts/prod.sh set:row-filter -- --tenant prague-stays --dataset accommodation --field status --values Valid
 //   ./scripts/prod.sh set:row-filter -- --tenant prague-stays --dataset accommodation --field status --values Valid --apply
+//   ./scripts/prod.sh set:row-filter -- --tenant prague-stays --dataset user --field validity --values Valid
+//   ./scripts/prod.sh set:row-filter -- --tenant prague-stays --dataset owner --field validity --values Valid
 // Options:
 //   --except MANAGER,DIRECTOR,ADMIN   roles left unfiltered (default)
 //   --remove                          delete this field's filter for the roles instead
@@ -39,7 +41,13 @@ const { values } = parseArgs({
 });
 
 /** Data lists backed by a table, and the table. */
-const TABLE: Record<string, string> = { accommodation: 'cdm_accommodations' };
+const TABLE: Record<string, string> = {
+  accommodation: 'cdm_accommodations',
+  // 22 Oct 2026: User and Owner filtered on their "validity" column too.
+  user: 'cdm_users',
+  owner: 'cdm_owners',
+  oxpoint: 'cdm_ox_point',
+};
 
 if (!values.tenant || !values.dataset || !values.field || (!values.values && !values.remove)) {
   console.error('Usage: pnpm set:row-filter -- --tenant <slug> --dataset accommodation --field status --values Valid[,Other] [--except R1,R2] [--remove] [--apply]');

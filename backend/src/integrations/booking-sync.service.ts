@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional, BadRequestException, NotFoundException } from '@nestjs/common';
+import { intlPhone } from '../common/phone';
 import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
 import { areaFromName, propertyInArea } from '../common/area';
@@ -540,9 +541,10 @@ export class BookingSyncService {
    * the desk's number and Avantio's shows again.
    */
   async updateGuestPhone(tenantId: string, bookingId: string, rawPhone: string | null, actorId?: string) {
-    const phone = (rawPhone ?? '').replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
-    if (phone && !/^\+?\d{6,15}$/.test(phone)) {
-      throw new BadRequestException('Phone must be 6–15 digits, optionally starting with +');
+    // Always stored as "+<digits>" (common/phone.ts): "777…", "00420…" and "+420 …" all become "+…".
+    const phone = intlPhone(rawPhone) ?? '';
+    if (phone && !/^\+\d{6,15}$/.test(phone)) {
+      throw new BadRequestException('Phone must be 6–15 digits, with the country code');
     }
     const b = await this.prisma.booking.findFirst({
       where: { tenantId, id: bookingId },
@@ -1974,5 +1976,6 @@ export function guestPhoneFromRaw(raw: unknown): string | null {
   const usable = phones.filter((p) => typeof p?.number === 'string' && p.number.trim());
   const mobile = usable.find((p) => String(p.type ?? '').toUpperCase().includes('MOBILE'));
   const pick = mobile ?? usable[0];
-  return pick ? String(pick.number).trim() : null;
+  // With the "+" agents need to call or WhatsApp, even when Avantio left it out.
+  return pick ? intlPhone(pick.number) : null;
 }

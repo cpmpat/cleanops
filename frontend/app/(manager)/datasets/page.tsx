@@ -3,8 +3,9 @@ import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useCal
 import {
   RefreshCw, Search, Columns3, Filter, Snowflake, Loader2, Palette, Pencil, PanelRightOpen,
   Folder, FileText, ExternalLink, Download,
-  X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown,
+  X, AlertCircle, Check, ArrowUp, ArrowDown, ChevronsUpDown, Info, Lock,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { datasets as api, announceNewsfeed, type DatasetSummary, type DatasetPage } from '@/lib/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
@@ -13,6 +14,14 @@ import {
 } from '@/lib/table-view';
 import { cn } from '@/lib/utils';
 import { SaveBar, RecordDrawer, ValueInput, isEditable, type RowDraft } from './editing';
+
+/**
+ * Columns that "Hide all" (or a saved view) never hides, per list (23 Oct 2026):
+ * without the unit's title a row of Accommodation means nothing.
+ */
+const ALWAYS_SHOWN: Record<string, string[]> = {
+  accommodation: ['titleAvantio'],
+};
 
 /**
  * Column width is fixed, so horizontal offsets are pure arithmetic.
@@ -159,6 +168,23 @@ function DatasetsPageInner() {
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [columnSearch, setColumnSearch] = useState('');
   const [valueSearch, setValueSearch] = useState('');
+  const pinned = useMemo(() => new Set(ALWAYS_SHOWN[active] ?? []), [active]);
+
+  // The column's meaning from the mapping sheet (column D = name, C = description),
+  // shown in a small card on hover — in the column picker and on the ⓘ in the header.
+  // The card stays while the pointer is on it, so a long description can be scrolled.
+  const [tip, setTip] = useState<{ label: string; key: string; description?: string | null; x: number; y: number } | null>(null);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTip = (c: { label: string; key: string; description?: string | null }, el: HTMLElement) => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    const r = el.getBoundingClientRect();
+    setTip({ label: c.label, key: c.key, description: c.description, x: Math.max(8, Math.min(r.left, window.innerWidth - 340)), y: r.bottom + 6 });
+  };
+  const hideTip = () => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    tipTimer.current = setTimeout(() => setTip(null), 160);
+  };
+
   const matchingColumns = useMemo(() => {
     const q = columnSearch.toLowerCase();
     return (data?.columns ?? []).filter(c => !q || c.label.toLowerCase().includes(q) || c.key.toLowerCase().includes(q));
@@ -279,8 +305,8 @@ function DatasetsPageInner() {
     if (!data) return [];
     return data.columns
       .map((c, i) => ({ ...c, i }))
-      .filter(c => !hidden.has(c.key));
-  }, [data, hidden]);
+      .filter(c => !hidden.has(c.key) || pinned.has(c.key));
+  }, [data, hidden, pinned]);
 
   const filterValues = useMemo(() => {
     if (!data || !filterColumn) return [];
@@ -769,6 +795,23 @@ function DatasetsPageInner() {
         </div>
       )}
 
+      {tip && typeof document !== 'undefined' && createPortal(
+        <div
+          role="tooltip"
+          onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current); }}
+          onMouseLeave={hideTip}
+          style={{ position: 'fixed', left: tip.x, top: tip.y, zIndex: 100 }}
+          className="w-[330px] max-h-[260px] overflow-y-auto rounded-xl border border-surface-border bg-white shadow-lg px-3.5 py-3 text-left normal-case tracking-normal"
+        >
+          <p className="text-[13px] font-semibold text-ink leading-snug">{tip.label}</p>
+          <p className="font-mono text-[10.5px] text-ink-faint mt-0.5">{tip.key}</p>
+          <p className="text-[12.5px] text-ink-soft leading-relaxed mt-2 whitespace-pre-line">
+            {tip.description?.trim() || 'No description in the mapping sheet yet.'}
+          </p>
+        </div>,
+        document.body,
+      )}
+
       {panel === 'columns' && data && (
         <div className="mb-3 p-3.5 rounded-2xl border border-surface-border bg-white">
           <div className="flex items-center gap-2 mb-2">
@@ -795,7 +838,7 @@ function DatasetsPageInner() {
             <button
               onClick={() => setHidden(prev => {
                 const next = new Set(prev);
-                for (const c of columnSearch ? matchingColumns : data.columns) next.add(c.key);
+                for (const c of columnSearch ? matchingColumns : data.columns) if (!pinned.has(c.key)) next.add(c.key);
                 return next;
               })}
               className="text-xs text-accent font-semibold whitespace-nowrap"
@@ -803,25 +846,32 @@ function DatasetsPageInner() {
               Hide all
             </button>
           </div>
-          <p className="text-[11px] text-ink-faint mb-2">Hover a column for its description.</p>
+          <p className="text-[11px] text-ink-faint mb-2">Hover a column to read what it means.</p>
           <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
             {matchingColumns
               .map(c => (
                 <button
                   key={c.key}
-                  title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
-                  onClick={() => setHidden(prev => {
-                    const next = new Set(prev);
-                    next.has(c.key) ? next.delete(c.key) : next.add(c.key);
-                    return next;
-                  })}
+                  onMouseEnter={e => showTip(c, e.currentTarget)}
+                  onMouseLeave={hideTip}
+                  onClick={() => {
+                    if (pinned.has(c.key)) return;
+                    setHidden(prev => {
+                      const next = new Set(prev);
+                      next.has(c.key) ? next.delete(c.key) : next.add(c.key);
+                      return next;
+                    });
+                  }}
                   className={cn(
-                    'px-2 py-1 rounded-lg text-[11px] border transition',
-                    hidden.has(c.key)
-                      ? 'bg-surface border-surface-border text-ink-faint line-through'
-                      : 'bg-white border-surface-border text-ink',
+                    'px-2 py-1 rounded-lg text-[11px] border transition inline-flex items-center gap-1',
+                    pinned.has(c.key)
+                      ? 'bg-accent-soft border-transparent text-accent cursor-default'
+                      : hidden.has(c.key)
+                        ? 'bg-surface border-surface-border text-ink-faint line-through'
+                        : 'bg-white border-surface-border text-ink',
                   )}
                 >
+                  {pinned.has(c.key) && <Lock size={9} aria-label="Always shown" />}
                   {c.label}
                 </button>
               ))}
@@ -968,7 +1018,6 @@ function DatasetsPageInner() {
                   return (
                     <th
                       key={`${c.key}-${c.i}`}
-                      title={c.description ? `${c.description}\n\n(${c.key})` : c.key}
                       onClick={() => cycleSort(c.key)}
                       style={{
                         width: widthOf(c, pos), minWidth: widthOf(c, pos), maxWidth: widthOf(c, pos), height: HEAD_H,
@@ -986,6 +1035,16 @@ function DatasetsPageInner() {
                       <span className="flex items-center gap-1">
                         {isEditable(data, c) && <Pencil size={10} className="flex-shrink-0 text-sand-deep" aria-label="Editable" />}
                         <span className="truncate">{c.label}</span>
+                        <span
+                          role="img"
+                          aria-label={`What ${c.label} means`}
+                          onMouseEnter={e => showTip(c, e.currentTarget)}
+                          onMouseLeave={hideTip}
+                          onClick={e => e.stopPropagation()}
+                          className="flex-shrink-0 text-ink-faint hover:text-accent cursor-help"
+                        >
+                          <Info size={11} />
+                        </span>
                         {sorted
                           ? (sort!.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
                           : <ChevronsUpDown size={10} className="opacity-0 group-hover:opacity-40" />}
