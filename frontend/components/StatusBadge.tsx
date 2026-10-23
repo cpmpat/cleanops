@@ -5,7 +5,8 @@ import type { Translations } from '@/i18n/translations';
 const STATUS_STYLES: Record<EventStatus, string> = {
   PENDING:    'bg-sand-soft text-sand-deep border-transparent',
   ASSIGNED:   'bg-surface-sunken text-ink-soft border-transparent',
-  IN_PROGRESS:'bg-accent text-white border-transparent',
+  // Same blue and slow pulse as Dashboard → Cleaning (23 Oct 2026): being cleaned right now.
+  IN_PROGRESS:'bg-[#2F5DA8] text-white border-transparent animate-[pulse_2.6s_ease-in-out_infinite]',
   COMPLETED:  'bg-accent-soft text-accent border-transparent',
   CANCELLED:  'bg-surface-sunken text-ink-muted border-transparent',
   FLAGGED:    'bg-coral-soft text-coral-deep border-transparent',
