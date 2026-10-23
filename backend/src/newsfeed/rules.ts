@@ -34,6 +34,12 @@ export interface NewsRule {
   /** Other columns of the record the sentence reads. */
   needs: string[];
   /**
+   * A credential (23 Oct 2026): the news is only THAT it changed. The value is
+   * never put in the sentence, and changes recorded masked (sensitive columns,
+   * stored without values) still count. A cleared value is news too.
+   */
+  secret?: boolean;
+  /**
    * The sentence after the record's name. Null = not news after all.
    * `value` is the record's current value; `ctx.oldValue` is what the latest
    * recorded change replaced (null when the field was empty); `ctx.rank`
@@ -109,8 +115,30 @@ function rankedMove(dataset: string, field: string, label: string, list: string)
   };
 }
 
+/**
+ * A credential changed: "Ubyport password of <unit> has been changed." — or
+ * "…has been removed." No value, old or new, ever appears.
+ */
+function secretChange(dataset: string, field: string, label: string): NewsRule {
+  return {
+    key: `${dataset}.secret.${field}`,
+    dataset,
+    field,
+    needs: [],
+    secret: true,
+    parts: (value) => [
+      { t: 'text', v: `${label} of ` }, { t: 'ref' },
+      { t: 'text', v: ' has been ' }, { t: 'strong', v: value ? 'changed' : 'removed' }, { t: 'text', v: '.' },
+    ],
+  };
+}
+
 export const NEWS_RULES: NewsRule[] = [
   rankedMove('accommodation', 'pricingGroup', 'Pricing Group', 'accommodation.pricingGroup'),
+  // Ubyport credentials (23 Oct 2026): who may read the column sees that it changed.
+  secretChange('accommodation', 'ubyportApiLogin', 'Ubyport login'),
+  secretChange('accommodation', 'ubyportApiPassword', 'Ubyport password'),
+  secretChange('accommodation', 'ubyportIdub', 'Ubyport IDUB'),
   {
     key: 'accommodation.offboard',
     dataset: 'accommodation',

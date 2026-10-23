@@ -56,19 +56,22 @@ export class NewsfeedService {
       where: {
         tenantId,
         createdAt: { gte: since },
-        masked: false,
-        OR: rules.map((r) => ({ dataset: r.dataset, field: r.field })),
+        // Masked (sensitive) changes only for credential rules, which never show values.
+        OR: rules.map((r) => ({ dataset: r.dataset, field: r.field, ...(r.secret ? {} : { masked: false }) })),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, dataset: true, rowId: true, field: true, oldValue: true, newValue: true, actorEmail: true, actorRole: true, createdAt: true },
     });
 
-    // Latest change per record and field; a cleared value means no news.
+    // Latest change per record and field; a cleared value means no news
+    // (except for credentials, whose changes carry no value and whose removal is news).
+    const secretField = new Set(rules.filter((r) => r.secret).map((r) => `${r.dataset}:${r.field}`));
     const seen = new Set<string>();
     const latest = changes.filter((c) => {
       const k = `${c.dataset}:${c.rowId}:${c.field}`;
       if (seen.has(k)) return false;
       seen.add(k);
+      if (secretField.has(`${c.dataset}:${c.field}`)) return true;
       return !!c.newValue && c.newValue.trim() !== '';
     });
     if (!latest.length) return [];
@@ -125,8 +128,11 @@ export class NewsfeedService {
       const current = row[rule.field];
       const value = current instanceof Date ? current.toISOString().slice(0, 10)
         : current == null ? '' : String(current).trim();
-      if (!value) continue;
-      const parts = rule.parts(value, row, { oldValue: c.oldValue, rank });
+      if (!value && !rule.secret) continue;
+      // A credential's value goes no further than "is it set": never into the sentence.
+      const parts = rule.secret
+        ? rule.parts(value ? 'set' : '', {}, { oldValue: null, rank })
+        : rule.parts(value, row, { oldValue: c.oldValue, rank });
       if (!parts) continue;
       const spec = DB_MODELS[c.dataset];
       const key = row[spec.key] == null ? null : String(row[spec.key]);

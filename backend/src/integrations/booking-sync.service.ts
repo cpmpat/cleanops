@@ -1075,6 +1075,39 @@ export class BookingSyncService {
     });
 
     if (existing) {
+      // Reinstated in the PMS (23 Oct 2026, A203-HMBMXPEDYZ): the guest's
+      // cancellation was reversed — Avantio shows CONFIRMED again (it keeps the
+      // old cancelledAt). Without this the booking stayed CANCELLED here for
+      // good, because nothing below looks at status, and its turnovers were
+      // never rebuilt. Revive it and thread it back into the unit's chain.
+      if (existing.status === BookingStatus.CANCELLED) {
+        await this.prisma.booking.update({
+          where: { id: existing.id },
+          data: { status: BookingStatus.CONFIRMED, cancelledAt: null, pmsLastSyncedAt: new Date() },
+        });
+        await this.prisma.auditEvent.create({
+          data: {
+            tenantId,
+            category: 'PMS_SYNC' as any,
+            action: 'booking.reinstated_via_sync',
+            actorEmail: 'system',
+            targetType: 'Booking',
+            targetId: existing.id,
+            metadata: {
+              bookingRef: existing.bookingRef,
+              pmsBookingId: booking.pmsBookingId,
+              accommodationName: existing.accommodationName,
+              wasCancelledAt: existing.cancelledAt?.toISOString() ?? null,
+            } as any,
+          },
+        });
+        (existing as any).status = BookingStatus.CONFIRMED;
+        await this.safelyRunTurnoverSync('onBookingInserted.reinstated', async (tx) => {
+          await this.turnoverSync.onBookingInserted(existing.id, tx);
+        });
+        this.logger.log(`Reinstated ${existing.bookingRef}: CONFIRMED again in Avantio`);
+      }
+
       const incomingOwnerFlag = booking.isOwnerStay ?? false;
       // Update PMS-owned fields on Booking + propagate denormalized to Cleaning
       const hasChanges =
@@ -1499,6 +1532,11 @@ export class BookingSyncService {
             cleaningId: existing.cleaning?.id ?? null,
             cleaningStatus: existing.cleaning?.status ?? null,
             previousStatus: 'CONFIRMED',
+            // What Avantio actually said (23 Oct 2026): CANCELLED, or a non-booking
+            // status we treat the same way (UNDER_REQUEST, CONFLICTED, …), and its own stamp.
+            pmsStatus: (booking.rawData as any)?.status ?? null,
+            pmsCancelledAt: (booking.rawData as any)?.cancelledAt ?? null,
+            pmsUpdatedAt: (booking.rawData as any)?.updatedAt ?? null,
           } as any,
         },
       });
@@ -1780,6 +1818,9 @@ export class BookingSyncService {
       }
 
       const diffs: string[] = [];
+      if (existing.status === BookingStatus.CANCELLED) {
+        diffs.push('REINSTATE: CANCELLED here, active in Avantio — would revive and rebuild its turnovers');
+      }
       if (existing.checkInTime.toISOString() !== new Date(b.checkInTime).toISOString()) {
         diffs.push(`checkIn ${existing.checkInTime.toISOString()} -> ${new Date(b.checkInTime).toISOString()}`);
       }
