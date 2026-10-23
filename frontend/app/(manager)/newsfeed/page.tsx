@@ -25,6 +25,9 @@ const RULE_LABEL: Record<string, string> = {
   'accommodation.bookingOnline': 'Went live on Booking.com',
   'accommodation.offboard': 'Going offline (delisted)',
   'accommodation.move.pricingGroup': 'Pricing group changed',
+  'accommodation.secret.ubyportApiLogin': 'Ubyport login changed',
+  'accommodation.secret.ubyportApiPassword': 'Ubyport password changed',
+  'accommodation.secret.ubyportIdub': 'Ubyport IDUB changed',
 };
 const ruleLabel = (rule: string) =>
   RULE_LABEL[rule] ?? rule.split('.').pop()!.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());

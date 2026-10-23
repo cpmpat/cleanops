@@ -8,7 +8,6 @@ import {
   ApiError,
   type Turnover,
   type Property,
-  type TurnoverStats,
 } from '@/lib/api';
 import { TurnoverCard } from '@/components/TurnoverCard';
 import { conversations as conversationsApi } from '@/lib/api';
@@ -156,7 +155,8 @@ export default function MinePage() {
   const [startingId, setStartingId] = useState<string | null>(null);
   const [dropConfirm, setDropConfirm] = useState<Turnover | null>(null);
   const [doneTarget, setDoneTarget] = useState<Turnover | null>(null);
-  const [stats, setStats] = useState<TurnoverStats | null>(null);
+  // Taken (still to do) / Done (finished) — replaces the stats cards (23 Oct 2026).
+  const [tab, setTab] = useState<'taken' | 'done'>('taken');
 
   useEffect(() => {
     propertiesApi
@@ -191,46 +191,34 @@ export default function MinePage() {
     }
   }, [activeRange, propertyFilter, rangeKey, t.general.error]);
 
-  // Stats are independent of the range selector and must never break the page:
-  // a failed fetch just leaves the segment hidden (the render is guarded with `stats &&`).
-  const loadStats = useCallback(() => {
-    turnoversApi
-      .myStats()
-      .then(setStats)
-      .catch(() => {});
-  }, []);
-
   useEffect(() => {
     load();
   }, [load]);
 
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
-
   useSocket({
     'event:updated': () => {
       load();
-      loadStats();
     },
     'event:cancelled': () => {
       load();
-      loadStats();
     },
     'assignment:released': () => {
       load();
-      loadStats();
     },
   });
 
-  const { futureGrouped, pastGrouped } = useMemo(() => {
+  const { futureGrouped, pastGrouped, takenCount, doneCount } = useMemo(() => {
     const now = new Date();
     const future: Turnover[] = [];
     const past: Turnover[] = [];
 
     for (const tv of items) {
-      if (tv.status === 'COMPLETED' || tv.status === 'CANCELLED') {
+      // Done = finished work (a reported problem still counts as done);
+      // cancelled or skipped cleanings are not work and show in neither tab.
+      if (tv.status === 'COMPLETED' || tv.status === 'FLAGGED') {
         past.push(tv);
+      } else if (tv.status === 'CANCELLED' || tv.status === 'SKIPPED') {
+        continue;
       } else {
         // Everything else (including overdue ASSIGNED) → future,
         // carry-forward grouping will float them to "Today"
@@ -254,7 +242,7 @@ export default function MinePage() {
     const futureGrouped = groupByDay(future, true).sort(([a], [b]) => a.localeCompare(b));
     const pastGrouped = groupByDay(past, false).sort(([a], [b]) => b.localeCompare(a));
 
-    return { futureGrouped, pastGrouped };
+    return { futureGrouped, pastGrouped, takenCount: future.length, doneCount: past.length };
   }, [items]);
 
   async function handleDrop(turnoverId: string) {
@@ -264,7 +252,6 @@ export default function MinePage() {
     try {
       await turnoversApi.drop(turnoverId);
       setItems((p) => p.filter((tv) => tv.id !== turnoverId));
-      loadStats();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t.general.error);
     } finally {
@@ -290,7 +277,6 @@ export default function MinePage() {
   function handleDoneSuccess(updated: Turnover) {
     setItems((p) => p.map((tv) => (tv.id === updated.id ? updated : tv)));
     setDoneTarget(null);
-    loadStats();
   }
 
   function pickPreset(key: Exclude<RangeKey, 'custom'>) {
@@ -376,48 +362,28 @@ export default function MinePage() {
           </button>
         </div>
 
-        {/* Cleaner stats — blends into the dark header, but stands out as data */}
-        {stats && (
-          <div className="mt-5 pt-4 border-t border-white/10">
-            <div className="flex items-end justify-between gap-3 mb-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
-                  {t.mine.stats.id}
-                </p>
-                <p className="text-sm font-mono font-semibold text-white/90 truncate mt-0.5">
-                  {stats.cdmUserId ?? '—'}
-                </p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">
-                  {t.mine.stats.todayRatio}
-                </p>
-                <p className="text-2xl font-bold leading-none mt-0.5 tabular-nums">
-                  <span className="text-accent">{stats.todayDone}</span>
-                  <span className="text-white/40">/{stats.todayAssigned}</span>
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white/10 px-3 py-2.5">
-                <p className="text-xl font-bold leading-none text-white tabular-nums">
-                  {stats.doneThisMonth}
-                </p>
-                <p className="text-[11px] text-white/50 mt-1.5 leading-tight">
-                  {t.mine.stats.doneThisMonth}
-                </p>
-              </div>
-              <div className="rounded-xl bg-white/10 px-3 py-2.5">
-                <p className="text-xl font-bold leading-none text-white tabular-nums">
-                  {stats.assignedNotDone}
-                </p>
-                <p className="text-[11px] text-white/50 mt-1.5 leading-tight">
-                  {t.mine.stats.assignedNotDone}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Taken / Done — what is still mine to do, and what I finished, in the range above.
+            The numbers count the range; they are a way to switch, not a statistic. */}
+        <div className="grid grid-cols-2 gap-2 mt-4" role="tablist">
+          {([
+            ['taken', t.mine.tabTaken, takenCount],
+            ['done', t.mine.tabDone, doneCount],
+          ] as const).map(([key, label, n]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={cn(
+                'rounded-xl px-3 py-2.5 text-left transition',
+                tab === key ? 'bg-white text-ink' : 'bg-white/10 text-white/70 hover:bg-white/15',
+              )}
+            >
+              <span className="block text-xl font-bold leading-none tabular-nums">{loading ? '–' : n}</span>
+              <span className="block text-xs mt-1.5">{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="px-4 py-4 space-y-4">
@@ -437,14 +403,14 @@ export default function MinePage() {
               {t.general.retry}
             </button>
           </div>
-        ) : items.length === 0 ? (
+        ) : (tab === 'taken' ? futureGrouped : pastGrouped).length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📋</div>
-            <p className="font-semibold text-ink">{t.mine.empty}</p>
+            <p className="font-semibold text-ink">{tab === 'taken' ? t.mine.emptyTaken : t.mine.emptyDone}</p>
           </div>
         ) : (
           <>
-            {futureGrouped.length > 0 && (
+            {tab === 'taken' && futureGrouped.length > 0 && (
               <div className="space-y-4">
                 {futureGrouped.map(([day, list]) => (
                   <div key={day}>
@@ -477,11 +443,8 @@ export default function MinePage() {
               </div>
             )}
 
-            {pastGrouped.length > 0 && (
-              <div className="space-y-4 pt-4 border-t border-surface-border">
-                <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider px-1">
-                  {t.mine.past}
-                </p>
+            {tab === 'done' && pastGrouped.length > 0 && (
+              <div className="space-y-4">
                 {pastGrouped.map(([day, list]) => (
                   <div key={day}>
                     <p className="text-xl font-bold text-ink mt-1 mb-3 px-1">
