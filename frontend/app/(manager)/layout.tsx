@@ -10,7 +10,7 @@ import {
   AlertTriangle, Activity, Database, Wrench, Mail, MessagesSquare, ChevronDown, Table2,
   LogIn, Clock, Bell, History, Newspaper, Layers, KanbanSquare,
   Gauge,
-  Sparkles,
+  Sparkles, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { availabilityStrings } from '@/i18n/availability';
 import { cn } from '@/lib/utils';
@@ -201,6 +201,21 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
   const onData = pathname?.startsWith('/datasets') ?? false;
   const [dataOpen, setDataOpen] = useState(onData);
   useEffect(() => { if (onData) setDataOpen(true); }, [onData]);
+
+  // The menu packs down to icons (27 Oct 2026) so wide screens like Planning
+  // show every column. Packed by default; each browser remembers the choice.
+  const [navCollapsed, setNavCollapsed] = useState(true);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('cleanops.navCollapsed');
+      if (v !== null) setNavCollapsed(v === '1');
+    } catch { /* storage blocked: stay packed */ }
+  }, []);
+  const toggleNav = () => setNavCollapsed((c) => {
+    const next = !c;
+    try { localStorage.setItem('cleanops.navCollapsed', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
   useEffect(() => {
     if (!user) return;
     // The server lists only what this role has grants for.
@@ -360,24 +375,39 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
       <NewVersionPrompt locale={locale} />
       <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} locale={locale} />
 
-      <aside className="w-60 flex-shrink-0 flex flex-col fixed h-full z-30 bg-[#F6F4EF]">
+      <aside className={cn('flex-shrink-0 flex flex-col fixed h-full z-30 bg-[#F6F4EF] transition-[width] duration-200', navCollapsed ? 'w-16' : 'w-60')}>
 
-        <div className="px-5 pt-5 pb-3">
-          <div className="flex items-center gap-3">
+        <div className={cn('pt-5 pb-2', navCollapsed ? 'px-3' : 'px-5')}>
+          <div className={cn('flex items-center gap-3', navCollapsed && 'justify-center')}>
             <img src="/airstay-logo.svg" alt="Airstay" className="w-8 h-8 flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="font-bold text-[#1B2420] text-[15px] leading-tight tracking-tight">Airstay</p>
-              <p className="text-[#6A6F69] text-[11px] leading-tight">Portal App</p>
-            </div>
+            {!navCollapsed && (
+              <div className="min-w-0">
+                <p className="font-bold text-[#1B2420] text-[15px] leading-tight tracking-tight">Airstay</p>
+                <p className="text-[#6A6F69] text-[11px] leading-tight">Portal App</p>
+              </div>
+            )}
           </div>
+          {/* Pack the menu to icons / open it in full. */}
+          <button
+            type="button"
+            onClick={toggleNav}
+            title={navCollapsed ? 'Show the full menu' : 'Pack the menu to icons'}
+            aria-label={navCollapsed ? 'Show the full menu' : 'Pack the menu to icons'}
+            aria-expanded={!navCollapsed}
+            className={cn(
+              'mt-3 h-8 flex items-center gap-2 rounded-xl text-[12.5px] text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05] transition',
+              navCollapsed ? 'w-10 mx-auto justify-center' : 'w-full px-2.5',
+            )}
+          >
+            {navCollapsed ? <PanelLeftOpen size={18} strokeWidth={1.75} /> : <PanelLeftClose size={18} strokeWidth={1.75} />}
+            {!navCollapsed && <span>Pack menu</span>}
+          </button>
         </div>
 
-        <nav className="flex-1 px-3 pb-4 overflow-y-auto scrollbar-hide">
+        <nav className={cn('flex-1 pb-4 overflow-y-auto scrollbar-hide', navCollapsed ? 'px-2' : 'px-3')}>
+          {/* No section titles (27 Oct 2026); a little space still groups them. */}
           {sections.map((section) => (
-            <div key={section.key} className="mt-2.5 first:mt-0">
-              <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-[#6A6F69]">
-                {sectionLabels[section.key]}
-              </p>
+            <div key={section.key} className="mt-3 first:mt-0">
               <div className="space-y-0.5">
                 {section.items.map(({ href, icon: Icon, label }) => {
                   const active = pathname === href || pathname?.startsWith(href + '/');
@@ -395,6 +425,53 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
                     : isControlling ? () => setControllingOpen(o => !o)
                     : () => setPlanningOpen(o => !o);
                   const badge = href === '/newsfeed' ? newsUnread : href === '/tasks' ? tasksOnMe : 0;
+                  if (navCollapsed) {
+                    // Packed: the icon alone, the name on hover; the active
+                    // item's own pages (Check-In / Check-Out / Agents …) as
+                    // smaller icons under it.
+                    return (
+                      <div key={href}>
+                        <Link
+                          href={href}
+                          title={label}
+                          aria-label={label}
+                          className={cn(
+                            'relative mx-auto flex items-center justify-center w-10 h-10 rounded-xl transition-colors',
+                            active ? 'bg-accent-soft text-accent' : 'text-[#6A6F69] hover:bg-black/[0.04] hover:text-[#1B2420]',
+                          )}
+                        >
+                          <Icon size={19} strokeWidth={1.75} />
+                          {badge > 0 && (
+                            <span className="absolute top-1 right-1 min-w-[16px] h-[14px] px-1 rounded-[4px] bg-[#EF4444] text-white text-[9.5px] font-semibold leading-[14px] text-center tabular-nums">
+                              {badge > 99 ? '99+' : badge}
+                            </span>
+                          )}
+                        </Link>
+                        {sub && active && (
+                          <div className="mt-0.5 mb-1 flex flex-col items-center gap-0.5">
+                            {sub.map((tab) => {
+                              const on = pathname === tab.href || !!pathname?.startsWith(tab.href + '/');
+                              const TabIcon = tab.icon;
+                              return (
+                                <Link
+                                  key={tab.href}
+                                  href={tab.href}
+                                  title={tab.label}
+                                  aria-label={tab.label}
+                                  className={cn(
+                                    'flex items-center justify-center w-8 h-8 rounded-lg transition-colors',
+                                    on ? 'bg-accent-soft text-accent' : 'text-[#6A6F69] hover:bg-black/[0.04] hover:text-[#1B2420]',
+                                  )}
+                                >
+                                  <TabIcon size={15} strokeWidth={1.75} />
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
                   return (
                     <div key={href}>
                       <div
@@ -463,6 +540,22 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
+        {navCollapsed ? (
+          <div className="px-2 pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                const i = LOCALES.findIndex((l) => l.code === locale);
+                setLocale(LOCALES[(i + 1) % LOCALES.length].code);
+              }}
+              title="Language — click for the next one"
+              aria-label="Change language"
+              className="mx-auto flex items-center justify-center w-10 h-8 rounded-[10px] bg-black/[0.05] text-[11.5px] font-semibold text-[#1B2420] hover:bg-black/[0.08] transition"
+            >
+              {LOCALES.find((l) => l.code === locale)?.label ?? locale}
+            </button>
+          </div>
+        ) : (
         <div className="px-3 pb-3">
           <div className="flex p-0.5 rounded-xl bg-black/[0.05]" role="group" aria-label="Language">
             {LOCALES.map(({ code, label }) => (
@@ -481,7 +574,29 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
             ))}
           </div>
         </div>
+        )}
 
+        {navCollapsed ? (
+          <div className="px-2 pb-4 flex flex-col items-center gap-1">
+            <div
+              title={`${user.name ?? ''} · ${user.email}${user.cdmUserId ? ` · ${user.cdmUserId}` : ''}`}
+              className={cn(
+                'h-8 rounded-[10px] flex items-center justify-center',
+                user.cdmUserId ? 'min-w-[2.5rem] px-1.5 bg-accent' : 'w-8 rounded-full bg-[#1B2420]',
+              )}
+            >
+              <span className="text-white text-[10px] font-mono font-semibold tracking-tight">{user.cdmUserId ?? user.name?.[0] ?? '?'}</span>
+            </div>
+            <button
+              onClick={logout}
+              title={t.general.logout}
+              aria-label={t.general.logout}
+              className="p-1.5 rounded-lg text-[#6A6F69] hover:text-[#1B2420] hover:bg-black/[0.05] transition"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
+        ) : (
         <div className="px-3 pb-4">
           <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white ring-1 ring-black/[0.05] shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
             {/* The person's CDM id where the generic initial used to be; the initial only until the account is linked. */}
@@ -511,9 +626,10 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </div>
+        )}
       </aside>
 
-      <main className="flex-1 ml-60 min-h-screen p-2 pl-0 min-w-0">
+      <main className={cn('flex-1 min-h-screen p-2 pl-0 min-w-0 transition-[margin] duration-200', navCollapsed ? 'ml-16' : 'ml-60')}>
         {/* Oct 2026 redesign: content sits on the warm ground; pages bring their own white cards. */}
         <div className="min-h-[calc(100vh-16px)] bg-surface rounded-2xl flex flex-col min-w-0">
           {/* Search on its own row at the top; the breadcrumb sits under it in

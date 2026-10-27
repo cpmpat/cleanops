@@ -101,10 +101,10 @@ const GRID = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_3.5rem_4.75rem_
  * (Check-In tab only — the panel never opens on Check-Out).
  */
 // Compact also shortens the day ("Wed, 21/10") and the cleaner column, so a 1280–1440 px laptop keeps ~220 px for the unit.
-const GRID_COMPACT = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 /** The same two grids with the optional guest-phone column (Additional attributes) after the unit setup. */
 const GRID_PHONE = 'grid grid-cols-[7.5rem_7.5rem_minmax(0,1fr)_8.5rem_9.5rem_3.5rem_4.75rem_8.75rem_4rem_13rem] items-center gap-x-3';
-const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.5rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
+const GRID_COMPACT_PHONE = 'grid grid-cols-[5.25rem_7.5rem_minmax(0,1fr)_8rem_8.5rem_4.75rem_8.75rem_4rem_11.5rem] items-center gap-x-3';
 const gridFor = (compact: boolean, phone: boolean) =>
   compact ? (phone ? GRID_COMPACT_PHONE : GRID_COMPACT) : (phone ? GRID_PHONE : GRID);
 
@@ -811,7 +811,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             <span title={`${tp.checkInTypeLabel} · ${tp.checkInMethodLabel} · ${tp.unitStandard}`}>Check-in · Std</span>
             {showPhone && <span>Guest phone</span>}
             {!compact && <span className="text-center" title={tp.guests}><Users size={12} className="inline -mt-0.5" /></span>}
-            {!compact && <span className="text-center">{tp.setup}</span>}
+            {/* Setup (crib, separate beds) stays on every width — the desk sets it here (27 Oct 2026). */}
+            <span className="text-center">{tp.setup}</span>
             {/* Time headings carry the same 1.5-unit dot spacer the cells have, so the label starts where the input does. */}
             {!byCheckOut && <span className="flex items-center gap-1.5">
               <span className="w-1.5 flex-shrink-0" />
@@ -905,8 +906,8 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                   <UnitSetup type={b.checkInType} method={b.checkInMethod} standard={b.accommodationStandard} tp={tp} />
                   {showPhone && <PhoneCell b={b} onSave={v => saveGuestPhone(b, v)} />}
 
-                  {!compact && (<>
-                  {/* Guests — same "adults+children" reading the cleaner's card uses */}
+                  {!compact && (
+                  /* Guests — same "adults+children" reading the cleaner's card uses */
                   <span
                     className="flex items-center justify-center gap-1 text-xs text-ink-soft tabular-nums"
                     title={`${tp.guests}: ${b.numAdults} + ${b.numChildren}`}
@@ -914,6 +915,7 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                     <Users size={13} className="text-ink-faint" />
                     {formatOccupancy(b.numAdults, b.numChildren)}
                   </span>
+                  )}
 
                   {/* Setup requests — local only, cleaner sees them on the card */}
                   <div className="flex items-center justify-center gap-1" title={tp.localOnly}>
@@ -951,8 +953,6 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
                       <span className="text-[11px] text-coral-deep font-medium" title={tp.saveFailed}>!</span>
                     )}
                   </div>
-
-                  </>)}
 
                   {!byCheckOut && (<>
                   {/* Check-in — editable on the Check-In tab, locked on Check-Out. The amber dot means we assumed the time. */}
