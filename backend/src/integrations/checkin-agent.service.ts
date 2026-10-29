@@ -59,15 +59,27 @@ export function validateReport(dto: ReportDto): {
  * Why an agent is, or is not, a fit for one arrival.
  *
  *   AVAILABLE         a declared block covers the arrival time
- *   TIME_UNCONFIRMED  the arrival time is our 15:00 guess and the agent has
+ *   TIME_UNCONFIRMED  the arrival time is our default guess (15:00, villas 16:00) and the agent has
  *                     declared something that day; we cannot say more yet
  *   OUTSIDE_HOURS     declared that day, but not around the arrival time
  *   NOT_DECLARED      nothing declared for that day
  *   TIME_OFF          the agent (or the desk) marked the day off
+ *   DESK              front desk (FRONT_DESK / FRONT_DESK_MANAGER) taking the
+ *                     check-in themselves (29 Oct 2026). They declare no hours
+ *                     and have no agent app, so there is nothing to classify
+ *                     and no consent to ask for.
  */
-export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF';
+export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF' | 'DESK';
 
-export const ELIGIBLE_FITS: readonly AgentFit[] = ['AVAILABLE', 'TIME_UNCONFIRMED'];
+export const ELIGIBLE_FITS: readonly AgentFit[] = ['AVAILABLE', 'TIME_UNCONFIRMED', 'DESK'];
+
+/** Who can be put on a booking as the person doing its check-in. */
+export const DESK_TAKER_ROLES = ['FRONT_DESK', 'FRONT_DESK_MANAGER'] as const;
+export const CHECKIN_TAKER_ROLES = ['AGENT', ...DESK_TAKER_ROLES] as const;
+
+export function isDeskTaker(role: string | null | undefined): boolean {
+  return (DESK_TAKER_ROLES as readonly string[]).includes(String(role));
+}
 
 interface Block {
   day: string;
@@ -119,6 +131,9 @@ const FIT_ORDER: Record<AgentFit, number> = {
   OUTSIDE_HOURS: 2,
   NOT_DECLARED: 3,
   TIME_OFF: 4,
+  // After the agents who can take it, before the ones who cannot: the desk is
+  // the fallback when no agent declared the slot.
+  DESK: 1.5,
 };
 
 export interface AgentOption {
@@ -130,6 +145,8 @@ export interface AgentOption {
   declared: string[];
   /** VACATION | SICK | OTHER when fit is TIME_OFF. */
   timeOffReason: string | null;
+  /** AGENT | FRONT_DESK | FRONT_DESK_MANAGER. */
+  role: string;
 }
 
 function hhmm(minute: number): string {
@@ -163,8 +180,8 @@ export class CheckInAgentService {
     const { day, arrivalMinute, assumed } = this.arrival(booking);
 
     const agents = await this.prisma.user.findMany({
-      where: { tenantId, role: 'AGENT' as any, isActive: true },
-      select: { id: true, name: true },
+      where: { tenantId, role: { in: CHECKIN_TAKER_ROLES as any }, isActive: true },
+      select: { id: true, name: true, role: true },
       orderBy: { name: 'asc' },
     });
     const blocks = await this.prisma.agentAvailability.findMany({
@@ -185,8 +202,11 @@ export class CheckInAgentService {
 
     const options: AgentOption[] = agents
       .map((a) => {
-        const mine = blocks.filter((b) => b.userId === a.id);
-        const fit = classifyAgent(mine, day, arrivalMinute, assumed, offBy.has(a.id));
+        const desk = isDeskTaker(a.role);
+        const mine = desk ? [] : blocks.filter((b) => b.userId === a.id);
+        const fit: AgentFit = desk
+          ? 'DESK'
+          : classifyAgent(mine, day, arrivalMinute, assumed, offBy.has(a.id));
         return {
           id: a.id,
           name: a.name,
@@ -195,7 +215,8 @@ export class CheckInAgentService {
           declared: mine
             .filter((b) => b.day === day)
             .map((b) => `${hhmm(b.startMinute)}–${hhmm(b.endMinute)}`),
-          timeOffReason: offBy.get(a.id) ?? null,
+          timeOffReason: desk ? null : offBy.get(a.id) ?? null,
+          role: String(a.role),
         };
       })
       .sort((x, y) => FIT_ORDER[x.fit] - FIT_ORDER[y.fit] || x.name.localeCompare(y.name, 'cs'));
@@ -237,17 +258,21 @@ export class CheckInAgentService {
       return this.shape(booking, booking.checkInAgent?.name ?? null);
     }
 
-    let agent: { id: string; name: string } | null = null;
+    let agent: { id: string; name: string; role: unknown } | null = null;
     let fit: AgentFit | null = null;
     let override = false;
 
     if (agentId) {
       agent = await this.prisma.user.findFirst({
-        where: { id: agentId, tenantId, role: 'AGENT' as any, isActive: true },
-        select: { id: true, name: true },
+        where: { id: agentId, tenantId, role: { in: CHECKIN_TAKER_ROLES as any }, isActive: true },
+        select: { id: true, name: true, role: true },
       });
-      if (!agent) throw new BadRequestException('That person is not an active check-in agent');
+      if (!agent) throw new BadRequestException('That person cannot take check-ins');
+    }
 
+    if (agent && isDeskTaker(String(agent.role))) {
+      fit = 'DESK';
+    } else if (agent && agentId) {
       const { day, arrivalMinute, assumed } = this.arrival(booking);
       const blocks = await this.prisma.agentAvailability.findMany({
         where: { tenantId, userId: agentId, day: { gte: addDays(day, -1), lte: day } },
@@ -310,7 +335,11 @@ export class CheckInAgentService {
 
       const kind = !agentId ? 'UNASSIGNED' : previous ? 'REASSIGNED' : 'ASSIGNED';
       const recipients: Array<{ tenantId: string; userId: string; role: RecipientRole }> = [];
-      if (agent) recipients.push({ tenantId, userId: agent.id, role: 'GAINING' });
+      // Desk takers have no agent app to see a change card in, so they are not
+      // recipients — they took it on at the desk, there is nothing to tell them.
+      if (agent && !isDeskTaker(String(agent.role))) {
+        recipients.push({ tenantId, userId: agent.id, role: 'GAINING' });
+      }
       if (previous && losing) recipients.push({ tenantId, userId: previous.id, role: 'LOSING' });
 
       // Never the check-in link: it is a bearer token to guest registration.
@@ -723,7 +752,7 @@ export class CheckInAgentService {
 
     const [agents, bookings, unassigned] = await Promise.all([
       this.prisma.user.findMany({
-        where: { tenantId, role: 'AGENT' as any, isActive: true },
+        where: { tenantId, role: { in: CHECKIN_TAKER_ROLES as any }, isActive: true },
         select: { id: true, name: true, mobileNumber: true },
         orderBy: { name: 'asc' },
       }),

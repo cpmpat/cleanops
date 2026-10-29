@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma.service';
 import { pmsConfigFor } from '../common/pms-config';
 import { areaFromName, propertyInArea } from '../common/area';
 import { atTimeInAppZone, startOfDayInAppZone, todayInAppZone } from '../common/time';
+import { withTypeDefaultCheckIn } from '../common/checkin-default';
 import {
   PmsBooking, PmsAccommodation, PmsTenantConfig, PmsPullResult,
 } from '../common/interfaces/pms-adapter.interface';
@@ -1066,6 +1067,10 @@ export class BookingSyncService {
     // ── Resolve property from local DB ──
     const property = await this.resolveProperty(tenantId, booking, adapter, config);
 
+    // Villas default to 16:00, the rest keep the adapter's 15:00. Only touches
+    // an assumed time; the booking still lands as FALLBACK for the desk.
+    booking = withTypeDefaultCheckIn(booking, property.accommodationType);
+
     // ── Check if Booking already exists ──
     const existing = await this.prisma.booking.findFirst({
       where: { tenantId, pmsBookingId: booking.pmsBookingId },
@@ -1769,7 +1774,7 @@ export class BookingSyncService {
         outcomes.push({ pmsBookingId: f.pmsBookingId, result: 'error', detail: f.error });
         continue;
       }
-      const b = f.booking;
+      let b = f.booking;
 
       const existing = await this.prisma.booking.findFirst({
         where: { tenantId, pmsBookingId: b.pmsBookingId },
@@ -1801,6 +1806,8 @@ export class BookingSyncService {
             where: { tenantId, pmsPropertyId: b.pmsPropertyId },
           })
         : null;
+      // Same type default as processBooking, so the preview shows what apply does.
+      b = withTypeDefaultCheckIn(b, property?.accommodationType);
       const propertyNote = property
         ? ''
         : ` (accommodation ${b.pmsPropertyId ?? '?'} not local — would be fetched from Avantio or stubbed)`;

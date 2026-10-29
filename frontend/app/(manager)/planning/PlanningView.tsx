@@ -1321,12 +1321,13 @@ export function PlanningView({ mode }: { mode: PlanningMode }) {
             {agentData && (
               <div className="space-y-1.5 max-h-72 overflow-y-auto">
                 {agentData.options.length === 0 && (
-                  <p className="text-sm text-ink-faint py-2">No active agents.</p>
+                  <p className="text-sm text-ink-faint py-2">No active agents or front desk.</p>
                 )}
                 {agentData.options.map(o => {
                   const current = o.id === agentData.currentAgentId;
                   const note =
-                    o.fit === 'AVAILABLE' ? (o.declared.join(', ') || 'Available')
+                    o.fit === 'DESK' ? (o.role === 'FRONT_DESK_MANAGER' ? 'Front desk manager' : 'Front desk')
+                    : o.fit === 'AVAILABLE' ? (o.declared.join(', ') || 'Available')
                     : o.fit === 'TIME_UNCONFIRMED' ? `Time not confirmed${o.declared.length ? ` · ${o.declared.join(', ')}` : ''}`
                     : o.fit === 'OUTSIDE_HOURS' ? `Not available · declared ${o.declared.join(', ') || 'other hours'}`
                     : o.fit === 'TIME_OFF' ? `Time off${o.timeOffReason ? ` · ${o.timeOffReason === 'VACATION' ? 'vacation' : o.timeOffReason === 'SICK' ? 'sick' : 'other'}` : ''}`
