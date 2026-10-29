@@ -1,6 +1,9 @@
 {
   "name": "cleanops-backend",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
   "private": true,
   "scripts": {
     "build": "nest build",
