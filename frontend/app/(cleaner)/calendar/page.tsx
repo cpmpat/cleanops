@@ -153,9 +153,6 @@ export default function CalendarPage() {
           <div>
             <p className="text-white/60 text-sm font-medium">{greeting}</p>
             <h1 className="text-xl font-bold mt-0.5">{t.calendar.title}</h1>
-            <p className="text-white/60 text-xs mt-1">
-              {t.calendar.unitsSummary(propertyIds.length, allProps.length)}
-            </p>
           </div>
           <button
             onClick={logout}
@@ -172,6 +169,13 @@ export default function CalendarPage() {
         >
           <Filter size={12} />
           {t.calendar.filterUnits}
+          {/* How many of her units are in view — lived on its own line under
+              the title until 29 Oct 2026; in the chip it costs no height. */}
+          {!loading && (
+            <span className="text-white/55">
+              · {t.calendar.unitsSummary(propertyIds.length, allProps.length)}
+            </span>
+          )}
         </button>
       </div>
 
@@ -213,10 +217,17 @@ export default function CalendarPage() {
 
       {/* Day strip — aligned with the bars below. */}
       <div className="grid grid-cols-10 px-3 py-2.5 bg-surface-sunken border-b border-surface-border select-none">
-        {days.map((d) => {
+        {days.map((d, i) => {
           const isTodayCell = startOfLocalDay(d).getTime() === todayStart;
+          // The 1st of a month inside the window (not its first column, which
+          // the range label above already dates) gets the month name over it,
+          // so "1" after "31" reads as a new month rather than a typo.
+          const monthStart = i > 0 && d.getDate() === 1;
           return (
             <div key={d.toISOString()} className="text-center">
+              <div className="text-[10px] leading-[12px] h-3 font-semibold text-accent">
+                {monthStart ? formatMonthShort(d, localeTag) : ''}
+              </div>
               <div className="text-[10px] uppercase tracking-wide text-ink-faint leading-tight">
                 {formatDayLetter(d, localeTag)}
               </div>
@@ -303,7 +314,6 @@ export default function CalendarPage() {
                 property={prop}
                 bookings={byProperty.get(prop.id) ?? []}
                 days={days}
-                localeTag={localeTag}
                 t={t}
               />
             ))}
@@ -392,18 +402,13 @@ interface UnitRowProps {
   property: Property;
   bookings: CalendarBooking[];
   days: Date[];
-  localeTag: string;
   t: Translations;
 }
 
-function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
-  // Compute, for each visible day, whether the unit is occupied by some booking.
-  const occupiedByDay = days.map((d) =>
-    bookings.some((b) => isBookingActiveOnDay(b, d)),
-  );
-
-  // Free-day label (first free range in the window)
-  const label = computeMetaLabel(occupiedByDay, days, localeTag, t);
+function UnitRow({ property, bookings, days, t }: UnitRowProps) {
+  // No free/booked caption under the name (dropped 29 Oct 2026, Patrik): the
+  // gaps between the bars say the same thing, and without the extra line about
+  // half again as many units fit on one screen.
 
   // Booking bars positioned by window-relative start/end day index
   const bars = bookings
@@ -439,17 +444,10 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
   });
 
   return (
-    <div className="px-3 py-3 border-b border-surface-border">
-      <p className="text-sm font-semibold text-ink px-1">{property.name}</p>
-      <p
-        className={`text-[11px] px-1 mt-0.5 mb-2 ${
-          label.tone === 'free' ? 'text-emerald-700' : 'text-ink-faint'
-        }`}
-      >
-        {label.text}
-      </p>
+    <div className="px-3 pt-2 pb-2 border-b border-surface-border">
+      <p className="text-sm font-semibold text-ink px-1 mb-1 truncate">{property.name}</p>
       <div
-        className="relative grid grid-cols-10 h-[22px]"
+        className="relative grid grid-cols-10 h-[26px]"
         role="img"
         aria-label={`Bookings timeline for ${property.name}`}
       >
@@ -464,7 +462,7 @@ function UnitRow({ property, bookings, days, localeTag, t }: UnitRowProps) {
           return (
             <div
               key={`${bar.booking.id}-${idx}`}
-              className="absolute top-1 bottom-1 bg-[#FFC645] text-ink rounded text-[10px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
+              className="absolute top-0.5 bottom-0.5 bg-[#FFC645] text-[#5C3B06] rounded-md text-[11px] font-semibold flex items-center px-1.5 overflow-hidden whitespace-nowrap"
               style={{
                 left: `${bar.leftPct}%`,
                 width: `${bar.widthPct}%`,
@@ -531,49 +529,12 @@ function computeBarPlacement(
   };
 }
 
-/** Build the per-unit meta line — "Free 20 Jun", "Free 18 Jun — 22 Jun", or "Booked all week". */
-function computeMetaLabel(
-  occupiedByDay: boolean[],
-  days: Date[],
-  localeTag: string,
-  t: Translations,
-): { text: string; tone: 'free' | 'busy' } {
-  // Find consecutive free ranges
-  let firstFreeStart = -1;
-  let firstFreeEnd = -1;
-  for (let i = 0; i < occupiedByDay.length; i++) {
-    if (!occupiedByDay[i]) {
-      if (firstFreeStart === -1) {
-        firstFreeStart = i;
-        firstFreeEnd = i;
-      } else if (i === firstFreeEnd + 1) {
-        firstFreeEnd = i;
-      } else {
-        break; // gap in the free range — keep just the first contiguous range
-      }
-    } else if (firstFreeStart !== -1) {
-      break;
-    }
-  }
-
-  if (firstFreeStart === -1) {
-    return { text: t.calendar.bookedAllWindow, tone: 'busy' };
-  }
-
-  const fromStr = formatShortDay(days[firstFreeStart], localeTag);
-  if (firstFreeStart === firstFreeEnd) {
-    return { text: t.calendar.freeOn(fromStr), tone: 'free' };
-  }
-  const toStr = formatShortDay(days[firstFreeEnd], localeTag);
-  return { text: t.calendar.freeBetween(fromStr, toStr), tone: 'free' };
-}
-
 function formatDayLetter(d: Date, localeTag: string): string {
   return d.toLocaleDateString(localeTag, { weekday: 'short' });
 }
 
-function formatShortDay(d: Date, localeTag: string): string {
-  return d.toLocaleDateString(localeTag, { day: 'numeric', month: 'short' });
+function formatMonthShort(d: Date, localeTag: string): string {
+  return d.toLocaleDateString(localeTag, { month: 'short' }).replace('.', '');
 }
 
 function formatWindowLabel(from: Date, to: Date, localeTag: string): string {

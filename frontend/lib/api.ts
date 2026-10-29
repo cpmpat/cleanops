@@ -1282,13 +1282,16 @@ export const tags = {
 /** A change to a cleaning somebody is already holding — the "Změny" tab. */
 export interface TurnoverUpdate {
   id: string;
-  type: 'CANCELLATION' | 'BOOKING_MODIFIED';
+  /** NEW_ASSIGNMENT / REASSIGNMENT since 29 Oct 2026: a manager assigned, removed, or returned to pool. */
+  type: 'CANCELLATION' | 'BOOKING_MODIFIED' | 'NEW_ASSIGNMENT' | 'REASSIGNMENT';
   title: string;
   body: string;
   readAt?: string | null;
   createdAt: string;
   payload?: {
-    kind?: 'BOOKING_CANCELLED' | 'GUESTS_CHANGED' | 'STAY_EXTENDED' | string;
+    kind?: 'BOOKING_CANCELLED' | 'GUESTS_CHANGED' | 'STAY_EXTENDED' | 'ASSIGNED' | 'REMOVED' | 'RETURNED_TO_POOL' | string;
+    /** Assignment kinds: the cleaning's deadline. */
+    dueBy?: string | null;
     turnoverId?: string;
     propertyName?: string;
     bookingRef?: string;
@@ -1308,6 +1311,8 @@ export const notifications = {
   unreadCount: () => get<{ count: number }>('/notifications/unread/count'),
   markRead: (id: string) => patch(`/notifications/${id}/read`),
   markAllRead: () => patch('/notifications/read-all'),
+  /** Everything on the cleaner's Změny tab is seen. */
+  markTurnoverUpdatesRead: () => patch('/notifications/turnover-updates/read'),
 };
 
 // ─── Incidents ────────────────────────────────────────────────────────────────

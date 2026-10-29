@@ -621,7 +621,14 @@ export class TurnoversService {
           channel: 'IN_APP',
           title: 'New cleaning assigned',
           body: `A manager assigned you ${accommodationName ?? 'a cleaning'}.`,
-          payload: { turnoverId },
+          // kind + propertyName put it on the cleaner's Změny tab (29 Oct 2026);
+          // dueBy is the deadline the card shows.
+          payload: {
+            kind: 'ASSIGNED',
+            turnoverId,
+            propertyName: accommodationName,
+            dueBy: turnover.dueBy?.toISOString() ?? null,
+          },
         },
       });
 
@@ -715,7 +722,12 @@ export class TurnoversService {
           channel: 'IN_APP',
           title: 'Cleaning reassigned',
           body: `A manager removed you from ${accommodationName ?? 'a cleaning'}.`,
-          payload: { turnoverId },
+          payload: {
+            kind: 'REMOVED',
+            turnoverId,
+            propertyName: accommodationName,
+            dueBy: turnover.dueBy?.toISOString() ?? null,
+          },
         },
       });
 
@@ -1335,7 +1347,12 @@ export class TurnoversService {
             channel: 'IN_APP',
             title: 'Turnover returned to pool',
             body: `A manager returned ${accommodationName ?? 'a turnover'} to the pool.`,
-            payload: { turnoverId },
+            payload: {
+              kind: 'RETURNED_TO_POOL',
+              turnoverId,
+              propertyName: accommodationName,
+              dueBy: turnover.dueBy?.toISOString() ?? null,
+            },
           },
         });
       }

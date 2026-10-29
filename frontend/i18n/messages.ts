@@ -62,6 +62,12 @@ export interface MessageStrings {
     noChanges: string;
     noChangesHint: string;
     oneWay: string;
+    groupNew: string;
+    groupToday: string;
+    groupYesterday: string;
+    toConfirm: (n: number) => string;
+    unreadThreads: string;
+    otherThreads: string;
   };
   thread: {
     participants: (n: number) => string;
@@ -91,6 +97,14 @@ export interface MessageStrings {
     stayShortened: string;
     /** When this change landed in the cleaner's inbox. */
     received: (stamp: string) => string;
+    assigned: string;
+    removed: string;
+    returnedToPool: string;
+    noArrival: string;
+    deadline: (stamp: string) => string;
+    assignedMeaning: string;
+    removedMeaning: string;
+    returnedMeaning: string;
   };
   manager: {
     navLabel: string;
@@ -194,6 +208,12 @@ const en: MessageStrings = {
     noChanges: 'No changes.',
     noChangesHint: 'Changes to cleanings you are holding show up here.',
     oneWay: 'One-way announcement — you cannot reply',
+    groupNew: 'New',
+    groupToday: 'Today',
+    groupYesterday: 'Yesterday',
+    toConfirm: (n) => `Waiting for your confirmation · ${n}`,
+    unreadThreads: 'Unread',
+    otherThreads: 'Other',
   },
   thread: {
     participants: (n) => `${n} people`,
@@ -222,6 +242,14 @@ const en: MessageStrings = {
     checkIn: 'Arrival time changed',
     stayShortened: 'Stay shortened',
     received: (stamp: string) => `Received ${stamp}`,
+    assigned: 'Cleaning assigned to you',
+    removed: 'Removed from a cleaning',
+    returnedToPool: 'Returned to the pool',
+    noArrival: 'no arrival',
+    deadline: (s) => `Ready by ${s}`,
+    assignedMeaning: 'A manager gave you this cleaning.',
+    removedMeaning: 'A manager took you off this cleaning — you do not need to do it.',
+    returnedMeaning: 'A manager put this cleaning back in the pool — it is no longer yours.',
   },
   manager: {
     navLabel: 'Messages',
@@ -325,6 +353,12 @@ const cs: MessageStrings = {
     noChanges: 'Žádné změny.',
     noChangesHint: 'Změny u úklidů, které máte vzaté, se ukážou tady.',
     oneWay: 'Jednosměrné oznámení — odpovídat nelze',
+    groupNew: 'Nové',
+    groupToday: 'Dnes',
+    groupYesterday: 'Včera',
+    toConfirm: (n) => `Čeká na potvrzení · ${n}`,
+    unreadThreads: 'Nepřečtené',
+    otherThreads: 'Ostatní',
   },
   thread: {
     participants: (n) => `${n} ${n === 1 ? 'účastník' : n < 5 ? 'účastníci' : 'účastníků'}`,
@@ -353,6 +387,14 @@ const cs: MessageStrings = {
     checkIn: 'Změna času příjezdu',
     stayShortened: 'Pobyt zkrácen',
     received: (stamp: string) => `Přijato ${stamp}`,
+    assigned: 'Přidělen úklid',
+    removed: 'Odebrán z úklidu',
+    returnedToPool: 'Vrácen do poolu',
+    noArrival: 'bez příjezdu',
+    deadline: (s) => `Hotovo do ${s}`,
+    assignedMeaning: 'Manažer vám tento úklid přidělil.',
+    removedMeaning: 'Manažer vás z úklidu odebral — nemusíte ho dělat.',
+    returnedMeaning: 'Manažer úklid vrátil do poolu — už není váš.',
   },
   manager: {
     navLabel: 'Zprávy',
@@ -456,6 +498,12 @@ const ru: MessageStrings = {
     noChanges: 'Изменений нет.',
     noChangesHint: 'Изменения по вашим уборкам появятся здесь.',
     oneWay: 'Одностороннее объявление — ответить нельзя',
+    groupNew: 'Новые',
+    groupToday: 'Сегодня',
+    groupYesterday: 'Вчера',
+    toConfirm: (n) => `Ждут подтверждения · ${n}`,
+    unreadThreads: 'Непрочитанные',
+    otherThreads: 'Остальные',
   },
   thread: {
     participants: (n) => `${n} участн.`,
@@ -484,6 +532,14 @@ const ru: MessageStrings = {
     checkIn: 'Изменилось время приезда',
     stayShortened: 'Проживание сокращено',
     received: (stamp: string) => `Получено ${stamp}`,
+    assigned: 'Вам назначена уборка',
+    removed: 'Вас сняли с уборки',
+    returnedToPool: 'Возвращена в пул',
+    noArrival: 'без заезда',
+    deadline: (s) => `Готово к ${s}`,
+    assignedMeaning: 'Менеджер назначил вам эту уборку.',
+    removedMeaning: 'Менеджер снял вас с уборки — делать её не нужно.',
+    returnedMeaning: 'Менеджер вернул уборку в пул — она больше не ваша.',
   },
   manager: {
     navLabel: 'Сообщения',
@@ -587,6 +643,12 @@ const uk: MessageStrings = {
     noChanges: 'Змін немає.',
     noChangesHint: 'Зміни у ваших прибираннях зʼявляться тут.',
     oneWay: 'Одностороннє оголошення — відповісти не можна',
+    groupNew: 'Нові',
+    groupToday: 'Сьогодні',
+    groupYesterday: 'Вчора',
+    toConfirm: (n) => `Чекають на підтвердження · ${n}`,
+    unreadThreads: 'Непрочитані',
+    otherThreads: 'Інші',
   },
   thread: {
     participants: (n) => `${n} учасн.`,
@@ -615,6 +677,14 @@ const uk: MessageStrings = {
     checkIn: 'Змінився час приїзду',
     stayShortened: 'Перебування скорочено',
     received: (stamp: string) => `Отримано ${stamp}`,
+    assigned: 'Вам призначено прибирання',
+    removed: 'Вас знято з прибирання',
+    returnedToPool: 'Повернуто до пулу',
+    noArrival: 'без заїзду',
+    deadline: (s) => `Готово до ${s}`,
+    assignedMeaning: 'Менеджер призначив вам це прибирання.',
+    removedMeaning: 'Менеджер зняв вас із прибирання — робити його не потрібно.',
+    returnedMeaning: 'Менеджер повернув прибирання до пулу — воно більше не ваше.',
   },
   manager: {
     navLabel: 'Повідомлення',

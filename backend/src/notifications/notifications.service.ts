@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
-import { NotificationType, NotificationChannel } from '@prisma/client';
+import { NotificationType, NotificationChannel, Prisma } from '@prisma/client';
 
 interface SendNotificationDto {
   tenantId: string;
@@ -11,6 +11,24 @@ interface SendNotificationDto {
   payload?: any;
   channels?: NotificationChannel[];
 }
+
+/**
+ * What the cleaner's Změny tab shows: what happened to work she holds.
+ *
+ * Booking changes and cancellations from the start; since 29 Oct 2026 also a
+ * manager assigning her, removing her, or returning the cleaning to the pool.
+ * Those two types are matched by payload kind, so rows written before the kind
+ * existed (and the legacy cleanings' rows) stay out instead of arriving as a
+ * pile of old "new" cards.
+ */
+const TURNOVER_UPDATE_WHERE: Prisma.NotificationWhereInput = {
+  OR: [
+    { type: { in: ['CANCELLATION', 'BOOKING_MODIFIED'] } },
+    { type: 'NEW_ASSIGNMENT', payload: { path: ['kind'], equals: 'ASSIGNED' } },
+    { type: 'REASSIGNMENT', payload: { path: ['kind'], equals: 'REMOVED' } },
+    { type: 'REASSIGNMENT', payload: { path: ['kind'], equals: 'RETURNED_TO_POOL' } },
+  ],
+};
 
 @Injectable()
 export class NotificationsService {
@@ -70,11 +88,7 @@ export class NotificationsService {
    */
   async getTurnoverUpdates(userId: string, limit = 50) {
     return this.prisma.notification.findMany({
-      where: {
-        userId,
-        channel: 'IN_APP',
-        type: { in: ['CANCELLATION', 'BOOKING_MODIFIED'] },
-      },
+      where: { userId, channel: 'IN_APP', ...TURNOVER_UPDATE_WHERE },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
@@ -82,14 +96,17 @@ export class NotificationsService {
 
   async getTurnoverUpdatesCount(userId: string): Promise<{ count: number }> {
     const count = await this.prisma.notification.count({
-      where: {
-        userId,
-        channel: 'IN_APP',
-        readAt: null,
-        type: { in: ['CANCELLATION', 'BOOKING_MODIFIED'] },
-      },
+      where: { userId, channel: 'IN_APP', readAt: null, ...TURNOVER_UPDATE_WHERE },
     });
     return { count };
+  }
+
+  /** Opening the Změny tab: everything on it is now seen, nothing else is touched. */
+  async markTurnoverUpdatesRead(userId: string) {
+    return this.prisma.notification.updateMany({
+      where: { userId, channel: 'IN_APP', readAt: null, ...TURNOVER_UPDATE_WHERE },
+      data: { readAt: new Date() },
+    });
   }
 
   async markRead(userId: string, notificationId: string) {
