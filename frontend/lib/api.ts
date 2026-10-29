@@ -370,9 +370,20 @@ export interface UpdateIncidentPayload {
 
 const BASE = '/api/v1';
 
+// Option B: the access token lives only in memory, never in localStorage. A
+// token in localStorage is readable by any XSS and persists for its full life;
+// kept in memory it dies with the page and is re-minted on load from the
+// httpOnly refresh cookie (see refreshAccessToken / useAuth.loadFromStorage).
+let accessToken: string | null = null;
+
 function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('cleanops_token');
+  return accessToken;
+}
+
+/** Set or clear the in-memory access token. Exported so the auth store can
+ *  seed it on login and clear it on logout. */
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
 }
 
 class ApiError extends Error {
@@ -384,45 +395,55 @@ class ApiError extends Error {
 /**
  * Silent session refresh.
  *
- * The access token lives 30 days, and a cleaner's tab lives longer than that —
- * without this the tab would one day start failing every request with a silent
- * 401 and nothing on screen would say why. The refresh token is in an httpOnly
- * cookie, so this is the one call that must send credentials.
+ * The access token lives ~15 minutes and is held only in memory, so a tab
+ * that's been idle — or a home-screen/PWA shortcut that was just relaunched —
+ * has no usable token. The refresh token is a first-party httpOnly cookie (90
+ * days, rotated on every refresh), so this call re-mints the access token with
+ * no user-visible interruption and keeps the session alive across app switches
+ * and cold launches.
  *
- * Single-flight: ten parallel requests hitting 401 at once must produce one
- * refresh, not ten.
+ * Return value:
+ *   - a token  → refreshed
+ *   - null     → the server says we're signed out (no / expired refresh cookie)
+ *   - throws   → a *transient* failure (offline, 5xx). Callers keep the current
+ *                session rather than logging the user out over a dropped
+ *                connection.
+ *
+ * Single-flight: ten parallel requests hitting 401 at once produce one refresh.
  */
 let refreshInFlight: Promise<string | null> | null = null;
 
 export const TOKEN_REFRESHED_EVENT = 'cleanops:token-refreshed';
 
-async function refreshAccessToken(): Promise<string | null> {
-  if (!refreshInFlight) {
-    refreshInFlight = (async () => {
-      try {
-        const res = await fetch(`${BASE}/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) return null;
-        const data = await res.json().catch(() => null);
-        const token: string | null = data?.accessToken ?? null;
-        if (token && typeof window !== 'undefined') {
-          localStorage.setItem('cleanops_token', token);
-          // The websocket authenticates at handshake time and holds the old
-          // token until told otherwise.
-          window.dispatchEvent(new CustomEvent(TOKEN_REFRESHED_EVENT, { detail: token }));
-        }
-        return token;
-      } catch {
-        return null;
+export function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  const p = (async () => {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (res.status === 401 || res.status === 403) return null; // definitively signed out
+    if (!res.ok) throw new Error(`refresh failed: ${res.status}`); // transient
+    const data = await res.json().catch(() => null);
+    const token: string | null = data?.accessToken ?? null;
+    if (token) {
+      accessToken = token;
+      if (typeof window !== 'undefined') {
+        // The websocket authenticates at handshake time and holds the old
+        // token until told otherwise.
+        window.dispatchEvent(new CustomEvent(TOKEN_REFRESHED_EVENT, { detail: token }));
       }
-    })();
-    refreshInFlight.finally(() => { refreshInFlight = null; });
-  }
-  return refreshInFlight;
+    }
+    return token;
+  })();
+  refreshInFlight = p;
+  // Release the single-flight slot when done; swallow rejection on this side
+  // chain so a transient failure isn't an unhandled rejection (real callers
+  // still see it through the returned promise).
+  p.finally(() => { if (refreshInFlight === p) refreshInFlight = null; }).catch(() => {});
+  return p;
 }
 
 /** Seconds left on the current access token, or null if we cannot tell. */
@@ -440,12 +461,14 @@ function tokenLifetimeLeft(): number | null {
 
 /**
  * Refresh ahead of expiry rather than waiting for the first failed request.
- * Call it on mount and when the tab regains focus.
+ * Called on mount and whenever the app returns to the foreground, so a
+ * home-screen user coming back already has a valid token (and the socket can
+ * reconnect with it) instead of hitting a 401 first. With no readable token
+ * (just relaunched) it mints one from the refresh cookie.
  */
-export async function ensureFreshSession(minDays = 7): Promise<void> {
+export async function ensureFreshSession(minSecondsLeft = 300): Promise<void> {
   const left = tokenLifetimeLeft();
-  if (left === null) return;
-  if (left > minDays * 24 * 60 * 60) return;
+  if (left !== null && left > minSecondsLeft) return;
   await refreshAccessToken();
 }
 
@@ -467,7 +490,8 @@ export async function ensureSessionMatchesRole(serverRole: string): Promise<void
 
 function handleSessionExpired() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('cleanops_token');
+  accessToken = null;
+  localStorage.removeItem('cleanops_token'); // clear any legacy persisted token
   localStorage.removeItem('cleanops_user');
   if (!window.location.pathname.startsWith('/login')) {
     window.location.href = '/login';
@@ -492,9 +516,17 @@ async function request<T>(
   // Expired token: refresh once, replay once. Auth endpoints are exempt —
   // refreshing in response to a failed login would be a loop.
   if (res.status === 401 && allowRetry && !path.startsWith('/auth/')) {
-    const fresh = await refreshAccessToken();
+    let fresh: string | null = null;
+    let transient = false;
+    try {
+      fresh = await refreshAccessToken();
+    } catch {
+      // Offline / server blip: don't end the session over it. Fall through and
+      // surface the original 401 so the caller can retry later.
+      transient = true;
+    }
     if (fresh) return request<T>(path, options, false);
-    handleSessionExpired();
+    if (!transient) handleSessionExpired();
   }
 
   if (!res.ok) {

@@ -40,20 +40,25 @@ async function bootstrap() {
   // API prefix
   app.setGlobalPrefix('api/v1');
 
-  // Swagger docs
-  const config = new DocumentBuilder()
-    .setTitle('CleanOps API')
-    .setDescription('Cleaning Management Platform API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Swagger docs — development only. In production the full API surface must
+  // not be browsable at /api/docs by anyone who finds it.
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('CleanOps API')
+      .setDescription('Cleaning Management Platform API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 3001;
   await app.listen(port, '0.0.0.0');
   console.log(`🧹 CleanOps API running on port ${port}`);
-  console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
+  }
 }
 
 bootstrap();

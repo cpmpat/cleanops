@@ -6,6 +6,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { AuthGuard } from '../common/guards/auth.guard';
+import { RateLimitGuard, RateLimit } from '../common/guards/rate-limit.guard';
 import { TenantRequest } from '../common/middleware/tenant.middleware';
 
 class RequestMagicLinkDto {
@@ -51,12 +52,14 @@ const ACCESS_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;  // 30 days
 const REFRESH_COOKIE_MAX_AGE = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 @ApiTags('Auth')
+@UseGuards(RateLimitGuard)
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('magic-link')
   @HttpCode(200)
+  @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000, byEmail: true })
   @ApiOperation({
     summary: 'Request a magic link for first-time setup or password reset',
   })
@@ -70,6 +73,7 @@ export class AuthController {
 
   @Post('verify')
   @HttpCode(200)
+  @RateLimit({ limit: 20, windowMs: 5 * 60 * 1000 })
   @ApiOperation({
     summary: 'Verify a magic link token; returns a setup token for set-password',
   })
@@ -85,6 +89,7 @@ export class AuthController {
 
   @Post('set-password')
   @HttpCode(200)
+  @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000 })
   @ApiOperation({
     summary: 'Set a new password using a setup token; logs the user in',
   })
@@ -102,6 +107,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
+  @RateLimit({ limit: 10, windowMs: 5 * 60 * 1000, byEmail: true })
   @ApiOperation({ summary: 'Email + password login' })
   async login(
     @Body() dto: LoginDto,
@@ -117,6 +123,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
+  @RateLimit({ limit: 120, windowMs: 5 * 60 * 1000 })
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(
     @Body() dto: RefreshTokenDto,
