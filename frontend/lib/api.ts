@@ -694,7 +694,8 @@ export interface CheckInRoute {
 }
 
 /** How an agent's declared availability fits one arrival. */
-export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF';
+/** DESK = front desk (FRONT_DESK / FRONT_DESK_MANAGER) taking it themselves: no hours, no consent. */
+export type AgentFit = 'AVAILABLE' | 'TIME_UNCONFIRMED' | 'OUTSIDE_HOURS' | 'NOT_DECLARED' | 'TIME_OFF' | 'DESK';
 
 export interface AgentOption {
   id: string;
@@ -704,6 +705,8 @@ export interface AgentOption {
   /** "HH:mm–HH:mm" blocks declared for the arrival day. */
   declared: string[];
   timeOffReason: TimeOffReason | null;
+  /** AGENT | FRONT_DESK | FRONT_DESK_MANAGER (older backends omit it). */
+  role?: string;
 }
 
 export interface AgentOptionsResponse {
