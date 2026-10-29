@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  Bell, MessageSquare, Megaphone, Users, Building2, ArrowRight,
-  CircleX, CalendarClock, UserPlus, Clock,
+  Bell, MessageSquare, Megaphone, Users, ArrowRight,
+  CircleX, CalendarClock, UserPlus, UserMinus, Undo2, Clock, ChevronDown,
 } from 'lucide-react';
 import {
   notes as notesApi,
@@ -77,6 +77,60 @@ export default function InboxPage() {
     [updates],
   );
 
+  /**
+   * Changes that were unread when she looked at Změny in this visit. They are
+   * marked read on the server a moment after the tab opens (until 29 Oct 2026
+   * nothing ever marked them, so the badge only grew) but stay grouped under
+   * "Nové" until she leaves the screen — the group should not empty itself
+   * while she is reading it.
+   */
+  const [seenNew, setSeenNew] = useState<Set<string>>(new Set());
+  const unreadIds = useMemo(
+    () => updates.filter((u) => !u.readAt).map((u) => u.id).join(','),
+    [updates],
+  );
+  useEffect(() => {
+    if (tab !== 'changes' || !unreadIds) return;
+    const ids = unreadIds.split(',');
+    const timer = setTimeout(async () => {
+      setSeenNew((prev) => new Set(Array.from(prev).concat(ids)));
+      try {
+        await notifApi.markTurnoverUpdatesRead();
+      } catch {
+        // Older backend without the scoped endpoint: on a cleaner's account
+        // "everything" is exactly what this tab shows.
+        await notifApi.markAllRead().catch(() => {});
+      }
+      const now = new Date().toISOString();
+      setUpdates((prev) => prev.map((u) => (ids.includes(u.id) ? { ...u, readAt: now } : u)));
+      // The Bell badge lives in the layout and only reloads on socket events.
+      window.dispatchEvent(new Event('cleanops:badges'));
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [tab, unreadIds]);
+
+  const newUpdates = useMemo(
+    () => sortedUpdates.filter((u) => !u.readAt || seenNew.has(u.id)),
+    [sortedUpdates, seenNew],
+  );
+  const olderByDay = useMemo(() => {
+    const groups: { key: string; label: string; items: TurnoverUpdate[] }[] = [];
+    for (const u of sortedUpdates) {
+      if (!u.readAt || seenNew.has(u.id)) continue;
+      const key = new Date(u.createdAt).toDateString();
+      let g = groups.find((x) => x.key === key);
+      if (!g) {
+        g = { key, label: dayLabel(u.createdAt, locale, m), items: [] };
+        groups.push(g);
+      }
+      g.items.push(u);
+    }
+    return groups;
+  }, [sortedUpdates, seenNew, locale, m]);
+
+  const unreadThreadList = useMemo(() => threads.filter((t) => (t.unreadCount ?? 0) > 0), [threads]);
+  const readThreadList = useMemo(() => threads.filter((t) => !(t.unreadCount ?? 0)), [threads]);
+
   const pending = useMemo(() => notes.filter((n) => !n.acknowledged), [notes]);
   const confirmed = useMemo(() => notes.filter((n) => n.acknowledged), [notes]);
   const unreadThreads = threads.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
@@ -99,26 +153,26 @@ export default function InboxPage() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <div className="bg-gradient-to-b from-[#243b6b] to-[#1b2d54] text-white px-4 pt-12 pb-0">
+      <div className="bg-gradient-to-b from-[#243b6b] to-[#1b2d54] text-white px-4 pt-12">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/50">Airstay</p>
         <h1 className="text-[20px] font-bold mt-1">{m.inbox.title}</h1>
 
-        <div className="flex gap-5 mt-3.5">
+        {/* One switch, three buttons: a bigger target for a thumb than the
+            underlined text tabs it replaced (29 Oct 2026). */}
+        <div className="flex gap-1 mt-3.5 mb-3.5 bg-white/[0.12] rounded-xl p-[3px]">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`pb-2.5 text-[12.5px] font-semibold flex items-center gap-1.5 border-b-2 transition ${
-                tab === t.key
-                  ? 'text-white border-white'
-                  : 'text-white/60 border-transparent hover:text-white/80'
+              className={`flex-1 min-w-0 py-2 px-1 rounded-[9px] text-[12.5px] font-semibold flex items-center justify-center gap-1.5 transition ${
+                tab === t.key ? 'bg-white text-[#1b2d54]' : 'text-white/75 hover:text-white'
               }`}
             >
-              {t.label}
+              <span className="truncate">{t.label}</span>
               {t.count > 0 && (
                 <span
-                  className={`rounded-full px-1.5 py-px text-[10px] font-extrabold ${
-                    tab === t.key ? 'bg-white text-[#1b2d54]' : 'bg-white/20 text-white'
+                  className={`rounded-full px-1.5 py-px text-[10px] font-extrabold flex-shrink-0 ${
+                    tab === t.key ? 'bg-[#243b6b] text-white' : 'bg-white/20 text-white'
                   }`}
                 >
                   {t.count > 9 ? '9+' : t.count}
@@ -141,6 +195,7 @@ export default function InboxPage() {
             <Empty icon={<Megaphone size={26} />} title={m.inbox.noAnnouncements} />
           ) : (
             <>
+              {pending.length > 0 && <Divider label={m.inbox.toConfirm(pending.length)} first />}
               {pending.map((n) => (
                 <MessageCard key={n.id} note={n} locale={locale} onAcknowledged={handleAcknowledged} />
               ))}
@@ -160,12 +215,32 @@ export default function InboxPage() {
               hint={m.inbox.noConversationsHint}
             />
           ) : (
-            threads.map((t) => <ThreadRow key={t.id} thread={t} locale={locale} meId={user?.id} />)
+            <>
+              {/* Unread first: the server orders by last message, which put a
+                  chat she has read above one waiting for her. */}
+              {unreadThreadList.length > 0 && <Divider label={m.inbox.unreadThreads} first />}
+              {unreadThreadList.map((t) => <ThreadRow key={t.id} thread={t} locale={locale} meId={user?.id} />)}
+              {readThreadList.length > 0 && unreadThreadList.length > 0 && <Divider label={m.inbox.otherThreads} />}
+              {readThreadList.map((t) => <ThreadRow key={t.id} thread={t} locale={locale} meId={user?.id} />)}
+            </>
           )
         ) : sortedUpdates.length === 0 ? (
           <Empty icon={<Bell size={26} />} title={m.inbox.noChanges} hint={m.inbox.noChangesHint} />
         ) : (
-          sortedUpdates.map((u) => <ChangeCard key={u.id} update={u} locale={locale} />)
+          <>
+            {newUpdates.length > 0 && <Divider label={m.inbox.groupNew} first />}
+            {newUpdates.map((u) => (
+              <ChangeCard key={u.id} update={u} locale={locale} unread={!u.readAt || seenNew.has(u.id)} />
+            ))}
+            {olderByDay.map((g, i) => (
+              <div key={g.key}>
+                <Divider label={g.label} first={i === 0 && newUpdates.length === 0} />
+                {g.items.map((u) => (
+                  <ChangeCard key={u.id} update={u} locale={locale} compact />
+                ))}
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -174,9 +249,9 @@ export default function InboxPage() {
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 
-function Divider({ label }: { label: string }) {
+function Divider({ label, first = false }: { label: string; first?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5 mt-5 mb-3 px-0.5">
+    <div className={`flex items-center gap-2.5 ${first ? 'mt-0.5' : 'mt-5'} mb-2.5 px-0.5`}>
       <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-ink-faint">{label}</span>
       <span className="flex-1 h-px bg-surface-border" />
     </div>
@@ -249,64 +324,141 @@ function ThreadRow({
   );
 }
 
-function ChangeCard({ update, locale }: { update: TurnoverUpdate; locale: Locale }) {
+/**
+ * One change to work she holds.
+ *
+ * New ones are full cards. Once seen they shrink to one line (kind, unit,
+ * the change, when) and open again on a tap: the list is mostly looked back
+ * through, and full cards made a week of changes four screens long.
+ */
+function ChangeCard({
+  update, locale, unread = false, compact = false,
+}: { update: TurnoverUpdate; locale: Locale; unread?: boolean; compact?: boolean }) {
   const m = useMessageStrings(locale);
+  const [open, setOpen] = useState(false);
   const kind = update.payload?.kind;
-
-  const style =
-    kind === 'BOOKING_CANCELLED'
-      ? { rail: 'border-l-red-600', tone: 'text-red-700', icon: <CircleX size={11} />, label: m.changes.cancelled }
-      : kind === 'STAY_EXTENDED'
-      ? { rail: 'border-l-violet-500', tone: 'text-violet-700', icon: <CalendarClock size={11} />, label: m.changes.stay }
-      : kind === 'STAY_SHORTENED'
-      ? { rail: 'border-l-violet-500', tone: 'text-violet-700', icon: <CalendarClock size={11} />, label: m.changes.stayShortened }
-      : kind === 'CHECKIN_CHANGED'
-      ? { rail: 'border-l-sky-500', tone: 'text-sky-700', icon: <CalendarClock size={11} />, label: m.changes.checkIn }
-      : kind === 'GUESTS_CHANGED'
-      ? { rail: 'border-l-amber-400', tone: 'text-amber-700', icon: <UserPlus size={11} />, label: m.changes.guests }
-      : { rail: 'border-l-amber-400', tone: 'text-amber-700', icon: <UserPlus size={11} />, label: m.changes.modified };
+  const style = kindStyle(kind, m);
+  const isAssignment = kind === 'ASSIGNED' || kind === 'REMOVED' || kind === 'RETURNED_TO_POOL';
 
   const from = formatValue(update.payload?.fromValue, locale);
   const to = formatValue(update.payload?.toValue, locale);
+  const dueBy = formatValue(update.payload?.dueBy, locale);
+  const cancelled = kind === 'BOOKING_CANCELLED';
+  const unit = update.payload?.propertyName ?? update.title;
+
+  const meaning =
+    cancelled ? m.changes.cancelledMeaning
+    : kind === 'ASSIGNED' ? m.changes.assignedMeaning
+    : kind === 'REMOVED' ? m.changes.removedMeaning
+    : kind === 'RETURNED_TO_POOL' ? m.changes.returnedMeaning
+    : update.body;
+
+  // Removed or back in the pool: it is not hers any more, so no link to it.
+  const showLink = !!update.payload?.turnoverId && kind !== 'REMOVED' && kind !== 'RETURNED_TO_POOL';
+
+  if (compact && !open) {
+    const inline =
+      isAssignment ? (dueBy ? m.changes.deadline(dueBy) : '')
+      : cancelled ? m.changes.noArrival
+      : kind === 'GUESTS_CHANGED' && (from || to) ? `${from} → ${to}`
+      : to;
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full text-left bg-white border border-surface-border rounded-2xl px-3 py-2.5 mb-2"
+      >
+        <span className={`inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-0.5 ${style.chip}`}>
+          {style.icon}
+          {style.label}
+        </span>
+        <span className="flex items-baseline gap-2 mt-1.5">
+          <span className="text-[13px] font-semibold truncate">{unit}</span>
+          {inline && <span className="text-[11.5px] text-ink-muted truncate">{inline}</span>}
+          <span className="ml-auto text-[10.5px] text-ink-faint flex-shrink-0">{receivedStamp(update.createdAt, locale)}</span>
+          <ChevronDown size={12} className="text-ink-faint flex-shrink-0 self-center" />
+        </span>
+      </button>
+    );
+  }
 
   return (
-    <div className={`bg-white border border-surface-border border-l-4 ${style.rail} rounded-2xl p-3.5 mb-2.5`}>
-      <div className={`flex items-center gap-1.5 text-[9.5px] font-extrabold uppercase tracking-[0.09em] ${style.tone}`}>
-        {style.icon}
-        {style.label}
+    <div className="bg-white border border-surface-border rounded-2xl p-3.5 mb-2.5">
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex items-center gap-1 text-[10.5px] font-bold rounded-full px-2 py-0.5 ${style.chip}`}>
+          {style.icon}
+          {style.label}
+        </span>
+        {unread && <span className="ml-auto w-2 h-2 rounded-full bg-[#243b6b]" aria-label="new" />}
       </div>
 
-      <h3 className="text-[13.5px] font-semibold mt-1.5">
-        {update.payload?.propertyName ?? update.title}
-      </h3>
+      <h3 className="text-[14px] font-semibold mt-2">{unit}</h3>
 
-      <p className="flex items-center gap-1 text-[10.5px] text-ink-faint mt-1">
-        <Clock size={10} className="flex-shrink-0" />
-        {m.changes.received(receivedStamp(update.createdAt, locale))}
-      </p>
-
-      {(from || to) && (
+      {isAssignment ? (
+        dueBy && (
+          <div className="flex items-center gap-2 mt-2 bg-surface-sunken rounded-xl px-3 py-2 text-[12px]">
+            <Clock size={12} className="text-ink-faint flex-shrink-0" />
+            <span className="font-semibold">{m.changes.deadline(dueBy)}</span>
+          </div>
+        )
+      ) : (from || to || cancelled) && (
         <div className="flex items-center gap-2.5 mt-2 bg-surface-sunken rounded-xl px-3 py-2 text-[12px]">
           {from && <span className="text-ink-faint line-through">{from}</span>}
           <ArrowRight size={12} className="text-ink-faint flex-shrink-0" />
-          <span className={`font-bold ${kind === 'BOOKING_CANCELLED' ? 'text-red-700' : 'text-ink'}`}>
-            {to || m.changes.cancelled}
+          <span className={`font-bold ${cancelled ? 'text-coral-deep' : 'text-ink'}`}>
+            {cancelled ? m.changes.noArrival : to}
           </span>
         </div>
       )}
 
-      <p className="text-[11.5px] text-ink-muted mt-2 leading-relaxed">
-        {kind === 'BOOKING_CANCELLED' ? m.changes.cancelledMeaning : update.body}
-      </p>
+      <p className="text-[12px] text-ink-muted mt-2 leading-relaxed">{meaning}</p>
 
-      {update.payload?.turnoverId && (
-        <Link href="/mine" className="inline-flex items-center gap-1 text-[11.5px] font-bold text-[#243b6b] mt-2.5">
-          {m.changes.openTurnover}
-          <ArrowRight size={12} />
-        </Link>
-      )}
+      <div className="flex items-center gap-1 mt-2.5 text-[10.5px] text-ink-faint">
+        <Clock size={10} className="flex-shrink-0" />
+        {m.changes.received(receivedStamp(update.createdAt, locale))}
+        {showLink && (
+          <Link href="/mine" className="ml-auto inline-flex items-center gap-1 text-[12px] font-bold text-[#243b6b]">
+            {m.changes.openTurnover}
+            <ArrowRight size={12} />
+          </Link>
+        )}
+      </div>
     </div>
   );
+}
+
+/** Kind → label, icon and chip colour, on the office palette (redesign Oct 2026). */
+function kindStyle(kind: string | undefined, m: ReturnType<typeof useMessageStrings>) {
+  switch (kind) {
+    case 'BOOKING_CANCELLED':
+      return { chip: 'bg-coral-soft text-coral-deep', icon: <CircleX size={11} />, label: m.changes.cancelled };
+    case 'STAY_EXTENDED':
+      return { chip: 'bg-[#EFEAF3] text-[#5E4B75]', icon: <CalendarClock size={11} />, label: m.changes.stay };
+    case 'STAY_SHORTENED':
+      return { chip: 'bg-[#EFEAF3] text-[#5E4B75]', icon: <CalendarClock size={11} />, label: m.changes.stayShortened };
+    case 'CHECKIN_CHANGED':
+      return { chip: 'bg-[#E6EEF8] text-[#2F5DA8]', icon: <Clock size={11} />, label: m.changes.checkIn };
+    case 'GUESTS_CHANGED':
+      return { chip: 'bg-sand-soft text-sand-deep', icon: <Users size={11} />, label: m.changes.guests };
+    case 'ASSIGNED':
+      return { chip: 'bg-accent-soft text-accent', icon: <UserPlus size={11} />, label: m.changes.assigned };
+    case 'REMOVED':
+      return { chip: 'bg-surface-sunken text-ink-soft', icon: <UserMinus size={11} />, label: m.changes.removed };
+    case 'RETURNED_TO_POOL':
+      return { chip: 'bg-sand-soft text-sand-deep', icon: <Undo2 size={11} />, label: m.changes.returnedToPool };
+    default:
+      return { chip: 'bg-sand-soft text-sand-deep', icon: <CalendarClock size={11} />, label: m.changes.modified };
+  }
+}
+
+/** "Dnes", "Včera", or the date — the day a change landed. */
+function dayLabel(iso: string, locale: Locale, m: ReturnType<typeof useMessageStrings>): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return m.inbox.groupToday;
+  if (d.toDateString() === yesterday.toDateString()) return m.inbox.groupYesterday;
+  return d.toLocaleDateString(localeTag(locale), { weekday: 'short', day: 'numeric', month: 'numeric' });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

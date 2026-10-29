@@ -26,6 +26,11 @@ export class NotificationsController {
     return this.service.getTurnoverUpdatesCount(req.userId!);
   }
 
+  @Patch('turnover-updates/read')
+  markTurnoverUpdatesRead(@Req() req: TenantRequest) {
+    return this.service.markTurnoverUpdatesRead(req.userId!);
+  }
+
   @Get('unread')
   getUnread(@Req() req: TenantRequest) {
     return this.service.getUnread(req.userId!);

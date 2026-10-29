@@ -123,6 +123,11 @@ export default function CleanerLayout({ children }: { children: React.ReactNode 
   }, [user?.role]);
 
   useEffect(() => { loadBadges(); }, [loadBadges]);
+  // The Inbox marks its Změny read without a socket event; it says so here.
+  useEffect(() => {
+    window.addEventListener('cleanops:badges', loadBadges);
+    return () => window.removeEventListener('cleanops:badges', loadBadges);
+  }, [loadBadges]);
   useSocket({
     'note:changed': loadBadges,
     'conversation:changed': loadBadges,
