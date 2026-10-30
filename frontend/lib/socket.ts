@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './auth';
-import { TOKEN_REFRESHED_EVENT } from './api';
+import { TOKEN_REFRESHED_EVENT, refreshAccessToken } from './api';
 
 let socket: Socket | null = null;
 
@@ -34,6 +34,16 @@ export function useSocket(
         reconnectionDelayMax: 30000,
         reconnectionAttempts: Infinity,
         randomizationFactor: 0.5,
+      });
+
+      // A reconnect whose in-memory access token has expired is rejected at the
+      // handshake — common after a home-screen app was backgrounded past the
+      // ~15-minute token lifetime. Minting a fresh token fires
+      // TOKEN_REFRESHED, whose listener below re-arms socket.auth and bounces
+      // the connection, so live data resumes with no user action. A failure
+      // here is ignored; the socket keeps retrying on its own backoff.
+      socket.on('connect_error', () => {
+        refreshAccessToken().catch(() => {});
       });
     }
 

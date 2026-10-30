@@ -153,7 +153,13 @@ function DatasetsPageInner() {
   const [drawer, setDrawer] = useState<number | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const { user } = useAuth();
-  const mayExport = user?.role === 'MANAGER' || user?.role === 'ADMIN';
+  // Roles allowed to export. The file only ever contains the columns this role
+  // may read (the server intersects the export with the same access matrix the
+  // screen uses), so opening it up adds no data a role could not already see.
+  const mayExport = !!user && [
+    'MANAGER', 'ADMIN', 'OPERATIONS_ASSISTANT', 'FRONT_DESK_MANAGER',
+    'REVENUE_MANAGER', 'DIRECTOR', 'MARKETING_MANAGER',
+  ].includes(user.role);
 
   /**
    * The dataset whose saved view has been applied.

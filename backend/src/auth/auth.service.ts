@@ -15,6 +15,21 @@ const SETUP_TOKEN_PURPOSE = 'password_setup';
 const SETUP_TOKEN_EXPIRY = '15m';
 const BCRYPT_ROUNDS = 12;
 
+// Access tokens are short-lived and the client holds them only in memory; the
+// refresh token (httpOnly cookie) is the long-lived credential and is rotated
+// on every refresh. Before 29 Oct 2026 the access token lived 30 days, which
+// meant logout could not meaningfully revoke it and a leaked token stayed
+// usable for a month. The session row now outlives the refresh token so a
+// valid refresh is never cut short by row expiry.
+const ACCESS_TOKEN_TTL = '15m';
+const REFRESH_TOKEN_TTL = '90d';
+const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+// Compared against when the email is unknown or has no password set, so that
+// failure path takes about as long as a real bcrypt check and cannot be used
+// to tell real accounts apart by response timing.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('cleanops-no-such-user', BCRYPT_ROUNDS);
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -59,10 +74,14 @@ export class AuthService {
       isFirstTime,
     });
 
-    const isDev = process.env.NODE_ENV !== 'production';
+    // Only expose the raw token in genuine local development. The old check
+    // (`!== 'production'`) also matched an unset or misnamed NODE_ENV, so a
+    // single deploy misconfiguration would have handed a one-shot
+    // account-takeover token to anyone calling this route.
+    const exposeDevToken = process.env.NODE_ENV === 'development';
     return {
       sent: true,
-      ...(isDev && { _devToken: token }),
+      ...(exposeDevToken && { _devToken: token }),
     };
   }
 
@@ -176,13 +195,15 @@ export class AuthService {
       include: { tenant: true },
     });
 
-    if (!user) {
+    // One identical failure for every case — unknown email, no password set,
+    // or wrong password — so the response cannot be used to enumerate which
+    // emails are real accounts. The dummy compare keeps the "no user" / "no
+    // password" paths close in time to a real check, closing the matching
+    // timing side-channel. (Users without a password set one via the magic
+    // link; the login screen says so generically, for everyone.)
+    if (!user || !user.passwordHash) {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       throw new UnauthorizedException('Invalid email or password');
-    }
-    if (!user.passwordHash) {
-      throw new UnauthorizedException(
-        'No password set for this account. Use the magic link to set one up.',
-      );
     }
 
     const ok = await bcrypt.compare(password, user.passwordHash);
@@ -231,15 +252,15 @@ export class AuthService {
         role: user.role,
         email: user.email,
       };
-      const newAccessToken = this.jwt.sign(newPayload, { expiresIn: '30d' });
-      const newRefreshToken = this.jwt.sign(newPayload, { expiresIn: '90d' });
+      const newAccessToken = this.jwt.sign(newPayload, { expiresIn: ACCESS_TOKEN_TTL });
+      const newRefreshToken = this.jwt.sign(newPayload, { expiresIn: REFRESH_TOKEN_TTL });
 
       await this.prisma.session.update({
         where: { id: session.id },
         data: {
           token: newAccessToken,
           refreshToken: newRefreshToken,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + SESSION_TTL_MS),
         },
       });
 
@@ -286,15 +307,15 @@ export class AuthService {
       role: user.role,
       email: user.email,
     };
-    const accessToken = this.jwt.sign(payload, { expiresIn: '30d' });
-    const refreshToken = this.jwt.sign(payload, { expiresIn: '90d' });
+    const accessToken = this.jwt.sign(payload, { expiresIn: ACCESS_TOKEN_TTL });
+    const refreshToken = this.jwt.sign(payload, { expiresIn: REFRESH_TOKEN_TTL });
 
     await this.prisma.session.create({
       data: {
         userId: user.id,
         token: accessToken,
         refreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
       },
     });
 

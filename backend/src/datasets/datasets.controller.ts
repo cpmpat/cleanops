@@ -54,7 +54,15 @@ export class DatasetsController {
   }
 
   @Post(':key/export')
-  @Roles('MANAGER')
+  @Roles(
+    'MANAGER',
+    'ADMIN',
+    'OPERATIONS_ASSISTANT',
+    'FRONT_DESK_MANAGER',
+    'REVENUE_MANAGER',
+    'DIRECTOR',
+    'MARKETING_MANAGER',
+  )
   @ApiOperation({
     summary: 'Export a dataset as CSV or XLSX',
     description:
